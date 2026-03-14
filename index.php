@@ -64,30 +64,39 @@ if ($herikaRoot !== '') {
 
 if ($stobeRoot !== '') {
     try {
-        if ((!isset($GLOBALS['db']) || !is_object($GLOBALS['db'])) && file_exists($stobeRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'bootstrap.php')) {
-            require_once($stobeRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'bootstrap.php');
+        $stobeRunner = $stobeRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'run_db_updates.php';
+        $disableFunctions = strtolower(strval(ini_get('disable_functions') ?: ''));
+        $canExec = function_exists('exec') && strpos($disableFunctions, 'exec') === false;
+
+        if ($canExec && is_file($stobeRunner)) {
+            $output = [];
+            $exitCode = 0;
+            $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($stobeRunner) . ' 2>&1';
+            exec($command, $output, $exitCode);
+            if ($exitCode !== 0) {
+                $error = trim(implode("\n", $output));
+                if ($error === '') {
+                    $error = 'unknown error';
+                }
+                throw new RuntimeException('StobeServer DB update process failed: ' . $error);
+            }
+        } else {
+            // Fallback when exec is disabled: run inline.
+            if ((!isset($GLOBALS['db']) || !is_object($GLOBALS['db'])) && file_exists($stobeRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'bootstrap.php')) {
+                require_once($stobeRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'bootstrap.php');
+            }
+            if (!function_exists('stobeLogInfo')) {
+                function stobeLogInfo(string $message, array $context = []): void {}
+            }
+            if (!function_exists('stobeLogWarn')) {
+                function stobeLogWarn(string $message, array $context = []): void {}
+            }
+            if (!function_exists('stobeLogException')) {
+                function stobeLogException(Throwable $exception, string $message = '', array $context = []): void {}
+            }
+            require_once($stobeRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'db_updates.php');
         }
 
-        if (!function_exists('stobeLogInfo')) {
-            function stobeLogInfo(string $message, array $context = []): void
-            {
-                // Dashboard no-op logger fallback for Stobe DB update bootstrap.
-            }
-        }
-        if (!function_exists('stobeLogWarn')) {
-            function stobeLogWarn(string $message, array $context = []): void
-            {
-                // Dashboard no-op logger fallback for Stobe DB update bootstrap.
-            }
-        }
-        if (!function_exists('stobeLogException')) {
-            function stobeLogException(Throwable $exception, string $message = '', array $context = []): void
-            {
-                // Dashboard no-op logger fallback for Stobe DB update bootstrap.
-            }
-        }
-
-        require_once($stobeRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'db_updates.php');
         $stobeUpdateStatus = 'ok';
         $stobeUpdateDetail = 'StobeServer database versioning check completed.';
     } catch (Throwable $e) {
@@ -204,17 +213,26 @@ $stobeUrl = '/StobeServer/ui/home.php';
             color: #ffffff;
         }
 
-        .dashboard-button.chim,
-        .dashboard-button.stobe {
+        .dashboard-button.chim {
             background-color: rgb(242, 124, 17);
             border-color: rgba(242, 124, 17, 0.95);
             color: #ffffff;
         }
 
-        .dashboard-button.chim:hover,
-        .dashboard-button.stobe:hover {
+        .dashboard-button.chim:hover {
             background-color: rgb(221, 106, 6);
             border-color: rgba(221, 106, 6, 0.95);
+        }
+
+        .dashboard-button.stobe {
+            background-color: #e6b76c;
+            border-color: #e6b76c;
+            color: #ffffff;
+        }
+
+        .dashboard-button.stobe:hover {
+            background-color: #d2a45a;
+            border-color: #d2a45a;
         }
 
         .dashboard-button.placeholder {
