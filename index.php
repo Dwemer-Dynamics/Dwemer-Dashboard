@@ -246,7 +246,7 @@ $stobeUrl = '/StobeServer/ui/home.php';
         }
 
         .chim-brand-main {
-            width: 180px;
+            width: 108px;
             height: auto;
             object-fit: contain;
             display: block;
@@ -255,6 +255,8 @@ $stobeUrl = '/StobeServer/ui/home.php';
         .chim-brand-icon {
             width: 42px;
             height: 42px;
+            min-width: 42px;
+            min-height: 42px;
             object-fit: contain;
             display: block;
             border-radius: 4px;
