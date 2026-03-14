@@ -8,24 +8,33 @@ if (session_status() === PHP_SESSION_NONE) {
 
 $TITLE = 'DwemerDashboard';
 
-$herikaRoot = '';
-$herikaCandidates = [
+$resolveServerRoot = static function (array $candidates): string {
+    foreach ($candidates as $candidate) {
+        $normalized = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $candidate);
+        $dbUpdatePath = $normalized . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'db_updates.php';
+        if (is_dir($normalized) && file_exists($dbUpdatePath)) {
+            return realpath($normalized) ?: $normalized;
+        }
+    }
+    return '';
+};
+
+$herikaRoot = $resolveServerRoot([
     __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'HerikaServer',
     dirname(__DIR__) . DIRECTORY_SEPARATOR . 'HerikaServer',
     '/var/www/html/HerikaServer',
-];
+]);
 
-foreach ($herikaCandidates as $candidate) {
-    $normalized = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $candidate);
-    $dbUpdatePath = $normalized . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'db_updates.php';
-    if (is_dir($normalized) && file_exists($dbUpdatePath)) {
-        $herikaRoot = realpath($normalized) ?: $normalized;
-        break;
-    }
-}
+$stobeRoot = $resolveServerRoot([
+    __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'StobeServer',
+    dirname(__DIR__) . DIRECTORY_SEPARATOR . 'StobeServer',
+    '/var/www/html/StobeServer',
+]);
 
-$dbUpdateStatus = 'unavailable';
-$dbUpdateDetail = 'HerikaServer path not found, DB update was not triggered.';
+$herikaUpdateStatus = 'unavailable';
+$herikaUpdateDetail = 'HerikaServer path not found, DB update was not triggered.';
+$stobeUpdateStatus = 'unavailable';
+$stobeUpdateDetail = 'StobeServer path not found, DB update was not triggered.';
 $hasCustomBackground = file_exists(__DIR__ . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'background.jpg');
 
 if ($herikaRoot !== '') {
@@ -44,16 +53,63 @@ if ($herikaRoot !== '') {
 
         require_once($herikaRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'db_updates.php');
         require_once($herikaRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'npc_removal.php');
-        $dbUpdateStatus = 'ok';
-        $dbUpdateDetail = 'HerikaServer database versioning check completed.';
+        $herikaUpdateStatus = 'ok';
+        $herikaUpdateDetail = 'HerikaServer database versioning check completed.';
     } catch (Throwable $e) {
-        $dbUpdateStatus = 'error';
-        $dbUpdateDetail = 'DB update trigger failed. Check HerikaServer logs.';
-        error_log('[DwemerDashboard] DB update trigger failed: ' . $e->getMessage());
+        $herikaUpdateStatus = 'error';
+        $herikaUpdateDetail = 'HerikaServer DB update trigger failed. Check HerikaServer logs.';
+        error_log('[DwemerDashboard] Herika DB update trigger failed: ' . $e->getMessage());
     }
 }
 
+if ($stobeRoot !== '') {
+    try {
+        if ((!isset($GLOBALS['db']) || !is_object($GLOBALS['db'])) && file_exists($stobeRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'bootstrap.php')) {
+            require_once($stobeRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'bootstrap.php');
+        }
+
+        if (!function_exists('stobeLogInfo')) {
+            function stobeLogInfo(string $message, array $context = []): void
+            {
+                // Dashboard no-op logger fallback for Stobe DB update bootstrap.
+            }
+        }
+        if (!function_exists('stobeLogWarn')) {
+            function stobeLogWarn(string $message, array $context = []): void
+            {
+                // Dashboard no-op logger fallback for Stobe DB update bootstrap.
+            }
+        }
+        if (!function_exists('stobeLogException')) {
+            function stobeLogException(Throwable $exception, string $message = '', array $context = []): void
+            {
+                // Dashboard no-op logger fallback for Stobe DB update bootstrap.
+            }
+        }
+
+        require_once($stobeRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'db_updates.php');
+        $stobeUpdateStatus = 'ok';
+        $stobeUpdateDetail = 'StobeServer database versioning check completed.';
+    } catch (Throwable $e) {
+        $stobeUpdateStatus = 'error';
+        $stobeUpdateDetail = 'StobeServer DB update trigger failed. Check StobeServer logs.';
+        error_log('[DwemerDashboard] Stobe DB update trigger failed: ' . $e->getMessage());
+    }
+}
+
+$statuses = [$herikaUpdateStatus, $stobeUpdateStatus];
+if (in_array('error', $statuses, true)) {
+    $dbUpdateStatus = 'error';
+} elseif (in_array('ok', $statuses, true)) {
+    $dbUpdateStatus = 'ok';
+} else {
+    $dbUpdateStatus = 'unavailable';
+}
+
+$dbUpdateDetail = trim($herikaUpdateDetail . PHP_EOL . $stobeUpdateDetail);
+
 $chimUrl = '/HerikaServer/ui/index.php';
+$stobeUrl = '/StobeServer/ui/home.php';
 ?>
 <!doctype html>
 <html lang="en">
@@ -148,13 +204,15 @@ $chimUrl = '/HerikaServer/ui/index.php';
             color: #ffffff;
         }
 
-        .dashboard-button.chim {
+        .dashboard-button.chim,
+        .dashboard-button.stobe {
             background-color: rgb(242, 124, 17);
             border-color: rgba(242, 124, 17, 0.95);
             color: #ffffff;
         }
 
-        .dashboard-button.chim:hover {
+        .dashboard-button.chim:hover,
+        .dashboard-button.stobe:hover {
             background-color: rgb(221, 106, 6);
             border-color: rgba(221, 106, 6, 0.95);
         }
@@ -194,6 +252,7 @@ $chimUrl = '/HerikaServer/ui/index.php';
             margin-top: 20px;
             font-size: 14px;
             color: #c7d0dd;
+            white-space: pre-line;
         }
 
         .dashboard-status.ok {
@@ -215,8 +274,11 @@ $chimUrl = '/HerikaServer/ui/index.php';
                     <img class="chim-brand-main" src="images/chim-logo.png" alt="CHIM logo">
                 </span>
             </a>
-            <a class="dashboard-button placeholder" href="#" aria-disabled="true" title="split in two reborn" onclick="return false;">
-                <span>???</span>
+            <a class="dashboard-button stobe" href="<?= htmlspecialchars($stobeUrl, ENT_QUOTES, 'UTF-8') ?>">
+                <span class="chim-brand">
+                    <img class="chim-brand-icon" src="images/stobe-icon.png" alt="StobeServer icon">
+                    <img class="chim-brand-main" src="images/stobe-logo.png" alt="StobeServer logo">
+                </span>
             </a>
         </div>
         <p class="dashboard-status <?= htmlspecialchars($dbUpdateStatus, ENT_QUOTES, 'UTF-8') ?>">
