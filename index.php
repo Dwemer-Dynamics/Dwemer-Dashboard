@@ -106,16 +106,10 @@ if ($stobeRoot !== '') {
     }
 }
 
-$statuses = [$herikaUpdateStatus, $stobeUpdateStatus];
-if (in_array('error', $statuses, true)) {
-    $dbUpdateStatus = 'error';
-} elseif (in_array('ok', $statuses, true)) {
-    $dbUpdateStatus = 'ok';
-} else {
-    $dbUpdateStatus = 'unavailable';
-}
-
-$dbUpdateDetail = trim($herikaUpdateDetail . PHP_EOL . $stobeUpdateDetail);
+$dbUpdateLines = [
+    ['status' => $herikaUpdateStatus, 'detail' => $herikaUpdateDetail],
+    ['status' => $stobeUpdateStatus, 'detail' => $stobeUpdateDetail],
+];
 
 $chimUrl = '/HerikaServer/ui/index.php';
 $stobeUrl = '/StobeServer/ui/home.php';
@@ -252,15 +246,15 @@ $stobeUrl = '/StobeServer/ui/home.php';
         }
 
         .chim-brand-main {
-            width: 120px;
+            width: 180px;
             height: auto;
             object-fit: contain;
             display: block;
         }
 
         .chim-brand-icon {
-            width: 28px;
-            height: 28px;
+            width: 42px;
+            height: 42px;
             object-fit: contain;
             display: block;
             border-radius: 4px;
@@ -269,15 +263,19 @@ $stobeUrl = '/StobeServer/ui/home.php';
         .dashboard-status {
             margin-top: 20px;
             font-size: 14px;
-            color: #c7d0dd;
-            white-space: pre-line;
         }
 
-        .dashboard-status.ok {
+        .dashboard-status-line {
+            display: block;
+            line-height: 1.5;
+            color: #c7d0dd;
+        }
+
+        .dashboard-status-line.ok {
             color: #8ed081;
         }
 
-        .dashboard-status.error {
+        .dashboard-status-line.error {
             color: #ef6b6b;
         }
     </style>
@@ -299,9 +297,13 @@ $stobeUrl = '/StobeServer/ui/home.php';
                 </span>
             </a>
         </div>
-        <p class="dashboard-status <?= htmlspecialchars($dbUpdateStatus, ENT_QUOTES, 'UTF-8') ?>">
-            <?= htmlspecialchars($dbUpdateDetail, ENT_QUOTES, 'UTF-8') ?>
-        </p>
+        <div class="dashboard-status">
+            <?php foreach ($dbUpdateLines as $line): ?>
+                <span class="dashboard-status-line <?= htmlspecialchars((string)$line['status'], ENT_QUOTES, 'UTF-8') ?>">
+                    <?= htmlspecialchars((string)$line['detail'], ENT_QUOTES, 'UTF-8') ?>
+                </span>
+            <?php endforeach; ?>
+        </div>
     </main>
 </body>
 </html>
