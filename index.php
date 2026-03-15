@@ -39,25 +39,88 @@ $hasCustomBackground = file_exists(__DIR__ . DIRECTORY_SEPARATOR . 'images' . DI
 
 if ($herikaRoot !== '') {
     try {
-        require_once($herikaRoot . DIRECTORY_SEPARATOR . 'ui' . DIRECTORY_SEPARATOR . 'profile_loader.php');
-        $dbDriver = trim(strval($GLOBALS['DBDRIVER'] ?? ''));
-        if ($dbDriver === '') {
-            throw new RuntimeException('DBDRIVER not set after profile_loader');
+        $herikaRunner = $herikaRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'apply_db_updates.php';
+        $disableFunctions = strtolower(strval(ini_get('disable_functions') ?: ''));
+        $canExec = function_exists('exec') && strpos($disableFunctions, 'exec') === false;
+        $runHerikaDbUpdatesInline = static function () use ($herikaRoot): void {
+            require_once($herikaRoot . DIRECTORY_SEPARATOR . 'ui' . DIRECTORY_SEPARATOR . 'profile_loader.php');
+            $dbDriver = trim(strval($GLOBALS['DBDRIVER'] ?? ''));
+            if ($dbDriver === '') {
+                throw new RuntimeException('DBDRIVER not set after profile_loader');
+            }
+            require_once($herikaRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . $dbDriver . '.class.php');
+            if (!isset($GLOBALS['db']) || !is_object($GLOBALS['db'])) {
+                $GLOBALS['db'] = new sql();
+            }
+            $db = $GLOBALS['db'];
+            require_once($herikaRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'db_updates.php');
+            require_once($herikaRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'npc_removal.php');
+        };
+
+        if ($canExec && is_file($herikaRunner)) {
+            $cliCandidates = [];
+            $pushCandidate = static function (string $candidate) use (&$cliCandidates): void {
+                $value = trim($candidate);
+                if ($value === '') {
+                    return;
+                }
+                if (!in_array($value, $cliCandidates, true)) {
+                    $cliCandidates[] = $value;
+                }
+            };
+
+            $phpCliBinary = trim(strval(PHP_BINARY ?? ''));
+            $phpCliBasename = strtolower(basename($phpCliBinary));
+            if (
+                $phpCliBinary !== '' &&
+                strpos($phpCliBasename, 'php') !== false &&
+                strpos($phpCliBasename, 'apache') === false
+            ) {
+                $pushCandidate($phpCliBinary);
+            }
+            $pushCandidate('/usr/bin/php');
+            $pushCandidate('/usr/local/bin/php');
+            $pushCandidate('php');
+
+            $ranCli = false;
+            $lastCliError = '';
+            foreach ($cliCandidates as $candidate) {
+                $output = [];
+                $exitCode = 0;
+                $command = escapeshellarg($candidate) . ' ' . escapeshellarg($herikaRunner) . ' 2>&1';
+                exec($command, $output, $exitCode);
+                if ($exitCode === 0) {
+                    $ranCli = true;
+                    break;
+                }
+                $cliError = trim(implode("\n", $output));
+                if ($cliError === '') {
+                    $cliError = 'unknown error';
+                }
+                $lastCliError = '[php=' . $candidate . '] ' . $cliError;
+            }
+
+            if (!$ranCli) {
+                error_log('[DwemerDashboard] Herika DB update CLI runner failed: ' . $lastCliError);
+                $runHerikaDbUpdatesInline();
+            }
+        } else {
+            $runHerikaDbUpdatesInline();
         }
 
-        require_once($herikaRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . $dbDriver . '.class.php');
-        if (!isset($GLOBALS['db']) || !is_object($GLOBALS['db'])) {
-            $GLOBALS['db'] = new sql();
-        }
-        $db = $GLOBALS['db'];
-
-        require_once($herikaRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'db_updates.php');
-        require_once($herikaRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'npc_removal.php');
         $herikaUpdateStatus = 'ok';
         $herikaUpdateDetail = 'HerikaServer database versioning check completed.';
     } catch (Throwable $e) {
+        $errorSummary = trim($e->getMessage());
+        $errorSummary = preg_replace('/\s+/', ' ', $errorSummary) ?? $errorSummary;
+        if ($errorSummary === '') {
+            $errorSummary = 'unknown error';
+        }
+        if (strlen($errorSummary) > 180) {
+            $errorSummary = substr($errorSummary, 0, 180) . '...';
+        }
         $herikaUpdateStatus = 'error';
-        $herikaUpdateDetail = 'HerikaServer DB update trigger failed. Check HerikaServer logs.';
+        $herikaUpdateDetail = 'HerikaServer DB update trigger failed: ' . $errorSummary;
         error_log('[DwemerDashboard] Herika DB update trigger failed: ' . $e->getMessage());
     }
 }
