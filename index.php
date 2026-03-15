@@ -112,7 +112,19 @@ $dbUpdateLines = [
 ];
 
 $chimUrl = '/HerikaServer/ui/index.php';
-$stobeUrl = '/StobeServer/ui/home.php';
+
+$requestHostRaw = trim((string)($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost')));
+$requestScheme = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') ? 'https' : 'http';
+$parsedHost = parse_url((str_contains($requestHostRaw, '://') ? $requestHostRaw : ('http://' . $requestHostRaw)), PHP_URL_HOST);
+$dashboardHost = $parsedHost ?: preg_replace('/:\d+$/', '', $requestHostRaw);
+if ($dashboardHost === '' || $dashboardHost === null) {
+    $dashboardHost = 'localhost';
+}
+$stobeHostForUrl = $dashboardHost;
+if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[')) {
+    $stobeHostForUrl = '[' . $stobeHostForUrl . ']';
+}
+$stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 ?>
 <!doctype html>
 <html lang="en">
