@@ -67,22 +67,12 @@ if ($stobeRoot !== '') {
         $stobeRunner = $stobeRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'run_db_updates.php';
         $disableFunctions = strtolower(strval(ini_get('disable_functions') ?: ''));
         $canExec = function_exists('exec') && strpos($disableFunctions, 'exec') === false;
-
-        if ($canExec && is_file($stobeRunner)) {
-            $output = [];
-            $exitCode = 0;
-            $command = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($stobeRunner) . ' 2>&1';
-            exec($command, $output, $exitCode);
-            if ($exitCode !== 0) {
-                $error = trim(implode("\n", $output));
-                if ($error === '') {
-                    $error = 'unknown error';
-                }
-                throw new RuntimeException('StobeServer DB update process failed: ' . $error);
-            }
-        } else {
-            // Fallback when exec is disabled: run inline.
-            if ((!isset($GLOBALS['db']) || !is_object($GLOBALS['db'])) && file_exists($stobeRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'bootstrap.php')) {
+        $runStobeDbUpdatesInline = static function () use ($stobeRoot): void {
+            // Fallback when CLI execution is unavailable or fails: run updates inline.
+            if (
+                (!isset($GLOBALS['db']) || !is_object($GLOBALS['db'])) &&
+                file_exists($stobeRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'bootstrap.php')
+            ) {
                 require_once($stobeRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'bootstrap.php');
             }
             if (!function_exists('stobeLogInfo')) {
@@ -95,13 +85,72 @@ if ($stobeRoot !== '') {
                 function stobeLogException(Throwable $exception, string $message = '', array $context = []): void {}
             }
             require_once($stobeRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'db_updates.php');
+        };
+
+        if ($canExec && is_file($stobeRunner)) {
+            $cliCandidates = [];
+            $pushCandidate = static function (string $candidate) use (&$cliCandidates): void {
+                $value = trim($candidate);
+                if ($value === '') {
+                    return;
+                }
+                if (!in_array($value, $cliCandidates, true)) {
+                    $cliCandidates[] = $value;
+                }
+            };
+
+            $phpCliBinary = trim(strval(PHP_BINARY ?? ''));
+            $phpCliBasename = strtolower(basename($phpCliBinary));
+            if (
+                $phpCliBinary !== '' &&
+                strpos($phpCliBasename, 'php') !== false &&
+                strpos($phpCliBasename, 'apache') === false
+            ) {
+                $pushCandidate($phpCliBinary);
+            }
+            $pushCandidate('/usr/bin/php');
+            $pushCandidate('/usr/local/bin/php');
+            $pushCandidate('php');
+
+            $ranCli = false;
+            $lastCliError = '';
+            foreach ($cliCandidates as $candidate) {
+                $output = [];
+                $exitCode = 0;
+                $command = escapeshellarg($candidate) . ' ' . escapeshellarg($stobeRunner) . ' 2>&1';
+                exec($command, $output, $exitCode);
+                if ($exitCode === 0) {
+                    $ranCli = true;
+                    break;
+                }
+                $cliError = trim(implode("\n", $output));
+                if ($cliError === '') {
+                    $cliError = 'unknown error';
+                }
+                $lastCliError = '[php=' . $candidate . '] ' . $cliError;
+            }
+
+            if (!$ranCli) {
+                error_log('[DwemerDashboard] Stobe DB update CLI runner failed: ' . $lastCliError);
+                $runStobeDbUpdatesInline();
+            }
+        } else {
+            $runStobeDbUpdatesInline();
         }
 
         $stobeUpdateStatus = 'ok';
         $stobeUpdateDetail = 'StobeServer database versioning check completed.';
     } catch (Throwable $e) {
+        $errorSummary = trim($e->getMessage());
+        $errorSummary = preg_replace('/\s+/', ' ', $errorSummary) ?? $errorSummary;
+        if ($errorSummary === '') {
+            $errorSummary = 'unknown error';
+        }
+        if (strlen($errorSummary) > 180) {
+            $errorSummary = substr($errorSummary, 0, 180) . '...';
+        }
         $stobeUpdateStatus = 'error';
-        $stobeUpdateDetail = 'StobeServer DB update trigger failed. Check StobeServer logs.';
+        $stobeUpdateDetail = 'StobeServer DB update trigger failed: ' . $errorSummary;
         error_log('[DwemerDashboard] Stobe DB update trigger failed: ' . $e->getMessage());
     }
 }
@@ -124,7 +173,7 @@ $stobeHostForUrl = $dashboardHost;
 if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[')) {
     $stobeHostForUrl = '[' . $stobeHostForUrl . ']';
 }
-$stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/home.php', $requestScheme, $stobeHostForUrl);
+$stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/index.php', $requestScheme, $stobeHostForUrl);
 ?>
 <!doctype html>
 <html lang="en">
