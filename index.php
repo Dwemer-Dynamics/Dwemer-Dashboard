@@ -238,6 +238,7 @@ if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[
 }
 $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/index.php', $requestScheme, $stobeHostForUrl);
 $distroDebuggerUrl = 'distro_debugger.php';
+$databaseManagerUrl = 'database_manager.php';
 ?>
 <!doctype html>
 <html lang="en">
@@ -370,6 +371,18 @@ $distroDebuggerUrl = 'distro_debugger.php';
             border-color: #9f2e2e;
         }
 
+        .dashboard-button.database-manager {
+            background-color: #5e0505;
+            border-color: #842121;
+            color: #ffffff;
+            min-width: 320px;
+        }
+
+        .dashboard-button.database-manager:hover {
+            background-color: #710909;
+            border-color: #9f2e2e;
+        }
+
         .dashboard-button.placeholder {
             opacity: 0.65;
             pointer-events: auto;
@@ -420,6 +433,11 @@ $distroDebuggerUrl = 'distro_debugger.php';
             letter-spacing: 0.4px;
         }
 
+        .database-manager-label {
+            line-height: 1;
+            letter-spacing: 0.4px;
+        }
+
         .dashboard-status {
             margin-top: 20px;
             font-size: 14px;
@@ -462,6 +480,11 @@ $distroDebuggerUrl = 'distro_debugger.php';
                 <span class="chim-brand">
                     <img class="kagrenac-brand-icon" src="images/kagrenac-icon.png" alt="Kagrenac MCP icon">
                     <span class="distro-debugger-label">Distro Debugger</span>
+                </span>
+            </a>
+            <a class="dashboard-button database-manager" href="<?= htmlspecialchars($databaseManagerUrl, ENT_QUOTES, 'UTF-8') ?>">
+                <span class="chim-brand">
+                    <span class="database-manager-label">Database Manager</span>
                 </span>
             </a>
         </div>
