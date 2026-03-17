@@ -1408,6 +1408,11 @@ if (isset($_GET['mcp_status']) && strval($_GET['mcp_status']) === '1') {
 }
 
 $mcpApiSourceLabel = $mcpApiKeySource === 'stobe' ? 'STOBE' : 'CHIM';
+$embedParam = strtolower(trim(strval($_GET['embed'] ?? '')));
+$isEmbeddedView = in_array($embedParam, ['1', 'true', 'yes', 'on'], true);
+$requestedInitialTab = strtolower(trim(strval($_GET['tab'] ?? '')));
+$allowedInitialTabs = ['distro', 'chim', 'stobe'];
+$forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? $requestedInitialTab : '';
 ?>
 <!doctype html>
 <html lang="en">
@@ -1442,7 +1447,9 @@ $mcpApiSourceLabel = $mcpApiKeySource === 'stobe' ? 'STOBE' : 'CHIM';
         <div>
             <h1>Distro Debugger</h1>
         </div>
+        <?php if (!$isEmbeddedView): ?>
         <a class="back-link" href="index.php">Back to Dashboard</a>
+        <?php endif; ?>
     </header>
 
     <div class="tab-nav" role="tablist" aria-label="Debugger Tabs">
@@ -1626,6 +1633,7 @@ $mcpApiSourceLabel = $mcpApiKeySource === 'stobe' ? 'STOBE' : 'CHIM';
     const TAB_KEY = 'distro_debugger_active_tab';
     const UTC_MODE = 'utc';
     const LOCAL_MODE = 'local';
+    const forcedInitialTab = <?= json_encode($forcedInitialTab, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
     let useLocalTime = (localStorage.getItem(TIMEZONE_KEY) || UTC_MODE) === LOCAL_MODE;
     const mcpStatusApiBase = '<?= h($_SERVER['PHP_SELF'] ?? 'distro_debugger.php') ?>';
@@ -2434,7 +2442,7 @@ $mcpApiSourceLabel = $mcpApiKeySource === 'stobe' ? 'STOBE' : 'CHIM';
         });
     }
 
-    const initialTab = localStorage.getItem(TAB_KEY) || 'distro';
+    const initialTab = forcedInitialTab || localStorage.getItem(TAB_KEY) || 'distro';
     if (document.querySelector('.tab-button[data-tab="' + initialTab + '"]')) {
         setActiveTab(initialTab);
     } else {
