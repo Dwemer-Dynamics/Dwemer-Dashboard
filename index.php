@@ -237,6 +237,7 @@ if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[
     $stobeHostForUrl = '[' . $stobeHostForUrl . ']';
 }
 $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/index.php', $requestScheme, $stobeHostForUrl);
+$distroDebuggerUrl = 'distro_debugger.php';
 ?>
 <!doctype html>
 <html lang="en">
@@ -305,6 +306,10 @@ $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/index.php', $requestScheme, $st
             flex-wrap: wrap;
         }
 
+        .dashboard-actions-secondary {
+            margin-top: 16px;
+        }
+
         .dashboard-button {
             min-width: 280px;
             min-height: 76px;
@@ -353,6 +358,18 @@ $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/index.php', $requestScheme, $st
             border-color: #d2a45a;
         }
 
+        .dashboard-button.distro-debugger {
+            background-color: #5e0505;
+            border-color: #842121;
+            color: #ffffff;
+            min-width: 320px;
+        }
+
+        .dashboard-button.distro-debugger:hover {
+            background-color: #710909;
+            border-color: #9f2e2e;
+        }
+
         .dashboard-button.placeholder {
             opacity: 0.65;
             pointer-events: auto;
@@ -384,6 +401,23 @@ $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/index.php', $requestScheme, $st
             object-fit: contain;
             display: block;
             border-radius: 4px;
+        }
+
+        .kagrenac-brand-icon {
+            width: 42px;
+            height: 42px;
+            min-width: 42px;
+            min-height: 42px;
+            object-fit: cover;
+            display: block;
+            border-radius: 50%;
+            border: 1px solid rgba(242, 124, 17, 0.75);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+        }
+
+        .distro-debugger-label {
+            line-height: 1;
+            letter-spacing: 0.4px;
         }
 
         .dashboard-status {
@@ -420,6 +454,14 @@ $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/index.php', $requestScheme, $st
                 <span class="chim-brand">
                     <img class="chim-brand-icon" src="images/stobe-icon.png" alt="StobeServer icon">
                     <img class="chim-brand-main" src="images/stobe-logo.png" alt="StobeServer logo">
+                </span>
+            </a>
+        </div>
+        <div class="dashboard-actions dashboard-actions-secondary">
+            <a class="dashboard-button distro-debugger" href="<?= htmlspecialchars($distroDebuggerUrl, ENT_QUOTES, 'UTF-8') ?>">
+                <span class="chim-brand">
+                    <img class="kagrenac-brand-icon" src="images/kagrenac-icon.png" alt="Kagrenac MCP icon">
+                    <span class="distro-debugger-label">Distro Debugger</span>
                 </span>
             </a>
         </div>
