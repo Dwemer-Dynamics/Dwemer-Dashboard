@@ -739,29 +739,6 @@ function resolveDwemerPrimaryApiKey(sql $db): array
 
     $queries = [
         "SELECT
-            c.id AS connector_id,
-            b.id AS badge_id,
-            COALESCE(NULLIF(BTRIM(b.api_key), ''), '') AS api_key,
-            COALESCE(NULLIF(BTRIM(b.label), ''), 'OpenRouter') AS label
-         FROM core_llm_connector c
-         LEFT JOIN core_api_badge b ON b.id = c.api_badge_id
-         WHERE LOWER(COALESCE(c.service, '')) = 'openrouter'
-           AND NULLIF(BTRIM(b.api_key), '') IS NOT NULL
-           AND COALESCE(c.is_default, false) = true
-         ORDER BY c.id ASC
-         LIMIT 1",
-        "SELECT
-            c.id AS connector_id,
-            b.id AS badge_id,
-            COALESCE(NULLIF(BTRIM(b.api_key), ''), '') AS api_key,
-            COALESCE(NULLIF(BTRIM(b.label), ''), 'OpenRouter') AS label
-         FROM core_llm_connector c
-         LEFT JOIN core_api_badge b ON b.id = c.api_badge_id
-         WHERE LOWER(COALESCE(c.service, '')) = 'openrouter'
-           AND NULLIF(BTRIM(b.api_key), '') IS NOT NULL
-         ORDER BY COALESCE(c.is_default, false) DESC, c.id ASC
-         LIMIT 1",
-        "SELECT
             id AS badge_id,
             COALESCE(NULLIF(BTRIM(api_key), ''), '') AS api_key,
             COALESCE(NULLIF(BTRIM(label), ''), 'OpenRouter') AS label
@@ -771,14 +748,12 @@ function resolveDwemerPrimaryApiKey(sql $db): array
          ORDER BY id ASC
          LIMIT 1",
         "SELECT
-            c.id AS connector_id,
-            b.id AS badge_id,
-            COALESCE(NULLIF(BTRIM(b.api_key), ''), '') AS api_key,
-            COALESCE(NULLIF(BTRIM(b.label), ''), 'OpenRouter') AS label
-         FROM core_llm_connector c
-         LEFT JOIN core_api_badge b ON b.id = c.api_badge_id
-         WHERE LOWER(COALESCE(c.service, '')) = 'openrouter'
-         ORDER BY COALESCE(c.is_default, false) DESC, c.id ASC
+            id AS badge_id,
+            COALESCE(NULLIF(BTRIM(api_key), ''), '') AS api_key,
+            COALESCE(NULLIF(BTRIM(label), ''), 'OpenRouter') AS label
+         FROM core_api_badge
+         WHERE NULLIF(BTRIM(api_key), '') IS NOT NULL
+         ORDER BY id ASC
          LIMIT 1",
         "SELECT
             id AS badge_id,
@@ -825,29 +800,6 @@ function resolveStobePrimaryApiKey(string $connectionString): array
 
     $queries = [
         "SELECT
-            c.id AS connector_id,
-            b.id AS badge_id,
-            COALESCE(NULLIF(BTRIM(b.api_key), ''), '') AS api_key,
-            COALESCE(NULLIF(BTRIM(b.label), ''), 'OpenRouter') AS label
-         FROM core_llm_connector c
-         LEFT JOIN core_api_badge b ON b.id = c.api_badge_id
-         WHERE LOWER(COALESCE(c.service, '')) = 'openrouter'
-           AND NULLIF(BTRIM(b.api_key), '') IS NOT NULL
-           AND COALESCE(c.is_default, false) = true
-         ORDER BY c.id ASC
-         LIMIT 1",
-        "SELECT
-            c.id AS connector_id,
-            b.id AS badge_id,
-            COALESCE(NULLIF(BTRIM(b.api_key), ''), '') AS api_key,
-            COALESCE(NULLIF(BTRIM(b.label), ''), 'OpenRouter') AS label
-         FROM core_llm_connector c
-         LEFT JOIN core_api_badge b ON b.id = c.api_badge_id
-         WHERE LOWER(COALESCE(c.service, '')) = 'openrouter'
-           AND NULLIF(BTRIM(b.api_key), '') IS NOT NULL
-         ORDER BY COALESCE(c.is_default, false) DESC, c.id ASC
-         LIMIT 1",
-        "SELECT
             id AS badge_id,
             COALESCE(NULLIF(BTRIM(api_key), ''), '') AS api_key,
             COALESCE(NULLIF(BTRIM(label), ''), 'OpenRouter') AS label
@@ -857,14 +809,12 @@ function resolveStobePrimaryApiKey(string $connectionString): array
          ORDER BY id ASC
          LIMIT 1",
         "SELECT
-            c.id AS connector_id,
-            b.id AS badge_id,
-            COALESCE(NULLIF(BTRIM(b.api_key), ''), '') AS api_key,
-            COALESCE(NULLIF(BTRIM(b.label), ''), 'OpenRouter') AS label
-         FROM core_llm_connector c
-         LEFT JOIN core_api_badge b ON b.id = c.api_badge_id
-         WHERE LOWER(COALESCE(c.service, '')) = 'openrouter'
-         ORDER BY COALESCE(c.is_default, false) DESC, c.id ASC
+            id AS badge_id,
+            COALESCE(NULLIF(BTRIM(api_key), ''), '') AS api_key,
+            COALESCE(NULLIF(BTRIM(label), ''), 'OpenRouter') AS label
+         FROM core_api_badge
+         WHERE NULLIF(BTRIM(api_key), '') IS NOT NULL
+         ORDER BY id ASC
          LIMIT 1",
         "SELECT
             id AS badge_id,
@@ -912,13 +862,7 @@ function resolveDwemerOpenRouterBadgeId(sql $db): int
 {
     $queries = [
         "SELECT id FROM core_api_badge WHERE LOWER(COALESCE(label, '')) = 'openrouter' ORDER BY id ASC LIMIT 1",
-        "SELECT b.id
-         FROM core_llm_connector c
-         LEFT JOIN core_api_badge b ON b.id = c.api_badge_id
-         WHERE LOWER(COALESCE(c.service, '')) = 'openrouter'
-           AND b.id IS NOT NULL
-         ORDER BY COALESCE(c.is_default, false) DESC, c.id ASC
-         LIMIT 1",
+        "SELECT id FROM core_api_badge WHERE LOWER(COALESCE(label, '')) LIKE '%openrouter%' ORDER BY id ASC LIMIT 1",
     ];
 
     foreach ($queries as $query) {
