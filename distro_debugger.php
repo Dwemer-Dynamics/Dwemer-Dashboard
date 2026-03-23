@@ -1067,6 +1067,7 @@ $chimLogSources = [
     [
         'id' => 'chim_core',
         'title' => 'CHIM Log (chim.log)',
+        'raw' => true,
         'candidates' => buildFileCandidates($herikaLogDirs, ['chim.log']),
     ],
     [
