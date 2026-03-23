@@ -1111,6 +1111,7 @@ $chimLogSources = [
     [
         'id' => 'chim_service',
         'title' => 'Service Log (service.log)',
+        'raw' => true,
         'candidates' => buildFileCandidates($herikaLogDirs, ['service.log']),
     ],
     [
