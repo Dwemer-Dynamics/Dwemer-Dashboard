@@ -1163,11 +1163,6 @@ $stobeLogSources = [
         'candidates' => buildFileCandidates($stobeLogDirs, ['output_to_plugin.log', 'ouput_to_plugin.log']),
     ],
     [
-        'id' => 'stobe_stt',
-        'title' => 'STT Input (stt.log)',
-        'candidates' => buildFileCandidates($stobeLogDirs, ['stt.log']),
-    ],
-    [
         'id' => 'stobe_audit_request_file',
         'title' => 'Audit Request File (audit_request.log)',
         'candidates' => buildFileCandidates($stobeLogDirs, ['audit_request.log']),
