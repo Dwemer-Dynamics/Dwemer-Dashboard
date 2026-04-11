@@ -37,6 +37,8 @@ if (!is_string($urlPrefix) || $urlPrefix === '/' || $urlPrefix === null) {
 $urlPrefix = rtrim($urlPrefix, '/');
 $dashboardWebRoot = ($urlPrefix !== '' ? $urlPrefix : '') . '/Dwemer-Dashboard';
 $webRoot = ($urlPrefix !== '' ? $urlPrefix : '') . '/HerikaServer';
+$dashboardDataPath = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR;
+$manualBackupDir = $dashboardDataPath . 'manualbackup' . DIRECTORY_SEPARATOR;
 
 require_once($herikaUiPath . 'profile_loader.php');
 
@@ -481,7 +483,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'restore_auto' && isset($_GET[
 // Handle import from server-side file
 if (isset($_POST['action']) && $_POST['action'] === 'import_from_server' && isset($_POST['server_file'])) {
     $serverFile = $_POST['server_file'];
-    $uploadsDir = $herikaUiPath . 'data' . DIRECTORY_SEPARATOR . 'manualbackup' . DIRECTORY_SEPARATOR;
+    $uploadsDir = $manualBackupDir;
     $fullPath = realpath($uploadsDir . basename($serverFile));
     
     // Security: ensure file is within uploads directory and has .sql extension
@@ -1622,8 +1624,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="instruction-box">
                 <h4 style="color: #4ade80; margin: 0 0 10px 0;">Instructions</h4>
                 <ol style="color: #f8f9fa; margin: 0; padding-left: 20px; font-size: 14px;">
-                    <li>Click [Open Server Folder] in CHIM.exe</li>
-                    <li>Navigate to: ui/data/manualbackup</li>
+                    <li>Click [Open Server Folder] in DwemerDistro.exe</li>
+                    <li>Navigate to: Dwemer-Dashboard/data/manualbackup</li>
                     <li>Copy your <code>backup.sql</code> backup file there</li>
                     <li>Refresh the page and select it from the list below and click Import. It may take a while to import so please don't refresh the page.</li>
                 </ol>
@@ -1632,7 +1634,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             <?php
             // Scan for SQL files in the manual backup directory
-            $uploadsDir = $herikaUiPath . 'data' . DIRECTORY_SEPARATOR . 'manualbackup' . DIRECTORY_SEPARATOR;
+            $uploadsDir = $manualBackupDir;
             if (!file_exists($uploadsDir)) {
                 mkdir($uploadsDir, 0755, true);
             }
@@ -1661,7 +1663,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="empty-state">
                     <div class="empty-state-icon">📁</div>
                     <p style="margin: 0; color: #ccc;">No SQL files found in manual backup directory.</p>
-                    <small style="color: #888; display: block; margin-top: 5px;">Place .sql files in ui/data/manualbackup folder to import them.</small>
+                    <small style="color: #888; display: block; margin-top: 5px;">Place .sql files in Dwemer-Dashboard/data/manualbackup to import them.</small>
                 </div>
             <?php endif; ?>
         </div>
