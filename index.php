@@ -37,16 +37,18 @@ $stobeUpdateStatus = 'unavailable';
 $stobeUpdateDetail = 'StobeServer path not found, DB update was not triggered.';
 $hasCustomBackground = file_exists(__DIR__ . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'background.jpg');
 
+require_once(__DIR__ . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'herika_profile_bootstrap.php');
+
 if ($herikaRoot !== '') {
     try {
         $herikaRunner = $herikaRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'apply_db_updates.php';
         $disableFunctions = strtolower(strval(ini_get('disable_functions') ?: ''));
         $canExec = function_exists('exec') && strpos($disableFunctions, 'exec') === false;
         $runHerikaDbUpdatesInline = static function () use ($herikaRoot): void {
-            require_once($herikaRoot . DIRECTORY_SEPARATOR . 'ui' . DIRECTORY_SEPARATOR . 'profile_loader.php');
+            dashboardBootstrapHerikaProfile($herikaRoot);
             $dbDriver = trim(strval($GLOBALS['DBDRIVER'] ?? ''));
             if ($dbDriver === '') {
-                throw new RuntimeException('DBDRIVER not set after profile_loader');
+                throw new RuntimeException('DBDRIVER not set after dashboard bootstrap');
             }
             require_once($herikaRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . $dbDriver . '.class.php');
             if (!isset($GLOBALS['db']) || !is_object($GLOBALS['db'])) {
@@ -216,6 +218,30 @@ if ($stobeRoot !== '') {
         $stobeUpdateDetail = 'StobeServer DB update trigger failed: ' . $errorSummary;
         error_log('[DwemerDashboard] Stobe DB update trigger failed: ' . $e->getMessage());
     }
+}
+
+if (
+    $herikaRoot !== '' &&
+    (
+        !isset($GLOBALS['DBDRIVER']) ||
+        trim(strval($GLOBALS['DBDRIVER'])) === '' ||
+        !class_exists('sql')
+    )
+) {
+    dashboardBootstrapHerikaProfile($herikaRoot);
+    $dbDriver = trim(strval($GLOBALS['DBDRIVER'] ?? ''));
+    if ($dbDriver !== '') {
+        require_once($herikaRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . $dbDriver . '.class.php');
+    }
+}
+
+if ($herikaRoot !== '' && class_exists('sql') && (!isset($GLOBALS['db']) || !is_object($GLOBALS['db']))) {
+    $GLOBALS['db'] = new sql();
+}
+
+require_once(__DIR__ . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'automatic_backup.php');
+if (function_exists('deferredDashboardAutomaticBackupInit')) {
+    deferredDashboardAutomaticBackupInit();
 }
 
 $dbUpdateLines = [

@@ -23,8 +23,6 @@ if ($herikaRoot === '') {
     exit;
 }
 
-$herikaUiPath = $herikaRoot . DIRECTORY_SEPARATOR . 'ui' . DIRECTORY_SEPARATOR;
-
 // Build URL prefixes for dashboard/herika links.
 $scriptPath = str_replace('\\', '/', strval($_SERVER['SCRIPT_NAME'] ?? '/Dwemer-Dashboard/database_manager.php'));
 if (preg_match('#^([A-Za-z]:[\\\\/]|/mnt/)#', $scriptPath) === 1) {
@@ -36,11 +34,13 @@ if (!is_string($urlPrefix) || $urlPrefix === '/' || $urlPrefix === null) {
 }
 $urlPrefix = rtrim($urlPrefix, '/');
 $dashboardWebRoot = ($urlPrefix !== '' ? $urlPrefix : '') . '/Dwemer-Dashboard';
+$dashboardSuccessUrl = $dashboardWebRoot . '/';
 $webRoot = ($urlPrefix !== '' ? $urlPrefix : '') . '/HerikaServer';
 $dashboardDataPath = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR;
 $manualBackupDir = $dashboardDataPath . 'manualbackup' . DIRECTORY_SEPARATOR;
 
-require_once($herikaUiPath . 'profile_loader.php');
+require_once(__DIR__ . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'herika_profile_bootstrap.php');
+dashboardBootstrapHerikaProfile($herikaRoot);
 
 $enginePath = $herikaRoot . DIRECTORY_SEPARATOR;
 
@@ -147,21 +147,644 @@ function formatVersionDate($version) {
     return $version;
 }
 
+function getDashboardBackupMarker(): string
+{
+    return '-- DWEMER_DASHBOARD_MULTI_DB_BACKUP_V1';
+}
+
+function getDashboardBackupDatabaseConfigs(bool $excludeDwemerSettings = false): array
+{
+    return [
+        [
+            'name' => 'dwemer',
+            'exclude_tables' => $excludeDwemerSettings ? ['chim_meta.settings'] : [],
+        ],
+        [
+            'name' => 'stobe',
+            'exclude_tables' => [],
+        ],
+    ];
+}
+
+function getBackupScopeSlugFromFlags(bool $includesDwemer, bool $includesStobe): string
+{
+    if ($includesDwemer && $includesStobe) {
+        return 'herikaserver_stobeserver';
+    }
+    if ($includesStobe) {
+        return 'stobeserver';
+    }
+    return 'herikaserver';
+}
+
+function backupFileContainsDatabaseSection(string $backupPath, string $databaseName): bool
+{
+    $needleDatabase = '-- database: ' . strtolower($databaseName);
+    $needleConnect = '\\connect ' . strtolower($databaseName);
+    $handle = @fopen($backupPath, 'rb');
+    if ($handle === false) {
+        return false;
+    }
+
+    $carry = '';
+    while (!feof($handle)) {
+        $chunk = fread($handle, 65536);
+        if ($chunk === false || $chunk === '') {
+            continue;
+        }
+        $haystack = strtolower($carry . $chunk);
+        if (strpos($haystack, $needleDatabase) !== false || strpos($haystack, $needleConnect) !== false) {
+            fclose($handle);
+            return true;
+        }
+        $carry = substr($haystack, -128);
+    }
+
+    fclose($handle);
+    return false;
+}
+
+function inspectBackupScope(string $backupPath, ?string $filename = null): array
+{
+    $resolvedName = trim(strval($filename ?? basename($backupPath)));
+    $lowerName = strtolower($resolvedName);
+    $includesDwemer = false;
+    $includesStobe = false;
+    $explicit = false;
+
+    $handle = @fopen($backupPath, 'rb');
+    if ($handle !== false) {
+        $lineCount = 0;
+        while (($line = fgets($handle)) !== false && $lineCount < 400) {
+            $lineCount++;
+            $trimmed = trim($line);
+            if ($trimmed === getDashboardBackupMarker()) {
+                $explicit = true;
+            }
+            if (preg_match('/^-- DATABASE:\s*dwemer\b/i', $trimmed) === 1 || preg_match('/^\\\\connect\s+dwemer\b/i', $trimmed) === 1) {
+                $includesDwemer = true;
+                $explicit = true;
+            }
+            if (preg_match('/^-- DATABASE:\s*stobe\b/i', $trimmed) === 1 || preg_match('/^\\\\connect\s+stobe\b/i', $trimmed) === 1) {
+                $includesStobe = true;
+                $explicit = true;
+            }
+            if ($includesDwemer && $includesStobe) {
+                break;
+            }
+        }
+        fclose($handle);
+    }
+
+    if (!$includesDwemer && backupFileContainsDatabaseSection($backupPath, 'dwemer')) {
+        $includesDwemer = true;
+        $explicit = true;
+    }
+    if (!$includesStobe && backupFileContainsDatabaseSection($backupPath, 'stobe')) {
+        $includesStobe = true;
+        $explicit = true;
+    }
+
+    if (
+        !$includesStobe &&
+        (
+            strpos($lowerName, 'stobe') !== false ||
+            strpos($lowerName, 'stobeserver') !== false
+        )
+    ) {
+        $includesStobe = true;
+    }
+    if (
+        !$includesDwemer &&
+        (
+            strpos($lowerName, 'dwemer') !== false ||
+            strpos($lowerName, 'herika') !== false ||
+            strpos($lowerName, 'herikaserver') !== false ||
+            strpos($lowerName, 'chim') !== false
+        )
+    ) {
+        $includesDwemer = true;
+    }
+
+    if (!$includesDwemer && !$includesStobe) {
+        $includesDwemer = true;
+    }
+
+    $scopeSlug = getBackupScopeSlugFromFlags($includesDwemer, $includesStobe);
+    if ($includesDwemer && $includesStobe) {
+        $scopeLabel = 'HerikaServer + StobeServer';
+        $scopeShortLabel = 'HerikaServer + StobeServer';
+        $badgeClass = 'backup-scope-both';
+    } elseif ($includesStobe) {
+        $scopeLabel = 'StobeServer only';
+        $scopeShortLabel = 'StobeServer';
+        $badgeClass = 'backup-scope-stobe';
+    } else {
+        $scopeLabel = $explicit ? 'HerikaServer only' : 'HerikaServer only (legacy)';
+        $scopeShortLabel = 'HerikaServer';
+        $badgeClass = 'backup-scope-herika';
+    }
+
+    return [
+        'includes_dwemer' => $includesDwemer,
+        'includes_stobe' => $includesStobe,
+        'scope_slug' => $scopeSlug,
+        'scope_label' => $scopeLabel,
+        'scope_short_label' => $scopeShortLabel,
+        'badge_class' => $badgeClass,
+        'explicit' => $explicit,
+    ];
+}
+
+function getBackupScopeSlugFromConfigs(array $databaseConfigs): string
+{
+    $includesDwemer = false;
+    $includesStobe = false;
+    foreach ($databaseConfigs as $config) {
+        $dbName = strtolower(trim(strval($config['name'] ?? '')));
+        if ($dbName === 'dwemer') {
+            $includesDwemer = true;
+        }
+        if ($dbName === 'stobe') {
+            $includesStobe = true;
+        }
+    }
+    return getBackupScopeSlugFromFlags($includesDwemer, $includesStobe);
+}
+
+function getBackupRestoreSuccessMessage(array $scope): string
+{
+    $includesDwemer = !empty($scope['includes_dwemer']);
+    $includesStobe = !empty($scope['includes_stobe']);
+
+    if ($includesDwemer && $includesStobe) {
+        return 'HerikaServer and STOBE databases restored successfully.';
+    }
+    if ($includesStobe) {
+        return 'STOBE database restored successfully.';
+    }
+    return 'HerikaServer database restored successfully.';
+}
+
+function appendFileToExistingFile(string $sourcePath, string $destPath): bool
+{
+    $readHandle = @fopen($sourcePath, 'rb');
+    if ($readHandle === false) {
+        return false;
+    }
+
+    $writeHandle = @fopen($destPath, 'ab');
+    if ($writeHandle === false) {
+        fclose($readHandle);
+        return false;
+    }
+
+    $copied = stream_copy_to_stream($readHandle, $writeHandle);
+    fclose($readHandle);
+    fclose($writeHandle);
+
+    return $copied !== false;
+}
+
+function createCombinedDatabaseBackupFile(
+    string $backupFile,
+    string $host,
+    string $port,
+    string $username,
+    array $databaseConfigs,
+    string &$errorMessage = ''
+): bool {
+    $header = getDashboardBackupMarker() . PHP_EOL . "\\set ON_ERROR_STOP on" . PHP_EOL;
+    if (@file_put_contents($backupFile, $header) === false) {
+        $errorMessage = 'Failed to initialize combined backup file.';
+        return false;
+    }
+
+    foreach ($databaseConfigs as $config) {
+        $dbName = trim(strval($config['name'] ?? ''));
+        if ($dbName === '') {
+            continue;
+        }
+
+        $sectionHeader = PHP_EOL . "-- DATABASE: {$dbName}" . PHP_EOL . "\\connect {$dbName}" . PHP_EOL;
+        if (@file_put_contents($backupFile, $sectionHeader, FILE_APPEND) === false) {
+            @unlink($backupFile);
+            $errorMessage = "Failed to write {$dbName} section header.";
+            return false;
+        }
+
+        $tmpFile = $backupFile . '.' . $dbName . '.tmp';
+        $excludeArgs = '';
+        $excludeTables = is_array($config['exclude_tables'] ?? null) ? $config['exclude_tables'] : [];
+        foreach ($excludeTables as $tableName) {
+            $tableName = trim(strval($tableName));
+            if ($tableName !== '') {
+                $excludeArgs .= ' -T ' . escapeshellarg($tableName);
+            }
+        }
+
+        $command = "HOME=/tmp pg_dump -h " . escapeshellarg($host)
+            . " -p " . escapeshellarg($port)
+            . " -U " . escapeshellarg($username)
+            . " -d " . escapeshellarg($dbName)
+            . $excludeArgs
+            . " > " . escapeshellarg($tmpFile) . " 2>&1";
+        $result = shell_exec($command);
+
+        if (!file_exists($tmpFile) || filesize($tmpFile) <= 0) {
+            @unlink($tmpFile);
+            @unlink($backupFile);
+            $errorMessage = "Backup creation failed for {$dbName}.";
+            if (is_string($result) && trim($result) !== '') {
+                $errorMessage .= ' ' . trim(substr($result, 0, 500));
+            }
+            return false;
+        }
+
+        $firstChunk = strval(@file_get_contents($tmpFile, false, null, 0, 256));
+        if (strpos($firstChunk, 'pg_dump: error:') !== false || strpos($firstChunk, 'FATAL:') !== false) {
+            @unlink($tmpFile);
+            @unlink($backupFile);
+            $errorMessage = "Backup creation failed for {$dbName}: " . trim(substr($firstChunk, 0, 500));
+            return false;
+        }
+
+        if (!appendFileToExistingFile($tmpFile, $backupFile)) {
+            @unlink($tmpFile);
+            @unlink($backupFile);
+            $errorMessage = "Failed to append {$dbName} dump into combined backup.";
+            return false;
+        }
+
+        @unlink($tmpFile);
+    }
+
+    return true;
+}
+
+function quotePgIdentifierForRestore(string $identifier): string
+{
+    return '"' . str_replace('"', '""', $identifier) . '"';
+}
+
+function resetDatabaseForRestore(
+    string $dbName,
+    string $host,
+    string $port,
+    string $username,
+    string $password,
+    string &$errorMessage = ''
+): bool {
+    $conn = @pg_connect("host={$host} port={$port} dbname={$dbName} user={$username} password={$password}");
+    if (!$conn) {
+        $errorMessage = "Failed to connect to {$dbName} database.";
+        return false;
+    }
+
+    $schemaResult = @pg_query(
+        $conn,
+        "SELECT schema_name
+         FROM information_schema.schemata
+         WHERE schema_name <> 'information_schema'
+           AND schema_name NOT LIKE 'pg_%'
+         ORDER BY CASE WHEN schema_name = 'public' THEN 1 ELSE 0 END, schema_name"
+    );
+
+    if (!$schemaResult) {
+        $errorMessage = "Failed to enumerate schemas for {$dbName}: " . trim(strval(@pg_last_error($conn)));
+        @pg_close($conn);
+        return false;
+    }
+
+    $schemas = [];
+    while ($row = @pg_fetch_assoc($schemaResult)) {
+        $schemaName = trim(strval($row['schema_name'] ?? ''));
+        if ($schemaName !== '') {
+            $schemas[] = $schemaName;
+        }
+    }
+    @pg_free_result($schemaResult);
+
+    foreach ($schemas as $schemaName) {
+        $dropSql = 'DROP SCHEMA IF EXISTS ' . quotePgIdentifierForRestore($schemaName) . ' CASCADE';
+        if (!@pg_query($conn, $dropSql)) {
+            $errorMessage = "Failed to drop schema {$schemaName} in {$dbName}: " . trim(strval(@pg_last_error($conn)));
+            @pg_close($conn);
+            return false;
+        }
+    }
+
+    if (!@pg_query($conn, 'CREATE SCHEMA public')) {
+        $errorMessage = "Failed to recreate public schema in {$dbName}: " . trim(strval(@pg_last_error($conn)));
+        @pg_close($conn);
+        return false;
+    }
+
+    @pg_close($conn);
+    return true;
+}
+
+function restoreDatabaseBackupFile(
+    string $backupPath,
+    string $host,
+    string $port,
+    string $username,
+    string $password,
+    string &$errorMessage = ''
+): bool {
+    $scope = inspectBackupScope($backupPath);
+    $restoreTargets = [];
+    if (!empty($scope['includes_dwemer'])) {
+        $restoreTargets[] = 'dwemer';
+    }
+    if (!empty($scope['includes_stobe'])) {
+        $restoreTargets[] = 'stobe';
+    }
+    if (empty($restoreTargets)) {
+        $restoreTargets[] = 'dwemer';
+    }
+
+    foreach ($restoreTargets as $targetDb) {
+        if (!resetDatabaseForRestore($targetDb, $host, $port, $username, $password, $errorMessage)) {
+            return false;
+        }
+    }
+
+    $primaryDb = !empty($scope['includes_dwemer']) ? 'dwemer' : 'stobe';
+
+    $psqlCommand = "PGPASSWORD=" . escapeshellarg($password)
+        . " psql -h " . escapeshellarg($host)
+        . " -p " . escapeshellarg($port)
+        . " -U " . escapeshellarg($username)
+        . " -d " . escapeshellarg($primaryDb)
+        . " -v ON_ERROR_STOP=1 -f " . escapeshellarg($backupPath);
+
+    $output = [];
+    $returnVar = 0;
+    exec($psqlCommand, $output, $returnVar);
+
+    if ($returnVar !== 0) {
+        $errorMessage = implode("\n", $output);
+        return false;
+    }
+
+    return true;
+}
+
+function runDatabaseMaintenanceCommand(
+    string $dbName,
+    string $host,
+    string $port,
+    string $username,
+    string $password,
+    string &$outputText = ''
+): bool {
+    $command = "PGPASSWORD=" . escapeshellarg($password)
+        . " psql -h " . escapeshellarg($host)
+        . " -p " . escapeshellarg($port)
+        . " -U " . escapeshellarg($username)
+        . " -d " . escapeshellarg($dbName)
+        . " -v ON_ERROR_STOP=1 -c "
+        . escapeshellarg("VACUUM FULL ANALYZE;");
+
+    $output = [];
+    $returnVar = 0;
+    exec($command . " 2>&1", $output, $returnVar);
+    $outputText = trim(implode(PHP_EOL, $output));
+    return $returnVar === 0;
+}
+
+function renderDatabaseMaintenanceResultsAndExit(array $results): void
+{
+    $allSuccessful = true;
+    foreach ($results as $result) {
+        if (empty($result['ok'])) {
+            $allSuccessful = false;
+            break;
+        }
+    }
+
+    echo "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Database Maintenance</title>";
+    echo "<style>
+        body{font-family:Arial,sans-serif;background:#1f1f1f;color:#f5f5f5;padding:24px;}
+        .wrap{max-width:900px;margin:0 auto;}
+        .card{background:#2a2a2a;border:1px solid #3a3a3a;border-radius:10px;padding:18px;margin-bottom:16px;}
+        .ok{color:#4ade80;}
+        .err{color:#f87171;}
+        pre{background:#111827;color:#e5e7eb;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap;}
+        .actions{margin-top:20px;display:flex;gap:12px;flex-wrap:wrap;}
+        button{background:#2563eb;color:white;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;}
+    </style></head><body><div class='wrap'>";
+    echo "<h2>Database Maintenance Complete</h2>";
+    echo "<p>" . ($allSuccessful ? "VACUUM FULL ANALYZE finished for all selected databases." : "One or more maintenance operations failed.") . "</p>";
+
+    foreach ($results as $result) {
+        $dbLabel = htmlspecialchars(strval($result['label'] ?? $result['db'] ?? 'Database'));
+        $statusClass = !empty($result['ok']) ? 'ok' : 'err';
+        $statusText = !empty($result['ok']) ? 'Success' : 'Failed';
+        echo "<div class='card'>";
+        echo "<h3>{$dbLabel}</h3>";
+        echo "<p class='{$statusClass}'><strong>{$statusText}</strong></p>";
+        $outputText = trim(strval($result['output'] ?? ''));
+        if ($outputText !== '') {
+            echo "<pre>" . htmlspecialchars($outputText) . "</pre>";
+        }
+        echo "</div>";
+    }
+
+    echo "<div class='actions'><button onclick='window.close()'>Close</button></div>";
+    echo "</div></body></html>";
+    exit;
+}
+
+function resetDatabaseSchemaToPublic(
+    string $dbName,
+    string $host,
+    string $port,
+    string $username,
+    string $password,
+    string &$outputText = ''
+): bool {
+    $command = "PGPASSWORD=" . escapeshellarg($password)
+        . " psql -h " . escapeshellarg($host)
+        . " -p " . escapeshellarg($port)
+        . " -U " . escapeshellarg($username)
+        . " -d " . escapeshellarg($dbName)
+        . " -v ON_ERROR_STOP=1 -c "
+        . escapeshellarg("DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;");
+
+    $output = [];
+    $returnVar = 0;
+    exec($command . " 2>&1", $output, $returnVar);
+    $outputText = trim(implode(PHP_EOL, $output));
+    return $returnVar === 0;
+}
+
+function runPhpScriptAndCapture(string $scriptPath, string &$outputText = ''): bool
+{
+    $phpCandidates = [];
+    $phpBinary = trim(strval(PHP_BINARY ?? ''));
+    if ($phpBinary !== '') {
+        $phpCandidates[] = $phpBinary;
+    }
+    $phpCandidates[] = '/usr/bin/php';
+    $phpCandidates[] = '/usr/local/bin/php';
+    $phpCandidates[] = 'php';
+    $phpCandidates = array_values(array_unique(array_filter($phpCandidates, static function ($candidate) {
+        return trim(strval($candidate)) !== '';
+    })));
+
+    foreach ($phpCandidates as $candidate) {
+        $output = [];
+        $returnVar = 0;
+        $command = escapeshellarg($candidate) . ' ' . escapeshellarg($scriptPath) . ' 2>&1';
+        exec($command, $output, $returnVar);
+        $outputText = trim(implode(PHP_EOL, $output));
+        if ($returnVar === 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function renderFactoryResetResultsAndExit(array $results): void
+{
+    $allSuccessful = true;
+    foreach ($results as $result) {
+        if (empty($result['ok'])) {
+            $allSuccessful = false;
+            break;
+        }
+    }
+
+    echo "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Factory Reset</title>";
+    echo "<style>
+        body{font-family:Arial,sans-serif;background:#1f1f1f;color:#f5f5f5;padding:24px;}
+        .wrap{max-width:980px;margin:0 auto;}
+        .card{background:#2a2a2a;border:1px solid #3a3a3a;border-radius:10px;padding:18px;margin-bottom:16px;}
+        .ok{color:#4ade80;}
+        .err{color:#f87171;}
+        pre{background:#111827;color:#e5e7eb;padding:12px;border-radius:8px;overflow:auto;white-space:pre-wrap;}
+        button{background:#2563eb;color:white;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;}
+    </style></head><body><div class='wrap'>";
+    echo "<h2>Factory Reset Complete</h2>";
+    echo "<p>" . ($allSuccessful ? "HerikaServer and StobeServer databases were reset and rebuilt." : "One or more reset steps failed.") . "</p>";
+
+    foreach ($results as $result) {
+        $label = htmlspecialchars(strval($result['label'] ?? 'Step'));
+        $statusClass = !empty($result['ok']) ? 'ok' : 'err';
+        $statusText = !empty($result['ok']) ? 'Success' : 'Failed';
+        echo "<div class='card'>";
+        echo "<h3>{$label}</h3>";
+        echo "<p class='{$statusClass}'><strong>{$statusText}</strong></p>";
+        $outputText = trim(strval($result['output'] ?? ''));
+        if ($outputText !== '') {
+            echo "<pre>" . htmlspecialchars($outputText) . "</pre>";
+        }
+        echo "</div>";
+    }
+
+    echo "<div><button onclick='window.close()'>Close</button></div>";
+    echo "</div></body></html>";
+    exit;
+}
 
 
-// Include automatic backup management
-require_once($rootPath . "lib" . DIRECTORY_SEPARATOR . "automatic_backup.php");
+
+// Include dashboard-owned automatic backup management
+require_once(__DIR__ . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'automatic_backup.php');
+
+if (function_exists('deferredDashboardAutomaticBackupInit')) {
+    deferredDashboardAutomaticBackupInit();
+}
+
+if (isset($_GET['action']) && $_GET['action'] === 'maintenance') {
+    $maintenanceResults = [];
+    foreach (
+        [
+            ['db' => 'dwemer', 'label' => 'HerikaServer'],
+            ['db' => 'stobe', 'label' => 'StobeServer'],
+        ] as $target
+    ) {
+        $maintenanceOutput = '';
+        $ok = runDatabaseMaintenanceCommand(
+            strval($target['db']),
+            $host,
+            $port,
+            $username,
+            $password,
+            $maintenanceOutput
+        );
+        $maintenanceResults[] = [
+            'db' => $target['db'],
+            'label' => $target['label'],
+            'ok' => $ok,
+            'output' => $maintenanceOutput,
+        ];
+    }
+    renderDatabaseMaintenanceResultsAndExit($maintenanceResults);
+}
+
+if (isset($_GET['action']) && $_GET['action'] === 'factory_reset') {
+    $factoryResults = [];
+    $factoryResetTarget = strtolower(trim(strval($_GET['target'] ?? 'all')));
+    $targets = [];
+    if ($factoryResetTarget === 'herika') {
+        $targets[] = [
+            'db' => 'dwemer',
+            'label' => 'HerikaServer',
+            'runner' => $herikaRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'apply_db_updates.php',
+        ];
+    } elseif ($factoryResetTarget === 'stobe') {
+        $targets[] = [
+            'db' => 'stobe',
+            'label' => 'StobeServer',
+            'runner' => dirname($herikaRoot) . DIRECTORY_SEPARATOR . 'StobeServer' . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'run_db_updates.php',
+        ];
+    } else {
+        $targets[] = [
+            'db' => 'dwemer',
+            'label' => 'HerikaServer',
+            'runner' => $herikaRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'apply_db_updates.php',
+        ];
+        $targets[] = [
+            'db' => 'stobe',
+            'label' => 'StobeServer',
+            'runner' => dirname($herikaRoot) . DIRECTORY_SEPARATOR . 'StobeServer' . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'run_db_updates.php',
+        ];
+    }
+
+    foreach ($targets as $target) {
+        $resetOutput = '';
+        $resetOk = resetDatabaseSchemaToPublic(
+            strval($target['db']),
+            $host,
+            $port,
+            $username,
+            $password,
+            $resetOutput
+        );
+        if ($resetOk) {
+            $resetOk = runPhpScriptAndCapture(strval($target['runner']), $resetOutput);
+        }
+        $factoryResults[] = [
+            'label' => $target['label'],
+            'ok' => $resetOk,
+            'output' => $resetOutput,
+        ];
+    }
+
+    renderFactoryResetResultsAndExit($factoryResults);
+}
 
 // Handle Automatic Backup settings (enable/disable and retention) BEFORE rendering (PRG pattern)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_auto_backup_settings') {
     try {
         $enabled = isset($_POST['auto_enabled']) ? 'true' : 'false';
         $maxKeep = max(1, min(10, intval($_POST['auto_max'] ?? 5)));
-        // Persist into chim_meta.settings
-        $db->execQuery("CREATE SCHEMA IF NOT EXISTS chim_meta");
-        $db->execQuery("CREATE TABLE IF NOT EXISTS chim_meta.settings (key TEXT PRIMARY KEY, value TEXT)");
-        $db->upsertRowOnConflict('chim_meta.settings', ['key'=>'AUTOMATIC_DATABASE_BACKUPS','value'=>$enabled], 'key');
-        $db->upsertRowOnConflict('chim_meta.settings', ['key'=>'AUTOMATIC_BACKUP_MAX_COUNT','value'=>(string)$maxKeep], 'key');
+        dashboardWriteSettingValue($db, 'AUTOMATIC_DATABASE_BACKUPS', $enabled);
+        dashboardWriteSettingValue($db, 'AUTOMATIC_BACKUP_MAX_COUNT', (string)$maxKeep);
     } catch (Throwable $e) {
         // swallow and continue to redirect, errors will be visible in logs
     }
@@ -178,16 +801,14 @@ $autoEnabled = false;
 $currentMax = 5;
 try {
     $dbMeta = new sql();
-    $dbMeta->execQuery("CREATE SCHEMA IF NOT EXISTS chim_meta");
-    $dbMeta->execQuery("CREATE TABLE IF NOT EXISTS chim_meta.settings (key TEXT PRIMARY KEY, value TEXT)");
-    $rowEn = $dbMeta->fetchOne("SELECT value FROM chim_meta.settings WHERE key='AUTOMATIC_DATABASE_BACKUPS'");
-    if (is_array($rowEn) && isset($rowEn['value'])) {
-        $val = strtolower(trim((string)$rowEn['value']));
+    $rowEn = dashboardReadSettingValue($dbMeta, 'AUTOMATIC_DATABASE_BACKUPS');
+    if ($rowEn !== null) {
+        $val = strtolower(trim($rowEn));
         $autoEnabled = in_array($val, ['true','1','yes','on'], true);
     }
-    $rowMax = $dbMeta->fetchOne("SELECT value FROM chim_meta.settings WHERE key='AUTOMATIC_BACKUP_MAX_COUNT'");
-    if (is_array($rowMax) && isset($rowMax['value'])) {
-        $v = intval(trim((string)$rowMax['value']));
+    $rowMax = dashboardReadSettingValue($dbMeta, 'AUTOMATIC_BACKUP_MAX_COUNT');
+    if ($rowMax !== null) {
+        $v = intval(trim($rowMax));
         if ($v >= 1 && $v <= 10) { $currentMax = $v; }
     }
 } catch (Throwable $e) {}
@@ -196,17 +817,15 @@ try {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'toggle_auto_enabled') {
     try {
         $dbMeta2 = new sql();
-        $dbMeta2->execQuery("CREATE SCHEMA IF NOT EXISTS chim_meta");
-        $dbMeta2->execQuery("CREATE TABLE IF NOT EXISTS chim_meta.settings (key TEXT PRIMARY KEY, value TEXT)");
         // Read current value and invert
-        $rowEn2 = $dbMeta2->fetchOne("SELECT value FROM chim_meta.settings WHERE key='AUTOMATIC_DATABASE_BACKUPS'");
         $cur = 'false';
-        if (is_array($rowEn2) && isset($rowEn2['value'])) {
-            $val2 = strtolower(trim((string)$rowEn2['value']));
+        $rowEn2 = dashboardReadSettingValue($dbMeta2, 'AUTOMATIC_DATABASE_BACKUPS');
+        if ($rowEn2 !== null) {
+            $val2 = strtolower(trim($rowEn2));
             $cur = (in_array($val2, ['true','1','yes','on'], true)) ? 'true' : 'false';
         }
         $new = ($cur === 'true') ? 'false' : 'true';
-        $dbMeta2->upsertRowOnConflict('chim_meta.settings', ['key'=>'AUTOMATIC_DATABASE_BACKUPS','value'=>$new], 'key');
+        dashboardWriteSettingValue($dbMeta2, 'AUTOMATIC_DATABASE_BACKUPS', $new);
     } catch (Throwable $e) {}
     $qs = $_SERVER['QUERY_STRING'] ?? '';
     $redirectUrl = ($_SERVER['PHP_SELF'] ?? 'database_manager.php') . ($qs ? ('?' . $qs) : '');
@@ -218,9 +837,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     try {
         $maxKeep = max(1, min(10, intval($_POST['auto_max'] ?? 5)));
         $dbMeta3 = new sql();
-        $dbMeta3->execQuery("CREATE SCHEMA IF NOT EXISTS chim_meta");
-        $dbMeta3->execQuery("CREATE TABLE IF NOT EXISTS chim_meta.settings (key TEXT PRIMARY KEY, value TEXT)");
-        $dbMeta3->upsertRowOnConflict('chim_meta.settings', ['key'=>'AUTOMATIC_BACKUP_MAX_COUNT','value'=>(string)$maxKeep], 'key');
+        dashboardWriteSettingValue($dbMeta3, 'AUTOMATIC_BACKUP_MAX_COUNT', (string)$maxKeep);
     } catch (Throwable $e) {}
     $redirectUrl = $_SERVER['REQUEST_URI'] ?? ($_SERVER['PHP_SELF'] ?? 'database_manager.php');
     header('Location: ' . $redirectUrl);
@@ -330,7 +947,7 @@ if (
 }
 // Handle download automatic backup
 if (isset($_GET['action']) && $_GET['action'] === 'download_auto' && isset($_GET['filename'])) {
-    $autoBackup = new AutomaticBackup();
+    $autoBackup = new DashboardAutomaticBackup();
     $filename = $_GET['filename'];
     
     // Security check
@@ -378,7 +995,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'download_auto' && isset($_GET
 
 // Handle delete automatic backup
 if (isset($_GET['action']) && $_GET['action'] === 'delete_auto' && isset($_GET['filename'])) {
-    $autoBackup = new AutomaticBackup();
+    $autoBackup = new DashboardAutomaticBackup();
     $filename = $_GET['filename'];
     
     // Security check
@@ -396,7 +1013,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete_auto' && isset($_GET['
 
 // Handle restore from automatic backup
 if (isset($_GET['action']) && $_GET['action'] === 'restore_auto' && isset($_GET['filename'])) {
-    $autoBackup = new AutomaticBackup();
+    $autoBackup = new DashboardAutomaticBackup();
     $filename = $_GET['filename'];
     
     // Security check
@@ -413,64 +1030,28 @@ if (isset($_GET['action']) && $_GET['action'] === 'restore_auto' && isset($_GET[
         }
         
         if ($validFile && file_exists($backupPath)) {
-            // Proceed with database restore using the automatic backup
-            $conn = pg_connect("host=$host port=$port dbname=$dbname user=$username password=$password");
-            
-            if (!$conn) {
-                $message .= "<p><strong>Error:</strong> Failed to connect to database: " . pg_last_error() . "</p>";
+            $backupScope = inspectBackupScope($backupPath, $filename);
+            $restoreError = '';
+            if (!restoreDatabaseBackupFile($backupPath, $host, $port, $username, $password, $restoreError)) {
+                $message .= "<p><strong>Error:</strong> Failed to restore from automatic backup.</p>";
+                if ($restoreError !== '') {
+                    $message .= '<pre>' . htmlspecialchars($restoreError) . '</pre>';
+                }
             } else {
-                // Drop and recreate database schemas and extensions
-                $Q = array();
-                $Q[] = "DROP SCHEMA IF EXISTS $schema CASCADE";
-                $Q[] = "DROP EXTENSION IF EXISTS vector CASCADE";
-                $Q[] = "DROP EXTENSION IF EXISTS pg_trgm CASCADE";
-                $Q[] = "CREATE SCHEMA $schema";
-                $Q[] = "CREATE EXTENSION vector";
-                $Q[] = "CREATE EXTENSION IF NOT EXISTS pg_trgm";
-
-                $errorOccurred = false;
-
-                foreach ($Q as $QS) {
-                    $r = pg_query($conn, $QS);
-                    if (!$r) {
-                        $message .= "<p>Error executing query: " . pg_last_error($conn) . "</p>";
-                        $errorOccurred = true;
-                        break;
-                    } else {
-                        $message .= "<p>$QS executed successfully.</p>";
-                    }
-                }
-
-                if (!$errorOccurred) {
-                    // Command to import SQL file using psql
-                    $psqlCommand = "PGPASSWORD=" . escapeshellarg($password) . " psql -h " . escapeshellarg($host) . " -p " . escapeshellarg($port) . " -U " . escapeshellarg($username) . " -d " . escapeshellarg($dbname) . " -f " . escapeshellarg($backupPath);
-
-                    // Execute psql command
-                    $output = [];
-                    $returnVar = 0;
-                    exec($psqlCommand, $output, $returnVar);
-
-                    if ($returnVar !== 0) {
-                        $message .= "<p>Failed to restore from automatic backup.</p>";
-                        $message .= '<pre>' . htmlspecialchars(implode("\n", $output)) . '</pre>';
-                    } else {
-                        // In embedded mode: show success message and redirect parent (config hub) after short delay
-                        echo "<script type='text/javascript'>\n".
-                             "  try {\n".
-                             "    const msg = 'Database restored successfully from automatic backup.';\n".
-                             "    if (window.top && window.top !== window) {\n".
-                             "      window.top.postMessage({type:'toast', message: msg}, '*');\n".
-                             "      setTimeout(function(){ window.top.location.href = '".$webRoot."/ui/home.php'; }, 1200);\n".
-                             "    } else {\n".
-                             "      alert(msg);\n".
-                             "      setTimeout(function(){ window.location.href = '".$webRoot."/ui/home.php'; }, 1200);\n".
-                             "    }\n".
-                             "  } catch(e) { window.location.href = '".$webRoot."/ui/home.php'; }\n".
-                             "</script>";
-                        exit;
-                    }
-                }
-                pg_close($conn);
+                $successMessage = getBackupRestoreSuccessMessage($backupScope);
+                echo "<script type='text/javascript'>\n".
+                     "  try {\n".
+                     "    const msg = " . json_encode($successMessage) . ";\n".
+                     "    if (window.top && window.top !== window) {\n".
+                     "      window.top.postMessage({type:'toast', message: msg}, '*');\n".
+                     "      setTimeout(function(){ window.top.location.href = '".$dashboardSuccessUrl."'; }, 1200);\n".
+                     "    } else {\n".
+                     "      alert(msg);\n".
+                     "      setTimeout(function(){ window.location.href = '".$dashboardSuccessUrl."'; }, 1200);\n".
+                     "    }\n".
+                     "  } catch(e) { window.location.href = '".$dashboardSuccessUrl."'; }\n".
+                     "</script>";
+                exit;
             }
         } else {
             $message = "<p><strong>Error:</strong> Invalid backup file specified.</p>";
@@ -488,66 +1069,28 @@ if (isset($_POST['action']) && $_POST['action'] === 'import_from_server' && isse
     
     // Security: ensure file is within uploads directory and has .sql extension
     if ($fullPath && strpos($fullPath, realpath($uploadsDir)) === 0 && pathinfo($fullPath, PATHINFO_EXTENSION) === 'sql' && file_exists($fullPath)) {
-        // Connect to the database
-        $conn = pg_connect("host=$host port=$port dbname=$dbname user=$username password=$password");
-        
-        if (!$conn) {
-            $message .= "<p><strong>Error:</strong> Failed to connect to database: " . pg_last_error() . "</p>";
+        $backupScope = inspectBackupScope($fullPath, $serverFile);
+        $restoreError = '';
+        if (!restoreDatabaseBackupFile($fullPath, $host, $port, $username, $password, $restoreError)) {
+            $message .= "<p><strong>Error:</strong> Failed to import SQL file.</p>";
+            if ($restoreError !== '') {
+                $message .= '<pre>' . htmlspecialchars($restoreError) . '</pre>';
+            }
         } else {
-            // Drop and recreate database schemas and extensions
-            $Q = array();
-            $Q[] = "DROP SCHEMA IF EXISTS $schema CASCADE";
-            $Q[] = "DROP SCHEMA IF EXISTS chim_meta CASCADE";
-            $Q[] = "DROP EXTENSION IF EXISTS vector CASCADE";
-            $Q[] = "DROP EXTENSION IF EXISTS pg_trgm CASCADE";
-            $Q[] = "CREATE SCHEMA $schema";
-            $Q[] = "CREATE SCHEMA chim_meta";
-            $Q[] = "CREATE EXTENSION vector";
-            $Q[] = "CREATE EXTENSION IF NOT EXISTS pg_trgm";
-
-            $errorOccurred = false;
-
-            foreach ($Q as $QS) {
-                $r = pg_query($conn, $QS);
-                if (!$r) {
-                    $message .= "<p>Error executing query: " . pg_last_error($conn) . "</p>";
-                    $errorOccurred = true;
-                    break;
-                } else {
-                    $message .= "<p>$QS executed successfully.</p>";
-                }
-            }
-
-            if (!$errorOccurred) {
-                // Command to import SQL file using psql
-                $psqlCommand = "PGPASSWORD=" . escapeshellarg($password) . " psql -h " . escapeshellarg($host) . " -p " . escapeshellarg($port) . " -U " . escapeshellarg($username) . " -d " . escapeshellarg($dbname) . " -f " . escapeshellarg($fullPath);
-
-                // Execute psql command
-                $output = [];
-                $returnVar = 0;
-                exec($psqlCommand, $output, $returnVar);
-
-                if ($returnVar !== 0) {
-                    $message .= "<p><strong>Error:</strong> Failed to import SQL file.</p>";
-                    $message .= '<pre>' . htmlspecialchars(implode("\n", $output)) . '</pre>';
-                } else {
-                    // Success - redirect with message
-                    echo "<script type='text/javascript'>\n".
-                         "  try {\n".
-                         "    const msg = 'Database restored successfully from server file.';\n".
-                         "    if (window.top && window.top !== window) {\n".
-                         "      window.top.postMessage({type:'toast', message: msg}, '*');\n".
-                         "      setTimeout(function(){ window.top.location.href = '".$webRoot."/ui/home.php'; }, 1200);\n".
-                         "    } else {\n".
-                         "      alert(msg);\n".
-                         "      setTimeout(function(){ window.location.href = '".$webRoot."/ui/home.php'; }, 1200);\n".
-                         "    }\n".
-                         "  } catch(e) { window.location.href = '".$webRoot."/ui/home.php'; }\n".
-                         "</script>";
-                    exit;
-                }
-            }
-            pg_close($conn);
+            $successMessage = getBackupRestoreSuccessMessage($backupScope);
+            echo "<script type='text/javascript'>\n".
+                 "  try {\n".
+                 "    const msg = " . json_encode($successMessage) . ";\n".
+                 "    if (window.top && window.top !== window) {\n".
+                 "      window.top.postMessage({type:'toast', message: msg}, '*');\n".
+                 "      setTimeout(function(){ window.top.location.href = '".$dashboardSuccessUrl."'; }, 1200);\n".
+                 "    } else {\n".
+                 "      alert(msg);\n".
+                 "      setTimeout(function(){ window.location.href = '".$dashboardSuccessUrl."'; }, 1200);\n".
+                 "    }\n".
+                 "  } catch(e) { window.location.href = '".$dashboardSuccessUrl."'; }\n".
+                 "</script>";
+            exit;
         }
     } else {
         $message = "<p><strong>Error:</strong> Invalid file selected or file does not exist.</p>";
@@ -558,21 +1101,30 @@ if (isset($_POST['action']) && $_POST['action'] === 'import_from_server' && isse
 if (isset($_GET['action']) && $_GET['action'] === 'backup') {
     try {
         // Create authentication setup (same as AutomaticBackup class)
-        $pgpassResult = shell_exec('echo "localhost:5432:dwemer:dwemer:dwemer" > /tmp/.pgpass; echo $?');
+        $pgpassResult = shell_exec('echo "localhost:5432:*:dwemer:dwemer" > /tmp/.pgpass; echo $?');
         $chmodResult = shell_exec('chmod 600 /tmp/.pgpass; echo $?');
         
-        $filename = "manual_backup_" . date("Y-m-d_H-i-s") . ".sql";
-        $backupFile = $rootPath . 'data/export_' . $filename;
-        
-        // Execute pg_dump with direct file output to avoid memory issues
-        $command = "HOME=/tmp pg_dump -d dwemer -U dwemer -h localhost > " . escapeshellarg($backupFile) . " 2>&1";
-        $result = shell_exec($command);
-        
-        // pg_dump writes directly to file, so we don't need to handle output in memory
-        
-        // Check if backup was created successfully
-        if (file_exists($backupFile) && filesize($backupFile) > 0) {
+        $generatedScopeSlug = getBackupScopeSlugFromConfigs(getDashboardBackupDatabaseConfigs(false));
+        $filename = "manual_backup_" . $generatedScopeSlug . "_" . date("Y-m-d_H-i-s") . ".sql";
+        if (!is_dir($dashboardDataPath)) {
+            mkdir($dashboardDataPath, 0755, true);
+        }
+        $backupFile = $dashboardDataPath . 'export_' . $filename;
+
+        $backupError = '';
+        $backupCreated = createCombinedDatabaseBackupFile(
+            $backupFile,
+            $host,
+            $port,
+            $username,
+            getDashboardBackupDatabaseConfigs(false),
+            $backupError
+        );
+
+        if ($backupCreated && file_exists($backupFile) && filesize($backupFile) > 0) {
+            clearstatcache(true, $backupFile);
             $fileSize = filesize($backupFile);
+            $generatedScope = inspectBackupScope($backupFile, $filename);
             
             // Check if the file contains error messages instead of actual backup data
             $firstLine = file_get_contents($backupFile, false, null, 0, 100);
@@ -582,10 +1134,14 @@ if (isset($_GET['action']) && $_GET['action'] === 'backup') {
                 if (file_exists($backupFile)) {
                     unlink($backupFile);
                 }
+            } elseif (empty($generatedScope['includes_dwemer']) || empty($generatedScope['includes_stobe'])) {
+                $message = "<p><strong>Error:</strong> Manual backup validation failed.</p>";
+                $message .= "<p>Expected a combined HerikaServer + StobeServer backup, but detected: <strong>" . htmlspecialchars(strval($generatedScope['scope_label'] ?? 'unknown')) . "</strong>.</p>";
+                $message .= "<p>The generated SQL file was not downloaded.</p>";
             } else {
                 // Successful backup - force download (streamed)
                 header('Content-Type: application/octet-stream');
-                header('Content-Disposition: attachment; filename="dwemer_backup_' . $filename . '"');
+                header('Content-Disposition: attachment; filename="' . $filename . '"');
                 header('Content-Length: ' . $fileSize);
                 header('Cache-Control: must-revalidate');
                 header('Pragma: public');
@@ -611,9 +1167,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'backup') {
             }
         } else {
             $message = "<p><strong>Error:</strong> Backup creation failed or file is empty.</p>";
-            if ($result) {
-                $message .= "<p><strong>pg_dump output:</strong></p>";
-                $message .= "<pre>" . htmlspecialchars(substr($result, 0, 1000)) . "</pre>";
+            if ($backupError !== '') {
+                $message .= "<pre>" . htmlspecialchars(substr($backupError, 0, 1000)) . "</pre>";
             }
         }
         
@@ -651,67 +1206,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Move the file to the destination directory with the new name
             if (move_uploaded_file($fileTmpPath, $destPath)) {
-                // Proceed to restore the database
-                // Connect to the database
-                $conn = pg_connect("host=$host port=$port dbname=$dbname user=$username password=$password");
-
-                if (!$conn) {
-                    $message .= "<p>Failed to connect to database: " . pg_last_error() . "</p>";
+                $backupScope = inspectBackupScope($destPath, $fileName);
+                $restoreError = '';
+                if (!restoreDatabaseBackupFile($destPath, $host, $port, $username, $password, $restoreError)) {
+                    $message .= "<p>Failed to import SQL file.</p>";
+                    if ($restoreError !== '') {
+                        $message .= '<pre>' . htmlspecialchars($restoreError) . '</pre>';
+                    }
                 } else {
-                    // Drop and recreate database schemas and extensions
-                    $Q = array();
-                    $Q[] = "DROP SCHEMA IF EXISTS $schema CASCADE";
-                    $Q[] = "DROP SCHEMA IF EXISTS chim_meta CASCADE";
-                    $Q[] = "DROP EXTENSION IF EXISTS vector CASCADE";
-                    $Q[] = "DROP EXTENSION IF EXISTS pg_trgm CASCADE";
-                    $Q[] = "CREATE SCHEMA $schema";
-                    $Q[] = "CREATE SCHEMA chim_meta";
-                    $Q[] = "CREATE EXTENSION vector";
-                    $Q[] = "CREATE EXTENSION IF NOT EXISTS pg_trgm";
-
-                    $errorOccurred = false;
-
-                    foreach ($Q as $QS) {
-                        $r = pg_query($conn, $QS);
-                        if (!$r) {
-                            $message .= "<p>Error executing query: " . pg_last_error($conn) . "</p>";
-                            $errorOccurred = true;
-                            break;
-                        } else {
-                            $message .= "<p>$QS executed successfully.</p>";
-                        }
-                    }
-
-                    if (!$errorOccurred) {
-                        // Path to SQL file to import
-                        $sqlFile = $destPath;
-
-                        // Command to import SQL file using psql
-                        $psqlCommand = "PGPASSWORD=" . escapeshellarg($password) . " psql -h " . escapeshellarg($host) . " -p " . escapeshellarg($port) . " -U " . escapeshellarg($username) . " -d " . escapeshellarg($dbname) . " -f " . escapeshellarg($sqlFile);
-
-                        // Execute psql command
-                        $output = [];
-                        $returnVar = 0;
-                        exec($psqlCommand, $output, $returnVar);
-
-                        if ($returnVar !== 0) {
-                            $message .= "<p>Failed to import SQL file.</p>";
-                            $message .= '<pre>' . htmlspecialchars(implode("\n", $output)) . '</pre>';
-                        } else {
-                            $message .= "<p>SQL file imported successfully.</p>";
-                            $message .= '<pre>' . htmlspecialchars(implode("\n", $output)) . '</pre>';
-                            $message .= "<p>Import completed.</p>";
-
-                            // Provide a clickable link and popup message
-                            $redirectUrl = $webRoot . '/ui/home.php';
-                            $message .= "<script type='text/javascript'>
-                                            alert('Database restored successfully.');
-                                         </script>";
-                        }
-                    }
-
-                    // Close the database connection
-                    pg_close($conn);
+                    $message .= "<p>" . htmlspecialchars(getBackupRestoreSuccessMessage($backupScope)) . "</p>";
+                    $message .= "<p>Import completed.</p>";
+                    $message .= "<script type='text/javascript'>\n".
+                                "  const msg = " . json_encode(getBackupRestoreSuccessMessage($backupScope)) . ";\n".
+                                "  if (window.top && window.top !== window) {\n".
+                                "      window.top.postMessage({type:'toast', message: msg}, '*');\n".
+                                "      setTimeout(function(){ window.top.location.href = '".$dashboardSuccessUrl."'; }, 1200);\n".
+                                "  } else {\n".
+                                "      alert(msg);\n".
+                                "      setTimeout(function(){ window.location.href = '".$dashboardSuccessUrl."'; }, 1200);\n".
+                                "  }\n".
+                                "</script>";
                 }
             } else {
                 $message .= '<p>There was an error moving the uploaded file.</p>';
@@ -1115,6 +1629,120 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: #ccc;
             display: flex;
             justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .backup-badges {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 6px;
+        }
+
+        .backup-scope-badge {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 3px 8px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            border: 1px solid transparent;
+        }
+
+        .backup-scope-herika {
+            background: rgba(23, 101, 41, 0.18);
+            color: #9df0b5;
+            border-color: rgba(74, 222, 128, 0.35);
+        }
+
+        .backup-scope-stobe {
+            background: rgba(1, 53, 166, 0.18);
+            color: #9dc4ff;
+            border-color: rgba(125, 163, 255, 0.35);
+        }
+
+        .backup-scope-both {
+            background: rgba(156, 163, 175, 0.16);
+            color: #f3f4f6;
+            border-color: rgba(209, 213, 219, 0.35);
+        }
+
+        .server-file-list {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .server-file-option {
+            display: block;
+            cursor: pointer;
+        }
+
+        .server-file-option input[type="radio"] {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .server-file-card {
+            border: 1px solid #3a3a3a;
+            border-radius: 10px;
+            padding: 12px;
+            background: rgba(26, 26, 26, 0.8);
+            transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+        }
+
+        .server-file-option:hover .server-file-card {
+            border-color: #5a5a5a;
+            background: rgba(36, 36, 36, 0.9);
+            transform: translateY(-1px);
+        }
+
+        .server-file-option input[type="radio"]:checked + .server-file-card {
+            border-color: #4ade80;
+            box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.35);
+            background: rgba(23, 101, 41, 0.12);
+        }
+
+        .server-file-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .server-file-radio-indicator {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid #7a7a7a;
+            flex-shrink: 0;
+            margin-top: 2px;
+            position: relative;
+        }
+
+        .server-file-option input[type="radio"]:checked + .server-file-card .server-file-radio-indicator {
+            border-color: #4ade80;
+        }
+
+        .server-file-option input[type="radio"]:checked + .server-file-card .server-file-radio-indicator::after {
+            content: '';
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            top: 2px;
+            left: 2px;
+            border-radius: 50%;
+            background: #4ade80;
+        }
+
+        .server-file-notes {
+            font-size: 11px;
+            color: #a3a3a3;
+            margin-top: 6px;
         }
         
         .backup-actions {
@@ -1458,8 +2086,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="card-tile">
             <div class="card-content">
                 <h3>📦 Manual Backup</h3>
-                <p>Create a backup of your current database. This will generate an SQL file you can download.</p>
-                <p style="color: #ccc; font-size: 14px;">Creates a one-time downloadable backup file.</p>
+                <p>Create a backup of your current CHIM and STOBE databases. This will generate one SQL file you can download.</p>
+                <p style="color: #ccc; font-size: 14px;">Creates a one-time downloadable combined backup file.</p>
             </div>
             <div class="card-actions">
                 <a href="?action=backup" class="button" style="background-color: #176529; color: white; width: 100%; text-align: center;">
@@ -1472,11 +2100,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="card-tile">
             <div class="card-content">
                 <h3>🔧 Database Maintenance</h3>
-                <p>Optimize and clean your database. This will compact the database and reclaim unused space.</p>
+                <p>Optimize and clean both HerikaServer and StobeServer databases. This will compact the databases and reclaim unused space.</p>
                 <p><strong>⚠️ Important:</strong> Make sure Skyrim is stopped before running maintenance.</p>
             </div>
             <div class="card-actions">
-                <button onclick="if (confirm('Database maintenance will optimize and compact the database.\n\n- Make sure Skyrim game is stopped\n- To reclaim unused space, free temporary space is required\n- During this operation tables will be locked, do not interrupt\n- This could take some time, please wait until you see the confirmation\n\nContinue?')) { window.open('<?php echo $webRoot; ?>/ui/vacuum_db.php', 'Database_maintenance', 'resizable=yes,scrollbars=yes,titlebar=no,width=800,height=600'); return false; }" 
+                <button onclick="if (confirm('Database maintenance will optimize and compact the HerikaServer and StobeServer databases.\n\n- Make sure Skyrim game is stopped\n- To reclaim unused space, free temporary space is required\n- During this operation tables will be locked, do not interrupt\n- This could take some time, please wait until you see the confirmation\n\nContinue?')) { window.open('?action=maintenance', 'Database_maintenance', 'resizable=yes,scrollbars=yes,titlebar=no,width=900,height=700'); return false; }" 
                         class="button" style="background-color: #fd7e14; color: white; width: 100%;">
                     Run Database Maintenance
                 </button>
@@ -1487,14 +2115,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="card-tile" style="border-color: #dc3545;">
             <div class="card-content">
                 <h3>💥 Factory Reset Database</h3>
-                <p>Completely wipe and reinstall the entire database to the default configuration.</p>
-                <p><strong>⚠️ DANGER:</strong> This will permanently delete data including events, diaries, and memories.</p>
+                <p>Completely wipe and reinstall either the HerikaServer or StobeServer database to its default configuration.</p>
+                <p><strong>⚠️ DANGER:</strong> Each reset permanently deletes data for the selected database.</p>
             </div>
             <div class="card-actions">
-                <button onclick="if (confirm('⚠️ FACTORY RESET DATABASE\n\nThis will wipe and reinstall the entire database to the default configuration.\n\n❌ ALL DATA WILL BE PERMANENTLY LOST:\n- All event logs\n- All diaries and memories\n- All custom Oghma and NPC Biography management profiles\n\n✅ Database will be reset to fresh installation state\n\nThis action CANNOT be undone!\n\nAre you absolutely sure you want to continue?')) { window.location.href = '<?php echo $webRoot; ?>/ui/index.php?reinstall=true&delete=true'; }" 
-                        class="button" style="background-color: #dc3545; color: white; width: 100%;">
-                    Factory Reset Database
-                </button>
+                <div style="display: flex; gap: 10px; width: 100%;">
+                    <button onclick="if (confirm('⚠️ FACTORY RESET HERIKASERVER\n\nThis will wipe and reinstall the HerikaServer database to its default configuration.\n\n❌ ALL HERIKASERVER DATA WILL BE PERMANENTLY LOST:\n- All event logs\n- All diaries and memories\n- All custom Oghma and NPC Biography management profiles\n\n✅ HerikaServer will be reset to fresh installation state\n\nThis action CANNOT be undone!\n\nAre you absolutely sure you want to continue?')) { window.open('?action=factory_reset&target=herika', 'Database_factory_reset', 'resizable=yes,scrollbars=yes,titlebar=no,width=980,height=720'); return false; }"
+                            class="button" style="background-color: #dc3545; color: white; width: 100%;">
+                        Factory Reset HerikaServer
+                    </button>
+                    <button onclick="if (confirm('⚠️ FACTORY RESET STOBESERVER\n\nThis will wipe and reinstall the StobeServer database to its default configuration.\n\n❌ ALL STOBESERVER DATA WILL BE PERMANENTLY LOST\n\n✅ StobeServer will be reset to fresh installation state\n\nThis action CANNOT be undone!\n\nAre you absolutely sure you want to continue?')) { window.open('?action=factory_reset&target=stobe', 'Database_factory_reset', 'resizable=yes,scrollbars=yes,titlebar=no,width=980,height=720'); return false; }"
+                            class="button" style="background-color: #b91c1c; color: white; width: 100%;">
+                        Factory Reset StobeServer
+                    </button>
+                </div>
             </div>
         </div>
         
@@ -1503,26 +2137,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     <!-- Second Row - Automatic Backups and Manual Restore Side by Side -->
     <?php
-    $autoBackup = new AutomaticBackup();
+    $autoBackup = new DashboardAutomaticBackup();
     $automaticBackups = $autoBackup->getBackups();
     $totalBackupsSize = 0;
-    foreach ($automaticBackups as $backup) {
+    foreach ($automaticBackups as &$backup) {
         $totalBackupsSize += $backup['size'];
+        $backup['scope'] = inspectBackupScope($backup['filepath'], $backup['filename']);
     }
+    unset($backup);
     // Load current retention from chim_meta.settings (fallback 5)
     $currentMax = 5;
     $autoEnabled = false;
     try {
         $dbTmp = new sql();
-        $dbTmp->execQuery("CREATE SCHEMA IF NOT EXISTS chim_meta");
-        $dbTmp->execQuery("CREATE TABLE IF NOT EXISTS chim_meta.settings (key TEXT PRIMARY KEY, value TEXT)");
-        $rowEn = $dbTmp->fetchOne("SELECT value FROM chim_meta.settings WHERE key='AUTOMATIC_DATABASE_BACKUPS'");
-        if (is_array($rowEn) && isset($rowEn['value'])) {
-            $val = strtolower(trim((string)$rowEn['value']));
+        $rowEn = dashboardReadSettingValue($dbTmp, 'AUTOMATIC_DATABASE_BACKUPS');
+        if ($rowEn !== null) {
+            $val = strtolower(trim($rowEn));
             $autoEnabled = in_array($val, ['true','1','yes','on'], true);
         }
-        $rowMax = $dbTmp->fetchOne("SELECT value FROM chim_meta.settings WHERE key='AUTOMATIC_BACKUP_MAX_COUNT'");
-        if (is_array($rowMax) && isset($rowMax['value'])) { $v=intval($rowMax['value']); if ($v>0) $currentMax=$v; }
+        $rowMax = dashboardReadSettingValue($dbTmp, 'AUTOMATIC_BACKUP_MAX_COUNT');
+        if ($rowMax !== null) {
+            $v = intval($rowMax);
+            if ($v > 0) {
+                $currentMax = $v;
+            }
+        }
     } catch (Throwable $e) {}
     ?>
     <div class="manager-section">
@@ -1562,7 +2201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="stat-tile">
                     <h5>Total Size</h5>
                     <p class="stat-value" style="color: #eaee05;">
-                        <?php echo AutomaticBackup::formatFileSize($totalBackupsSize); ?>
+                        <?php echo DashboardAutomaticBackup::formatFileSize($totalBackupsSize); ?>
                     </p>
                 </div>
             </div>
@@ -1579,8 +2218,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <div class="backup-filename">
                                         <?php echo htmlspecialchars($backup['filename']); ?>
                                     </div>
+                                    <div class="backup-badges">
+                                        <span class="backup-scope-badge <?php echo htmlspecialchars(strval($backup['scope']['badge_class'] ?? 'backup-scope-herika')); ?>">
+                                            <?php echo htmlspecialchars(strval($backup['scope']['scope_label'] ?? 'HerikaServer only')); ?>
+                                        </span>
+                                    </div>
                                     <div class="backup-meta">
-                                        <span>📁 <?php echo AutomaticBackup::formatFileSize($backup['size']); ?></span>
+                                        <span>📁 <?php echo DashboardAutomaticBackup::formatFileSize($backup['size']); ?></span>
+                                    </div>
+                                    <div class="backup-meta">
+                                        <span>Modified <?php echo htmlspecialchars(strval($backup['formatted_date'] ?? '')); ?></span>
                                     </div>
                                 </div>
                             </div>
@@ -1591,7 +2238,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         title="Download backup file">
                                     📥
                                 </button>
-                                <button onclick="if (confirm('⚠️ RESTORE DATABASE\n\nRestore from: <?php echo htmlspecialchars($backup['filename']); ?>\n\nThis will COMPLETELY REPLACE your current database with this backup.\n\n❌ All current data will be lost!\n✅ Database will be restored to backup state\n\nAre you absolutely sure you want to continue?')) { window.location.href='?action=restore_auto&filename=<?php echo urlencode($backup['filename']); ?>'; }" 
+                                <button onclick="if (confirm('⚠️ RESTORE DATABASES\n\nRestore from: <?php echo htmlspecialchars($backup['filename']); ?>\n\nBackup scope: <?php echo htmlspecialchars(strval($backup['scope']['scope_label'] ?? 'HerikaServer only')); ?>\n\nThis will COMPLETELY REPLACE the databases included in this backup.\n\n❌ Current data will be lost!\n✅ Databases will be restored to backup state\n\nAre you absolutely sure you want to continue?')) { window.location.href='?action=restore_auto&filename=<?php echo urlencode($backup['filename']); ?>'; }" 
                                         class="button backup-btn" style="background-color: rgb(1 53 166 / 90%);" 
                                         title="Restore database from this backup">
                                     🔄
@@ -1639,23 +2286,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 mkdir($uploadsDir, 0755, true);
             }
             $sqlFiles = glob($uploadsDir . '*.sql');
+            $sqlFileEntries = [];
+            foreach ($sqlFiles as $sqlFile) {
+                $filename = basename($sqlFile);
+                $scope = inspectBackupScope($sqlFile, $filename);
+                $filesize = filesize($sqlFile);
+                $sqlFileEntries[] = [
+                    'filename' => $filename,
+                    'formatted_size' => formatFileSize($filesize),
+                    'modified' => date('Y-m-d H:i:s', filemtime($sqlFile)),
+                    'scope' => $scope,
+                ];
+            }
             ?>
             
-            <?php if (!empty($sqlFiles)): ?>
+            <?php if (!empty($sqlFileEntries)): ?>
                 <form id="importForm" method="post" onsubmit="return handleImportSubmit(event);">
                     <input type="hidden" name="action" value="import_from_server">
-                    <label for="server_file" style="color: #f8f9fa; font-weight: bold; display: block; margin-bottom: 8px;">Available SQL files on server:</label>
-                    <select name="server_file" id="server_file" required style="width: 100%; padding: 10px; margin: 10px 0;">
-                        <?php foreach ($sqlFiles as $sqlFile): 
-                            $filename = basename($sqlFile);
-                            $filesize = filesize($sqlFile);
-                            $formattedSize = formatFileSize($filesize);
-                        ?>
-                            <option value="<?php echo htmlspecialchars($filename); ?>">
-                                <?php echo htmlspecialchars($filename); ?> (<?php echo $formattedSize; ?>)
-                            </option>
+                    <label style="color: #f8f9fa; font-weight: bold; display: block; margin-bottom: 8px;">Available SQL files on server:</label>
+                    <div class="server-file-list">
+                        <?php foreach ($sqlFileEntries as $index => $entry): ?>
+                            <label class="server-file-option">
+                                <input type="radio"
+                                       name="server_file"
+                                       value="<?php echo htmlspecialchars($entry['filename']); ?>"
+                                       <?php echo $index === 0 ? 'checked' : ''; ?>
+                                       data-scope-label="<?php echo htmlspecialchars(strval($entry['scope']['scope_label'] ?? 'HerikaServer only'), ENT_QUOTES, 'UTF-8'); ?>">
+                                <div class="server-file-card">
+                                    <div class="server-file-card-header">
+                                        <div class="backup-details">
+                                            <div class="backup-filename"><?php echo htmlspecialchars($entry['filename']); ?></div>
+                                            <div class="backup-badges">
+                                                <span class="backup-scope-badge <?php echo htmlspecialchars(strval($entry['scope']['badge_class'] ?? 'backup-scope-herika')); ?>">
+                                                    <?php echo htmlspecialchars(strval($entry['scope']['scope_label'] ?? 'HerikaServer only')); ?>
+                                                </span>
+                                            </div>
+                                            <div class="backup-meta">
+                                                <span>Size <?php echo htmlspecialchars($entry['formatted_size']); ?></span>
+                                                <span>Modified <?php echo htmlspecialchars($entry['modified']); ?></span>
+                                            </div>
+                                            <?php if (empty($entry['scope']['explicit'])): ?>
+                                                <div class="server-file-notes">Scope inferred from filename or legacy format.</div>
+                                            <?php endif; ?>
+                                        </div>
+                                        <span class="server-file-radio-indicator" aria-hidden="true"></span>
+                                    </div>
+                                </div>
+                            </label>
                         <?php endforeach; ?>
-                    </select>
+                    </div>
                     <input type="submit" class="button" value="🚀 Import from Server" 
                            style="background-color: #176529; color: white; padding: 12px 24px; margin-top: 10px; width: 100%; font-size: 16px;">
                 </form>
@@ -1868,8 +2547,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <script>
 function handleImportSubmit(event) {
-    // Show confirmation dialog
-    const confirmed = confirm('⚠️ RESTORE DATABASE\n\nThis will COMPLETELY REPLACE your current database with the selected backup.\n\n❌ All current data will be lost!\n✅ Database will be restored to backup state\n\nAre you absolutely sure?');
+    const selectedFile = document.querySelector('input[name="server_file"]:checked');
+    const scopeLabel = selectedFile ? (selectedFile.getAttribute('data-scope-label') || 'HerikaServer only') : 'HerikaServer only';
+    const confirmed = confirm('⚠️ RESTORE DATABASES\n\nSelected backup scope: ' + scopeLabel + '\n\nThis will COMPLETELY REPLACE the databases included in the selected backup.\n\n❌ Current data will be lost!\n✅ Databases will be restored to backup state\n\nAre you absolutely sure?');
     
     if (confirmed) {
         // Show loading overlay

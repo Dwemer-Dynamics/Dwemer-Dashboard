@@ -1221,26 +1221,24 @@ $herikaDb = null;
 
 if ($herikaRoot !== '') {
     try {
-        $profileLoader = $herikaRoot . DIRECTORY_SEPARATOR . 'ui' . DIRECTORY_SEPARATOR . 'profile_loader.php';
-        if (is_file($profileLoader)) {
-            require_once($profileLoader);
-            $dbDriver = trim(strval($GLOBALS['DBDRIVER'] ?? ''));
-            if ($dbDriver !== '') {
-                $dbClassPath = $herikaRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . $dbDriver . '.class.php';
-                if (is_file($dbClassPath)) {
-                    require_once($dbClassPath);
-                    $herikaDb = new sql();
-                    $hostRow = $herikaDb->fetchOne("SELECT value FROM conf_opts WHERE id = 'Network/WSL_IP' LIMIT 1");
-                    $hostValue = trim(strval($hostRow['value'] ?? ''));
-                    if ($hostValue !== '') {
-                        $mcpHost = $hostValue;
-                    }
+        require_once(__DIR__ . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'herika_profile_bootstrap.php');
+        dashboardBootstrapHerikaProfile($herikaRoot);
+        $dbDriver = trim(strval($GLOBALS['DBDRIVER'] ?? ''));
+        if ($dbDriver !== '') {
+            $dbClassPath = $herikaRoot . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . $dbDriver . '.class.php';
+            if (is_file($dbClassPath)) {
+                require_once($dbClassPath);
+                $herikaDb = new sql();
+                $hostRow = $herikaDb->fetchOne("SELECT value FROM conf_opts WHERE id = 'Network/WSL_IP' LIMIT 1");
+                $hostValue = trim(strval($hostRow['value'] ?? ''));
+                if ($hostValue !== '') {
+                    $mcpHost = $hostValue;
+                }
 
-                    $portRow = $herikaDb->fetchOne("SELECT value FROM conf_opts WHERE id = 'MCP/port' LIMIT 1");
-                    $portValue = intval($portRow['value'] ?? 0);
-                    if ($portValue >= 1 && $portValue <= 65535) {
-                        $mcpPort = $portValue;
-                    }
+                $portRow = $herikaDb->fetchOne("SELECT value FROM conf_opts WHERE id = 'MCP/port' LIMIT 1");
+                $portValue = intval($portRow['value'] ?? 0);
+                if ($portValue >= 1 && $portValue <= 65535) {
+                    $mcpPort = $portValue;
                 }
             }
         }
