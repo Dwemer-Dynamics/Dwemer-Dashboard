@@ -348,6 +348,91 @@ function timestampToIso8601(string $timestamp): ?string
     return null;
 }
 
+function normalizeLlmNpcName(string $value): string
+{
+    $name = trim(strip_tags($value));
+    if ($name === '') {
+        return '';
+    }
+
+    $name = preg_replace('/\s+/', ' ', $name) ?? $name;
+    $name = trim(stripcslashes($name), " \t\n\r\0\x0B\"',");
+
+    if ($name === '' || strtoupper($name) === '#HERIKA_NAME#') {
+        return '';
+    }
+
+    return $name;
+}
+
+function extractFirstLlmNpcMatch(string $content, array $patterns): string
+{
+    foreach ($patterns as $pattern) {
+        if (preg_match($pattern, $content, $matches) !== 1) {
+            continue;
+        }
+
+        $name = normalizeLlmNpcName(strval($matches[1] ?? ''));
+        if ($name !== '') {
+            return $name;
+        }
+    }
+
+    return '';
+}
+
+function extractLlmNpcName(string $content, string $mode): string
+{
+    $sharedPatterns = [
+        '/<npc_name>\s*([^<]+?)\s*<\/npc_name>/i',
+        '/\bNPC:\s*([^\r\n<]+?)\s*(?:\r?\n|$)/',
+    ];
+
+    $mode = strtolower(trim($mode));
+    if ($mode === 'llm_output') {
+        return extractFirstLlmNpcMatch($content, array_merge([
+            "/'npc_name'\\s*=>\\s*'((?:\\\\.|[^'])+)'/",
+            '/"npc_name"\s*:\s*"((?:\\\\.|[^"])*)"/',
+            '/"character"\s*:\s*"((?:\\\\.|[^"])*)"/',
+            "/'character'\\s*=>\\s*'((?:\\\\.|[^'])+)'/",
+        ], $sharedPatterns));
+    }
+
+    return extractFirstLlmNpcMatch($content, array_merge([
+        "/'npc_name'\\s*=>\\s*'((?:\\\\.|[^'])+)'/",
+        '/\bYou are ([^,\r\n]+), you live in Skyrim\b/i',
+        '/\bYou are ([^,\r\n]+) in a Skyrim adventure\b/i',
+        '/\bYou are ([^,\r\n]+), a character in the Universe of Skyrim\b/i',
+        '/-\s*You are ([^,\r\n]+), a product of a consciousness\b/i',
+    ], $sharedPatterns));
+}
+
+function buildLlmTimeValueHtml(string $timestamp): string
+{
+    $timestamp = trim($timestamp);
+    if ($timestamp === '') {
+        return '<span class="time-value">Unknown time</span>';
+    }
+
+    $iso = timestampToIso8601($timestamp);
+    if ($iso !== null) {
+        return '<span class="time-value" data-utc="' . h($iso) . '" data-timezone-label="UTC">' . h($timestamp) . ' UTC</span>';
+    }
+
+    return '<span class="time-value">' . h($timestamp) . '</span>';
+}
+
+function buildLlmSummaryTimeRangeHtml(string $startTime, string $endTime = ''): string
+{
+    $html = buildLlmTimeValueHtml($startTime);
+    if (trim($endTime) !== '') {
+        $html .= '<span class="time-separator">&rarr;</span>';
+        $html .= buildLlmTimeValueHtml($endTime);
+    }
+
+    return $html;
+}
+
 function parseLlmContextBlocks(array $lines): array
 {
     $blocks = [];
@@ -363,6 +448,7 @@ function parseLlmContextBlocks(array $lines): array
         $blocks[] = [
             'timestamp' => $timestamp,
             'content' => $content,
+            'npc_name' => extractLlmNpcName($content, 'llm_context'),
         ];
     };
 
@@ -429,6 +515,11 @@ function parseLlmOutputBlocks(array $lines): array
         if (!is_array($content) || count($content) === 0) {
             return;
         }
+        $contentText = trim(implode("\n", array_map('strval', $content)), "\r\n");
+        if ($contentText === '') {
+            return;
+        }
+        $block['npc_name'] = extractLlmNpcName($contentText, 'llm_output');
         $blocks[] = $block;
     };
 
@@ -488,6 +579,7 @@ function renderLogSection(array $source): void
     $isLlmContextMode = $specialMode === 'llm_context';
     $isLlmOutputMode = $specialMode === 'llm_output';
     $isSpecialMode = $isLlmContextMode || $isLlmOutputMode;
+    $isLlmContextFastMode = $isLlmContextMode && str_ends_with($id, 'llm_context_fast');
     $rawMode = !$isSpecialMode && !empty($source['raw']);
 
     $resolvedPath = resolveExistingPath($candidates);
@@ -531,6 +623,13 @@ function renderLogSection(array $source): void
     echo '<input class="search-input" type="text" placeholder="Search in ' . h($title) . '..." data-target="' . h($id) . '_container">';
     echo '</div>';
 
+    if ($isSpecialMode) {
+        echo '<div class="llm-section-controls">';
+        echo '<button class="filter-btn llm-section-btn" type="button" data-target="' . h($id) . '_container" data-details-action="open">Open all</button>';
+        echo '<button class="filter-btn llm-section-btn" type="button" data-target="' . h($id) . '_container" data-details-action="close">Collapse all</button>';
+        echo '</div>';
+    }
+
     if (!$rawMode && !$isSpecialMode) {
         echo '<div class="log-filter-container" id="' . h($id) . '_filters">';
         echo '<div class="filter-header">Filter by Level:</div>';
@@ -569,32 +668,39 @@ function renderLogSection(array $source): void
             foreach ($contextBlocks as $block) {
                 $timestamp = trim(strval($block['timestamp'] ?? ''));
                 $content = trim(strval($block['content'] ?? ''));
+                $npcName = trim(strval($block['npc_name'] ?? '')) ?: 'Unknown NPC';
                 if ($content === '') {
                     continue;
                 }
 
-                $iso = timestampToIso8601($timestamp);
-
-                echo '<div class="log-entry llm-block">';
-                echo '<div class="timestamp llm-block-head">';
-                echo '<span class="time-label">Time:</span> ';
-                if ($iso !== null) {
-                    echo '<span class="time-value" data-utc="' . h($iso) . '" data-timezone-label="UTC">' . h($timestamp) . ' UTC</span>';
+                echo '<details class="log-entry llm-block llm-collapsible">';
+                echo '<summary class="llm-summary">';
+                echo '<div class="llm-summary-main' . ($isLlmContextFastMode ? ' llm-summary-main-time-only' : '') . '">';
+                if ($isLlmContextFastMode) {
+                    echo '<div class="llm-summary-title llm-summary-title-time">' . buildLlmSummaryTimeRangeHtml($timestamp) . '</div>';
                 } else {
-                    echo '<span class="time-value">' . h($timestamp) . '</span>';
+                    echo '<div class="llm-summary-title">' . h($npcName) . '</div>';
+                    echo '<div class="llm-summary-subtitle">' . buildLlmSummaryTimeRangeHtml($timestamp) . '</div>';
                 }
+                echo '</div>';
+                echo '<span class="llm-summary-chevron" aria-hidden="true"></span>';
+                echo '</summary>';
+                echo '<div class="llm-block-body">';
+                echo '<div class="llm-block-tools">';
                 echo '<button type="button" class="copy-llm-btn" title="Copy to clipboard" aria-label="Copy log block">';
                 echo '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2.5 1A1.5 1.5 0 0 0 1 2.5v8A1.5 1.5 0 0 0 2.5 12H3V2.5A1.5 1.5 0 0 1 4.5 1h-2z"/><path d="M4.5 2A1.5 1.5 0 0 0 3 3.5v10A1.5 1.5 0 0 0 4.5 15h8a1.5 1.5 0 0 0 1.5-1.5v-10A1.5 1.5 0 0 0 12.5 2h-8zm0 1h8a.5.5 0 0 1 .5.5v10a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5z"/></svg>';
                 echo '</button>';
                 echo '</div>';
                 echo '<div class="log-message"><pre class="llm-content llm-copy-content">' . h($content) . '</pre></div>';
                 echo '</div>';
+                echo '</details>';
             }
         } elseif ($isLlmOutputMode) {
             foreach ($outputBlocks as $block) {
                 $startTime = trim(strval($block['start_time'] ?? ''));
                 $endTime = trim(strval($block['end_time'] ?? ''));
                 $contentLines = $block['content'] ?? [];
+                $npcName = trim(strval($block['npc_name'] ?? '')) ?: 'Unknown NPC';
                 if (!is_array($contentLines) || count($contentLines) === 0) {
                     continue;
                 }
@@ -603,28 +709,16 @@ function renderLogSection(array $source): void
                     continue;
                 }
 
-                $startIso = timestampToIso8601($startTime);
-                $endIso = $endTime !== '' ? timestampToIso8601($endTime) : null;
-
-                echo '<div class="log-entry llm-block llm-output-block">';
-                echo '<div class="timestamp llm-block-head">';
-                echo '<div class="llm-time-wrap">';
-                echo '<span class="time-label">Start:</span> ';
-                if ($startIso !== null) {
-                    echo '<span class="time-value" data-utc="' . h($startIso) . '" data-timezone-label="UTC">' . h($startTime) . ' UTC</span>';
-                } else {
-                    echo '<span class="time-value">' . h($startTime) . '</span>';
-                }
-                if ($endTime !== '') {
-                    echo ' <span class="time-separator">&rarr;</span> ';
-                    echo '<span class="time-label">End:</span> ';
-                    if ($endIso !== null) {
-                        echo '<span class="time-value" data-utc="' . h($endIso) . '" data-timezone-label="UTC">' . h($endTime) . ' UTC</span>';
-                    } else {
-                        echo '<span class="time-value">' . h($endTime) . '</span>';
-                    }
-                }
+                echo '<details class="log-entry llm-block llm-output-block llm-collapsible">';
+                echo '<summary class="llm-summary">';
+                echo '<div class="llm-summary-main">';
+                echo '<div class="llm-summary-title">' . h($npcName) . '</div>';
+                echo '<div class="llm-summary-subtitle">' . buildLlmSummaryTimeRangeHtml($startTime, $endTime) . '</div>';
                 echo '</div>';
+                echo '<span class="llm-summary-chevron" aria-hidden="true"></span>';
+                echo '</summary>';
+                echo '<div class="llm-block-body">';
+                echo '<div class="llm-block-tools">';
                 echo '<button type="button" class="copy-llm-btn" title="Copy to clipboard" aria-label="Copy log block">';
                 echo '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2.5 1A1.5 1.5 0 0 0 1 2.5v8A1.5 1.5 0 0 0 2.5 12H3V2.5A1.5 1.5 0 0 1 4.5 1h-2z"/><path d="M4.5 2A1.5 1.5 0 0 0 3 3.5v10A1.5 1.5 0 0 0 4.5 15h8a1.5 1.5 0 0 0 1.5-1.5v-10A1.5 1.5 0 0 0 12.5 2h-8zm0 1h8a.5.5 0 0 1 .5.5v10a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5z"/></svg>';
                 echo '</button>';
@@ -643,6 +737,7 @@ function renderLogSection(array $source): void
                     echo '</div>';
                 }
                 echo '</div>';
+                echo '</details>';
             }
         } elseif ($rawMode) {
             foreach ($rawLines as $line) {
@@ -1198,6 +1293,7 @@ $stobeLogSources = [
     [
         'id' => 'stobe_llm_context_fast',
         'title' => 'LLM Context Fast (context_sent_to_llm_fast.log)',
+        'special' => 'llm_context',
         'candidates' => buildFileCandidates($stobeLogDirs, ['context_sent_to_llm_fast.log']),
     ],
     [
@@ -2203,6 +2299,17 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         URL.revokeObjectURL(link.href);
     }
 
+    function setLlmSectionOpenState(containerId, open) {
+        const container = document.getElementById(containerId);
+        if (!container) {
+            return;
+        }
+
+        container.querySelectorAll('details.llm-collapsible').forEach((entry) => {
+            entry.open = open;
+        });
+    }
+
     document.querySelectorAll('.search-input').forEach((input) => {
         input.addEventListener('input', () => {
             const targetId = input.dataset.target || '';
@@ -2243,6 +2350,18 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
                 checkbox.checked = action === 'all';
             });
             applyLevelFilters(containerId);
+        });
+    });
+
+    document.querySelectorAll('.llm-section-btn').forEach((button) => {
+        button.addEventListener('click', () => {
+            const targetId = button.dataset.target || '';
+            const action = button.dataset.detailsAction || '';
+            if (!targetId) {
+                return;
+            }
+
+            setLlmSectionOpenState(targetId, action === 'open');
         });
     });
 
