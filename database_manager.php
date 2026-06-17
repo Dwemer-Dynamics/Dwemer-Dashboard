@@ -103,6 +103,144 @@ function formatFileSize($bytes) {
     return round($bytes / pow($k, $i), 2) . ' ' . $sizes[$i];
 }
 
+function dashboardExecOrThrow(sql $db, string $query): void {
+    $result = $db->execQuery($query);
+    if ($result === false) {
+        throw new RuntimeException(trim($db->GetLastError()));
+    }
+}
+
+function repairDashboardOghmaTable(sql $db): array {
+    $table = $db->fetchOne("SELECT to_regclass('public.oghma') AS rel");
+    if (!is_array($table) || trim((string)($table['rel'] ?? '')) === '') {
+        throw new RuntimeException('public.oghma table does not exist.');
+    }
+
+    $before = $db->fetchOne("SELECT COUNT(*) AS count FROM public.oghma");
+    $beforeCount = intval($before['count'] ?? 0);
+    $duplicatesBefore = $db->fetchOne("
+        SELECT COUNT(*) AS count
+        FROM (
+            SELECT LOWER(BTRIM(topic::text)) AS topic_key
+            FROM public.oghma
+            WHERE topic IS NOT NULL AND BTRIM(topic::text) <> ''
+            GROUP BY LOWER(BTRIM(topic::text))
+            HAVING COUNT(*) > 1
+        ) d
+    ");
+    $duplicateGroups = intval($duplicatesBefore['count'] ?? 0);
+    $hadTopicUnique = $db->fetchOne("
+        SELECT 1 AS found
+        FROM pg_index i
+        JOIN pg_class t ON t.oid = i.indrelid
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(i.indkey)
+        WHERE t.oid = 'public.oghma'::regclass
+          AND i.indisunique
+          AND i.indnkeyatts = 1
+          AND a.attname = 'topic'
+        LIMIT 1
+    ");
+    $topicUniqueAlreadyPresent = is_array($hadTopicUnique) && !empty($hadTopicUnique);
+
+    dashboardExecOrThrow($db, "BEGIN");
+    try {
+        dashboardExecOrThrow($db, "LOCK TABLE public.oghma IN ACCESS EXCLUSIVE MODE");
+        dashboardExecOrThrow($db, "ALTER TABLE public.oghma ADD COLUMN IF NOT EXISTS native_vector tsvector");
+        dashboardExecOrThrow($db, "ALTER TABLE public.oghma ADD COLUMN IF NOT EXISTS knowledge_class TEXT");
+        dashboardExecOrThrow($db, "ALTER TABLE public.oghma ADD COLUMN IF NOT EXISTS topic_desc_basic TEXT");
+        dashboardExecOrThrow($db, "ALTER TABLE public.oghma ADD COLUMN IF NOT EXISTS knowledge_class_basic TEXT");
+        dashboardExecOrThrow($db, "ALTER TABLE public.oghma ADD COLUMN IF NOT EXISTS tags TEXT");
+        dashboardExecOrThrow($db, "ALTER TABLE public.oghma ADD COLUMN IF NOT EXISTS category TEXT");
+        dashboardExecOrThrow($db, "UPDATE public.oghma SET topic = LOWER(BTRIM(topic::text)) WHERE topic IS NOT NULL AND topic::text <> LOWER(BTRIM(topic::text))");
+        dashboardExecOrThrow($db, "DELETE FROM public.oghma WHERE topic IS NULL OR BTRIM(topic::text) = ''");
+        dashboardExecOrThrow($db, "
+            WITH ranked AS (
+                SELECT
+                    ctid,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY LOWER(BTRIM(topic::text))
+                        ORDER BY
+                            (
+                                CASE WHEN COALESCE(topic_desc::text, '') <> '' THEN 1 ELSE 0 END +
+                                CASE WHEN COALESCE(topic_desc_basic, '') <> '' THEN 1 ELSE 0 END +
+                                CASE WHEN COALESCE(knowledge_class, '') <> '' THEN 1 ELSE 0 END +
+                                CASE WHEN COALESCE(knowledge_class_basic, '') <> '' THEN 1 ELSE 0 END +
+                                CASE WHEN COALESCE(tags, '') <> '' THEN 1 ELSE 0 END +
+                                CASE WHEN COALESCE(category, '') <> '' THEN 1 ELSE 0 END
+                            ) DESC,
+                            ctid DESC
+                    ) AS rn
+                FROM public.oghma
+                WHERE topic IS NOT NULL AND BTRIM(topic::text) <> ''
+            )
+            DELETE FROM public.oghma o
+            USING ranked r
+            WHERE o.ctid = r.ctid
+              AND r.rn > 1
+        ");
+        dashboardExecOrThrow($db, "
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_index i
+                    JOIN pg_class t ON t.oid = i.indrelid
+                    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(i.indkey)
+                    WHERE t.oid = 'public.oghma'::regclass
+                      AND i.indisunique
+                      AND i.indnkeyatts = 1
+                      AND a.attname = 'topic'
+                ) THEN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conrelid = 'public.oghma'::regclass
+                          AND contype = 'p'
+                    ) THEN
+                        ALTER TABLE public.oghma ADD CONSTRAINT oghma_pkey PRIMARY KEY (topic);
+                    ELSE
+                        ALTER TABLE public.oghma ADD CONSTRAINT oghma_topic_unique UNIQUE (topic);
+                    END IF;
+                END IF;
+            END $$;
+        ");
+        dashboardExecOrThrow($db, "
+            UPDATE public.oghma
+            SET native_vector =
+                  setweight(to_tsvector(coalesce(topic, '')), 'A')
+                || setweight(to_tsvector(coalesce(topic_desc, '')), 'B')
+                || setweight(to_tsvector(coalesce(topic_desc_basic, '')), 'C')
+        ");
+        dashboardExecOrThrow($db, "COMMIT");
+    } catch (Throwable $e) {
+        $db->execQuery("ROLLBACK");
+        throw $e;
+    }
+
+    $after = $db->fetchOne("SELECT COUNT(*) AS count FROM public.oghma");
+    $afterCount = intval($after['count'] ?? 0);
+    $hasTopicUnique = $db->fetchOne("
+        SELECT 1 AS found
+        FROM pg_index i
+        JOIN pg_class t ON t.oid = i.indrelid
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(i.indkey)
+        WHERE t.oid = 'public.oghma'::regclass
+          AND i.indisunique
+          AND i.indnkeyatts = 1
+          AND a.attname = 'topic'
+        LIMIT 1
+    ");
+
+    return [
+        'before' => $beforeCount,
+        'after' => $afterCount,
+        'removed' => max(0, $beforeCount - $afterCount),
+        'duplicate_groups' => $duplicateGroups,
+        'topic_unique_added' => !$topicUniqueAlreadyPresent && is_array($hasTopicUnique) && !empty($hasTopicUnique),
+        'topic_unique_present' => is_array($hasTopicUnique) && !empty($hasTopicUnique),
+    ];
+}
+
 function getStobePgConnection(string $host, string $port, string $username, string $password)
 {
     if (!function_exists('pg_connect')) {
@@ -1020,6 +1158,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         dashboardWriteSettingValue($dbMeta3, 'AUTOMATIC_BACKUP_MAX_COUNT', (string)$maxKeep);
     } catch (Throwable $e) {}
     $redirectUrl = $_SERVER['REQUEST_URI'] ?? ($_SERVER['PHP_SELF'] ?? 'database_manager.php');
+    header('Location: ' . $redirectUrl);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'repair_oghma_table') {
+    try {
+        $repair = repairDashboardOghmaTable($db);
+        $message = "<p><strong>Oghma table repair completed.</strong></p>";
+        $message .= "<p>Rows before: <strong>" . intval($repair['before']) . "</strong> | rows after: <strong>" . intval($repair['after']) . "</strong> | rows removed: <strong>" . intval($repair['removed']) . "</strong>.</p>";
+        $message .= "<p>Duplicate topic groups found: <strong>" . intval($repair['duplicate_groups']) . "</strong>.</p>";
+        $message .= "<p>Topic uniqueness: <strong>" . (!empty($repair['topic_unique_present']) ? 'ready' : 'not detected') . "</strong>" . (!empty($repair['topic_unique_added']) ? " (repaired)" : "") . ".</p>";
+    } catch (Throwable $e) {
+        $message = "<p><strong>Error repairing Oghma table:</strong> " . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') . "</p>";
+    }
+    setDatabaseManagerFlashMessage($message);
+    $qs = $_SERVER['QUERY_STRING'] ?? '';
+    $redirectUrl = ($_SERVER['PHP_SELF'] ?? 'database_manager.php') . ($qs ? ('?' . $qs) : '');
     header('Location: ' . $redirectUrl);
     exit;
 }
@@ -2629,13 +2784,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php if (!empty($chimDbVersions)): ?>
                     <div class="version-panel-title-row">
                         <h4 style="margin: 0;">CHIM Version Entries (<?php echo count($chimDbVersions); ?> total)</h4>
-                        <form method="post" style="margin: 0;" onsubmit="return confirm('Reset ALL CHIM database version entries? The dashboard will immediately rerun CHIM DB updates and repair empty bootstrap tables where possible.');">
-                            <input type="hidden" name="action" value="reset_all_db_versions">
-                            <input type="hidden" name="version_target" value="herika">
-                            <button type="submit" class="button" style="background-color: #dc3545; color: white; padding: 8px 16px; font-size: 14px;">
-                                Reset All Versions
-                            </button>
-                        </form>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+                            <form method="post" style="margin: 0;" onsubmit="return confirm('Repair Oghma Table\n\nThis fixes missing Oghma topic uniqueness required for CSV imports and game-startup imports. It preserves custom entries where possible. Continue?');">
+                                <input type="hidden" name="action" value="repair_oghma_table">
+                                <?php if ($isEmbed): ?><input type="hidden" name="embed" value="1"><?php endif; ?>
+                                <button type="submit" class="button" style="background-color: #176529; color: white; padding: 8px 16px; font-size: 14px;">
+                                    Repair Oghma Table
+                                </button>
+                            </form>
+                            <form method="post" style="margin: 0;" onsubmit="return confirm('Reset ALL CHIM database version entries? The dashboard will immediately rerun CHIM DB updates and repair empty bootstrap tables where possible.');">
+                                <input type="hidden" name="action" value="reset_all_db_versions">
+                                <input type="hidden" name="version_target" value="herika">
+                                <button type="submit" class="button" style="background-color: #dc3545; color: white; padding: 8px 16px; font-size: 14px;">
+                                    Reset All Versions
+                                </button>
+                            </form>
+                        </div>
                     </div>
 
                     <div class="version-table-container">

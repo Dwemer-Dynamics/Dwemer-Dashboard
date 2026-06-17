@@ -1,11 +1,7 @@
 {
-    "generated_at": "2026-05-03T05:18:55+00:00",
+    "generated_at": "2026-06-02T00:51:27+00:00",
     "source": "C:\/Users\/reece\/Desktop\/Dwemer Dynamics\/MonoRepo\/Dwemer-Dashboard\/csv\/patreon.csv",
     "members": [
-        {
-            "name": "Adam LaBay",
-            "tier": "Puzzlebox (Bronze\/Siparru) Tier"
-        },
         {
             "name": "Aleksandra Perz",
             "tier": "Puzzlebox (Bronze\/Siparru) Tier"
@@ -21,10 +17,6 @@
         {
             "name": "Cecell",
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
-        },
-        {
-            "name": "Dale Fisher",
-            "tier": "Gyro (Silver\/Sarpu) Tier"
         },
         {
             "name": "don branham",
@@ -63,14 +55,6 @@
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
-            "name": "J",
-            "tier": "Gyro (Silver\/Sarpu) Tier"
-        },
-        {
-            "name": "J B",
-            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
-        },
-        {
             "name": "john ivanhusin",
             "tier": "Puzzlebox (Bronze\/Siparru) Tier"
         },
@@ -83,7 +67,7 @@
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
-            "name": "Matt(Ghostturd)",
+            "name": "Judah Zimmerman",
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
@@ -140,7 +124,7 @@
         },
         {
             "name": "Stephen Cameron",
-            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
+            "tier": "Gyro (Silver\/Sarpu) Tier"
         },
         {
             "name": "telord",
@@ -167,12 +151,20 @@
             "tier": "Gyro (Silver\/Sarpu) Tier"
         },
         {
+            "name": "Viva La Weird Love",
+            "tier": "Puzzlebox (Bronze\/Siparru) Tier"
+        },
+        {
             "name": "wario00",
             "tier": "Puzzlebox (Bronze\/Siparru) Tier"
         },
         {
             "name": "wiltzu",
             "tier": "Puzzlebox (Bronze\/Siparru) Tier"
+        },
+        {
+            "name": "Wondernutts",
+            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
             "name": "XidomeD",

@@ -767,6 +767,14 @@ body {
     box-shadow: 0 0 0 2px rgba(230, 183, 108, 0.2);
 }
 
+.llm-section-controls {
+    display: flex;
+    justify-content: flex-end;
+    gap: 7px;
+    flex-wrap: wrap;
+    margin: 0 0 10px;
+}
+
 .log-filter-container {
     margin-bottom: 10px;
     border: 1px solid #3d3d3d;
@@ -897,9 +905,153 @@ body {
     border-left: 3px solid #e6b76c;
     border-bottom: 1px solid #3b3b3b;
     border-radius: 6px;
-    padding: 10px;
+    padding: 0;
     margin: 8px;
     background: #1f1f1f;
+    overflow: hidden;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.log-entry.llm-block:last-child {
+    border-bottom: 1px solid #3b3b3b;
+}
+
+.log-entry.llm-block:hover {
+    border-color: rgba(230, 183, 108, 0.55);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+}
+
+.llm-summary {
+    list-style: none;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: background-color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
+}
+
+.llm-summary::-webkit-details-marker {
+    display: none;
+}
+
+.llm-summary:hover {
+    background: rgba(230, 183, 108, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(230, 183, 108, 0.14);
+}
+
+.llm-summary:focus-visible {
+    outline: 2px solid rgba(230, 183, 108, 0.55);
+    outline-offset: -2px;
+}
+
+.llm-summary:active {
+    background: rgba(230, 183, 108, 0.12);
+    transform: translateY(1px);
+}
+
+details[open] > .llm-summary {
+    border-bottom: 1px solid #2f2f2f;
+    background: rgba(230, 183, 108, 0.06);
+}
+
+.llm-summary-main {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+    flex: 1 1 auto;
+}
+
+.llm-summary-main-time-only {
+    min-height: 24px;
+    align-items: center;
+}
+
+.llm-summary-title {
+    display: block;
+    min-width: 0;
+    color: #f4f4f4;
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.llm-summary-title-time {
+    display: flex;
+    align-items: center;
+}
+
+.llm-summary-title-time .time-value {
+    color: #f4f4f4;
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.llm-summary-subtitle {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+    color: #9ca3af;
+    font-size: 0.75rem;
+    line-height: 1.28;
+}
+
+.llm-summary-subtitle .time-value {
+    color: #9ca3af;
+    font-size: 0.75rem;
+}
+
+.llm-summary-subtitle .time-separator {
+    margin: 0 1px;
+}
+
+.llm-summary-chevron {
+    color: #9ca3af;
+    line-height: 1;
+    flex: 0 0 auto;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid rgba(140, 147, 160, 0.42);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.03);
+    font-weight: 700;
+    transition: color 0.18s ease, transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.llm-summary-chevron::before {
+    content: '>';
+}
+
+.log-entry.llm-block:hover .llm-summary-chevron,
+details[open] > .llm-summary .llm-summary-chevron {
+    color: #f2d7a1;
+    border-color: rgba(230, 183, 108, 0.55);
+    background: rgba(230, 183, 108, 0.1);
+}
+
+details[open] > .llm-summary .llm-summary-chevron::before {
+    content: 'v';
+}
+
+.llm-block-body {
+    display: grid;
+    gap: 10px;
+    padding: 10px 12px 12px;
+}
+
+.llm-block-tools {
+    display: flex;
+    justify-content: flex-end;
 }
 
 .llm-block-head {
@@ -914,7 +1066,7 @@ body {
     display: inline-flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 2px;
+    gap: 4px;
     min-width: 0;
 }
 
@@ -974,6 +1126,7 @@ body {
 
 .llm-block .log-message {
     display: block;
+    min-width: 0;
 }
 
 .llm-content {
@@ -1308,6 +1461,19 @@ body {
 
     .log-entry {
         grid-template-columns: 1fr;
+    }
+
+    .llm-summary {
+        gap: 10px;
+        padding: 10px;
+    }
+
+    .llm-summary-title {
+        white-space: normal;
+    }
+
+    .llm-block-body {
+        padding: 10px;
     }
 
     .toolbar-actions {
