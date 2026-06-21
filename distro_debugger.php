@@ -65,7 +65,7 @@ function buildFileCandidates(array $directories, array $filenames): array
     return array_values(array_unique(array_filter($candidates, static fn($item) => trim((string)$item) !== '')));
 }
 
-function tailFile(string $filepath, int $lines = 2000): array
+function tailFile(string $filepath, int $lines = 6000): array
 {
     if (!is_file($filepath) || !is_readable($filepath)) {
         return [];
@@ -593,7 +593,7 @@ function renderLogSection(array $source): void
     $outputBlocks = [];
 
     if ($exists && $readable) {
-        $rawLines = tailFile($resolvedPath, 2000);
+        $rawLines = tailFile($resolvedPath, 6000);
         if ($isLlmContextMode) {
             $contextBlocks = parseLlmContextBlocks($rawLines);
         } elseif ($isLlmOutputMode) {
