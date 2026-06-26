@@ -241,6 +241,306 @@ function repairDashboardOghmaTable(sql $db): array {
     ];
 }
 
+function dashboardHasSingleColumnUniqueIndex(sql $db, string $tableRegclass, string $columnName): bool {
+    $safeTable = str_replace("'", "''", $tableRegclass);
+    $safeColumn = str_replace("'", "''", $columnName);
+    $row = $db->fetchOne("
+        SELECT 1 AS found
+        FROM pg_index i
+        JOIN pg_class t ON t.oid = i.indrelid
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(i.indkey)
+        WHERE t.oid = '{$safeTable}'::regclass
+          AND i.indisunique
+          AND i.indpred IS NULL
+          AND i.indnkeyatts = 1
+          AND a.attname = '{$safeColumn}'
+        LIMIT 1
+    ");
+
+    return is_array($row) && !empty($row);
+}
+
+function repairDashboardCoreConstraints(sql $db): array {
+    $timestamp = gmdate('Ymd_His');
+    $results = [
+        'oghma' => [
+            'table_exists' => false,
+            'before' => 0,
+            'after' => 0,
+            'removed' => 0,
+            'duplicate_groups' => 0,
+            'backup_table' => '',
+            'unique_present' => false,
+        ],
+        'conf_opts' => [
+            'table_exists' => false,
+            'before' => 0,
+            'after' => 0,
+            'removed' => 0,
+            'duplicate_groups' => 0,
+            'backup_table' => '',
+            'unique_present' => false,
+        ],
+    ];
+
+    $oghmaTable = $db->fetchOne("SELECT to_regclass('public.oghma') AS rel");
+    if (is_array($oghmaTable) && trim((string)($oghmaTable['rel'] ?? '')) !== '') {
+        $results['oghma']['table_exists'] = true;
+        $before = $db->fetchOne("SELECT COUNT(*) AS count FROM public.oghma");
+        $duplicates = $db->fetchOne("
+            SELECT COUNT(*) AS count
+            FROM (
+                SELECT LOWER(BTRIM(topic::text)) AS topic_key
+                FROM public.oghma
+                WHERE topic IS NOT NULL AND BTRIM(topic::text) <> ''
+                GROUP BY LOWER(BTRIM(topic::text))
+                HAVING COUNT(*) > 1
+            ) d
+        ");
+        $results['oghma']['before'] = intval($before['count'] ?? 0);
+        $results['oghma']['duplicate_groups'] = intval($duplicates['count'] ?? 0);
+        $oghmaBackupTable = 'db_repair_backup_oghma_' . $timestamp;
+
+        dashboardExecOrThrow($db, "BEGIN");
+        try {
+            dashboardExecOrThrow($db, "LOCK TABLE public.oghma IN ACCESS EXCLUSIVE MODE");
+            dashboardExecOrThrow($db, "ALTER TABLE public.oghma ADD COLUMN IF NOT EXISTS native_vector tsvector");
+            dashboardExecOrThrow($db, "ALTER TABLE public.oghma ADD COLUMN IF NOT EXISTS knowledge_class TEXT");
+            dashboardExecOrThrow($db, "ALTER TABLE public.oghma ADD COLUMN IF NOT EXISTS topic_desc_basic TEXT");
+            dashboardExecOrThrow($db, "ALTER TABLE public.oghma ADD COLUMN IF NOT EXISTS knowledge_class_basic TEXT");
+            dashboardExecOrThrow($db, "ALTER TABLE public.oghma ADD COLUMN IF NOT EXISTS tags TEXT");
+            dashboardExecOrThrow($db, "ALTER TABLE public.oghma ADD COLUMN IF NOT EXISTS category TEXT");
+            dashboardExecOrThrow($db, "UPDATE public.oghma SET topic = LOWER(BTRIM(topic::text)) WHERE topic IS NOT NULL AND topic::text <> LOWER(BTRIM(topic::text))");
+
+            if ($results['oghma']['duplicate_groups'] > 0) {
+                dashboardExecOrThrow($db, "CREATE TABLE public.{$oghmaBackupTable} AS SELECT * FROM public.oghma WHERE false");
+                dashboardExecOrThrow($db, "
+                    WITH ranked AS (
+                        SELECT
+                            *,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY LOWER(BTRIM(topic::text))
+                                ORDER BY
+                                    (
+                                        CASE WHEN COALESCE(topic_desc::text, '') <> '' THEN 1 ELSE 0 END +
+                                        CASE WHEN COALESCE(topic_desc_basic, '') <> '' THEN 1 ELSE 0 END +
+                                        CASE WHEN COALESCE(knowledge_class, '') <> '' THEN 1 ELSE 0 END +
+                                        CASE WHEN COALESCE(knowledge_class_basic, '') <> '' THEN 1 ELSE 0 END +
+                                        CASE WHEN COALESCE(tags, '') <> '' THEN 1 ELSE 0 END +
+                                        CASE WHEN COALESCE(category, '') <> '' THEN 1 ELSE 0 END
+                                    ) DESC,
+                                    ctid DESC
+                            ) AS rn
+                        FROM public.oghma
+                        WHERE topic IS NOT NULL AND BTRIM(topic::text) <> ''
+                    )
+                    INSERT INTO public.{$oghmaBackupTable} (
+                        topic,
+                        topic_desc,
+                        native_vector,
+                        knowledge_class,
+                        topic_desc_basic,
+                        knowledge_class_basic,
+                        tags,
+                        category
+                    )
+                    SELECT " . implode(', ', [
+                        'topic',
+                        'topic_desc',
+                        'native_vector',
+                        'knowledge_class',
+                        'topic_desc_basic',
+                        'knowledge_class_basic',
+                        'tags',
+                        'category',
+                    ]) . "
+                    FROM ranked
+                    WHERE rn > 1
+                ");
+                $results['oghma']['backup_table'] = 'public.' . $oghmaBackupTable;
+            }
+
+            dashboardExecOrThrow($db, "DELETE FROM public.oghma WHERE topic IS NULL OR BTRIM(topic::text) = ''");
+            dashboardExecOrThrow($db, "
+                WITH ranked AS (
+                    SELECT
+                        ctid,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY LOWER(BTRIM(topic::text))
+                            ORDER BY
+                                (
+                                    CASE WHEN COALESCE(topic_desc::text, '') <> '' THEN 1 ELSE 0 END +
+                                    CASE WHEN COALESCE(topic_desc_basic, '') <> '' THEN 1 ELSE 0 END +
+                                    CASE WHEN COALESCE(knowledge_class, '') <> '' THEN 1 ELSE 0 END +
+                                    CASE WHEN COALESCE(knowledge_class_basic, '') <> '' THEN 1 ELSE 0 END +
+                                    CASE WHEN COALESCE(tags, '') <> '' THEN 1 ELSE 0 END +
+                                    CASE WHEN COALESCE(category, '') <> '' THEN 1 ELSE 0 END
+                                ) DESC,
+                                ctid DESC
+                        ) AS rn
+                    FROM public.oghma
+                    WHERE topic IS NOT NULL AND BTRIM(topic::text) <> ''
+                )
+                DELETE FROM public.oghma o
+                USING ranked r
+                WHERE o.ctid = r.ctid
+                  AND r.rn > 1
+            ");
+            dashboardExecOrThrow($db, "
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_index i
+                        JOIN pg_class t ON t.oid = i.indrelid
+                        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(i.indkey)
+                        WHERE t.oid = 'public.oghma'::regclass
+                          AND i.indisunique
+                          AND i.indpred IS NULL
+                          AND i.indnkeyatts = 1
+                          AND a.attname = 'topic'
+                    ) THEN
+                        IF NOT EXISTS (
+                            SELECT 1
+                            FROM pg_constraint
+                            WHERE conrelid = 'public.oghma'::regclass
+                              AND contype = 'p'
+                        ) THEN
+                            ALTER TABLE public.oghma ADD CONSTRAINT oghma_pkey PRIMARY KEY (topic);
+                        ELSE
+                            ALTER TABLE public.oghma ADD CONSTRAINT oghma_topic_unique UNIQUE (topic);
+                        END IF;
+                    END IF;
+                END $$;
+            ");
+            dashboardExecOrThrow($db, "
+                UPDATE public.oghma
+                SET native_vector =
+                      setweight(to_tsvector(coalesce(topic, '')), 'A')
+                    || setweight(to_tsvector(coalesce(topic_desc, '')), 'B')
+                    || setweight(to_tsvector(coalesce(topic_desc_basic, '')), 'C')
+            ");
+            dashboardExecOrThrow($db, "COMMIT");
+        } catch (Throwable $e) {
+            $db->execQuery("ROLLBACK");
+            throw $e;
+        }
+
+        $after = $db->fetchOne("SELECT COUNT(*) AS count FROM public.oghma");
+        $results['oghma']['after'] = intval($after['count'] ?? 0);
+        $results['oghma']['removed'] = max(0, $results['oghma']['before'] - $results['oghma']['after']);
+        $results['oghma']['unique_present'] = dashboardHasSingleColumnUniqueIndex($db, 'public.oghma', 'topic');
+        if (!$results['oghma']['unique_present']) {
+            throw new RuntimeException('Oghma topic uniqueness repair did not verify successfully.');
+        }
+    }
+
+    $confOptsTable = $db->fetchOne("SELECT to_regclass('public.conf_opts') AS rel");
+    if (is_array($confOptsTable) && trim((string)($confOptsTable['rel'] ?? '')) !== '') {
+        $results['conf_opts']['table_exists'] = true;
+        $before = $db->fetchOne("SELECT COUNT(*) AS count FROM public.conf_opts");
+        $duplicates = $db->fetchOne("
+            SELECT COUNT(*) AS count
+            FROM (
+                SELECT id
+                FROM public.conf_opts
+                WHERE id IS NOT NULL AND BTRIM(id::text) <> ''
+                GROUP BY id
+                HAVING COUNT(*) > 1
+            ) d
+        ");
+        $results['conf_opts']['before'] = intval($before['count'] ?? 0);
+        $results['conf_opts']['duplicate_groups'] = intval($duplicates['count'] ?? 0);
+        $confBackupTable = 'db_repair_backup_conf_opts_' . $timestamp;
+
+        dashboardExecOrThrow($db, "BEGIN");
+        try {
+            dashboardExecOrThrow($db, "LOCK TABLE public.conf_opts IN ACCESS EXCLUSIVE MODE");
+
+            if ($results['conf_opts']['duplicate_groups'] > 0) {
+                dashboardExecOrThrow($db, "CREATE TABLE public.{$confBackupTable} AS SELECT * FROM public.conf_opts WHERE false");
+                dashboardExecOrThrow($db, "
+                    WITH ranked AS (
+                        SELECT
+                            *,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY id
+                                ORDER BY ctid DESC
+                            ) AS rn
+                        FROM public.conf_opts
+                        WHERE id IS NOT NULL AND BTRIM(id::text) <> ''
+                    )
+                    INSERT INTO public.{$confBackupTable} (id, value)
+                    SELECT id, value
+                    FROM ranked
+                    WHERE rn > 1
+                ");
+                $results['conf_opts']['backup_table'] = 'public.' . $confBackupTable;
+            }
+
+            dashboardExecOrThrow($db, "DELETE FROM public.conf_opts WHERE id IS NULL OR BTRIM(id::text) = ''");
+            dashboardExecOrThrow($db, "ALTER TABLE public.conf_opts ALTER COLUMN id SET NOT NULL");
+            dashboardExecOrThrow($db, "
+                WITH ranked AS (
+                    SELECT
+                        ctid,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY id
+                            ORDER BY ctid DESC
+                        ) AS rn
+                    FROM public.conf_opts
+                    WHERE id IS NOT NULL AND BTRIM(id::text) <> ''
+                )
+                DELETE FROM public.conf_opts c
+                USING ranked r
+                WHERE c.ctid = r.ctid
+                  AND r.rn > 1
+            ");
+            dashboardExecOrThrow($db, "
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_index i
+                        JOIN pg_class t ON t.oid = i.indrelid
+                        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(i.indkey)
+                        WHERE t.oid = 'public.conf_opts'::regclass
+                          AND i.indisunique
+                          AND i.indpred IS NULL
+                          AND i.indnkeyatts = 1
+                          AND a.attname = 'id'
+                    ) THEN
+                        IF NOT EXISTS (
+                            SELECT 1
+                            FROM pg_constraint
+                            WHERE conrelid = 'public.conf_opts'::regclass
+                              AND contype = 'p'
+                        ) THEN
+                            ALTER TABLE public.conf_opts ADD CONSTRAINT pid PRIMARY KEY (id);
+                        ELSE
+                            ALTER TABLE public.conf_opts ADD CONSTRAINT conf_opts_id_unique UNIQUE (id);
+                        END IF;
+                    END IF;
+                END $$;
+            ");
+            dashboardExecOrThrow($db, "COMMIT");
+        } catch (Throwable $e) {
+            $db->execQuery("ROLLBACK");
+            throw $e;
+        }
+
+        $after = $db->fetchOne("SELECT COUNT(*) AS count FROM public.conf_opts");
+        $results['conf_opts']['after'] = intval($after['count'] ?? 0);
+        $results['conf_opts']['removed'] = max(0, $results['conf_opts']['before'] - $results['conf_opts']['after']);
+        $results['conf_opts']['unique_present'] = dashboardHasSingleColumnUniqueIndex($db, 'public.conf_opts', 'id');
+        if (!$results['conf_opts']['unique_present']) {
+            throw new RuntimeException('conf_opts id uniqueness repair did not verify successfully.');
+        }
+    }
+
+    return $results;
+}
+
 function getStobePgConnection(string $host, string $port, string $username, string $password)
 {
     if (!function_exists('pg_connect')) {
@@ -1171,6 +1471,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $message .= "<p>Topic uniqueness: <strong>" . (!empty($repair['topic_unique_present']) ? 'ready' : 'not detected') . "</strong>" . (!empty($repair['topic_unique_added']) ? " (repaired)" : "") . ".</p>";
     } catch (Throwable $e) {
         $message = "<p><strong>Error repairing Oghma table:</strong> " . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') . "</p>";
+    }
+    setDatabaseManagerFlashMessage($message);
+    $qs = $_SERVER['QUERY_STRING'] ?? '';
+    $redirectUrl = ($_SERVER['PHP_SELF'] ?? 'database_manager.php') . ($qs ? ('?' . $qs) : '');
+    header('Location: ' . $redirectUrl);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'repair_core_constraints') {
+    try {
+        $repair = repairDashboardCoreConstraints($db);
+        $message = "<p><strong>Database constraint repair completed.</strong></p>";
+
+        foreach (['oghma' => 'Oghma', 'conf_opts' => 'Configuration Options'] as $key => $label) {
+            $item = $repair[$key] ?? [];
+            if (empty($item['table_exists'])) {
+                $message .= "<p><strong>{$label}:</strong> table not found, skipped.</p>";
+                continue;
+            }
+
+            $message .= "<p><strong>{$label}:</strong> rows before <strong>" . intval($item['before'] ?? 0) . "</strong>, rows after <strong>" . intval($item['after'] ?? 0) . "</strong>, rows removed <strong>" . intval($item['removed'] ?? 0) . "</strong>.</p>";
+            $message .= "<p>Duplicate groups found: <strong>" . intval($item['duplicate_groups'] ?? 0) . "</strong>. Constraint status: <strong>" . (!empty($item['unique_present']) ? 'ready' : 'not detected') . "</strong>.</p>";
+            if (!empty($item['backup_table'])) {
+                $message .= "<p>Duplicate rows were backed up to <strong>" . htmlspecialchars(strval($item['backup_table']), ENT_QUOTES, 'UTF-8') . "</strong>.</p>";
+            }
+        }
+    } catch (Throwable $e) {
+        $message = "<p><strong>Error repairing database constraints:</strong> " . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') . "</p>";
     }
     setDatabaseManagerFlashMessage($message);
     $qs = $_SERVER['QUERY_STRING'] ?? '';
@@ -2790,6 +3118,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <?php if ($isEmbed): ?><input type="hidden" name="embed" value="1"><?php endif; ?>
                                 <button type="submit" class="button" style="background-color: #176529; color: white; padding: 8px 16px; font-size: 14px;">
                                     Repair Oghma Table
+                                </button>
+                            </form>
+                            <form method="post" style="margin: 0;" onsubmit="return confirm('Repair Database Constraints\n\nUse this when Oghma CSV imports, settings, or startup imports fail with ON CONFLICT constraint errors. Duplicate rows will be backed up before repair. Make sure Skyrim is stopped before continuing.');">
+                                <input type="hidden" name="action" value="repair_core_constraints">
+                                <?php if ($isEmbed): ?><input type="hidden" name="embed" value="1"><?php endif; ?>
+                                <button type="submit" class="button" style="background-color: #0d6efd; color: white; padding: 8px 16px; font-size: 14px;">
+                                    Repair Database Constraints
                                 </button>
                             </form>
                             <form method="post" style="margin: 0;" onsubmit="return confirm('Reset ALL CHIM database version entries? The dashboard will immediately rerun CHIM DB updates and repair empty bootstrap tables where possible.');">
