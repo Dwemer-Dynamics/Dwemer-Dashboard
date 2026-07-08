@@ -1160,6 +1160,14 @@ $distroLogSources = [
         ],
     ],
     [
+        'id' => 'omnivoice',
+        'title' => 'OmniVoice TTS (omnivoice-tts/logs/server.log)',
+        'candidates' => [
+            '/home/dwemer/omnivoice-tts/logs/server.log',
+            '\\\\wsl.localhost\\DwemerAI4Skyrim3\\home\\dwemer\\omnivoice-tts\\logs\\server.log',
+        ],
+    ],
+    [
         'id' => 'melotts',
         'title' => 'MeloTTS (MeloTTS/melo/log.txt)',
         'raw' => true,
