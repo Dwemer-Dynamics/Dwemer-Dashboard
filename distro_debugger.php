@@ -400,6 +400,8 @@ function extractLlmNpcName(string $content, string $mode): string
 
     return extractFirstLlmNpcMatch($content, array_merge([
         "/'npc_name'\\s*=>\\s*'((?:\\\\.|[^'])+)'/",
+        '/\bDialogue turn for ([^.\r\n]+)\./i',
+        '/\bYou are ([^,\r\n]+), a character in the Fallout(?:: New Vegas)? world\b/i',
         '/\bYou are ([^,\r\n]+), you live in Skyrim\b/i',
         '/\bYou are ([^,\r\n]+) in a Skyrim adventure\b/i',
         '/\bYou are ([^,\r\n]+), a character in the Universe of Skyrim\b/i',
@@ -1110,6 +1112,12 @@ $stobeRoot = $resolveServerRoot([
     '/var/www/html/StobeServer',
 ]);
 
+$dialecticRoot = $resolveServerRoot([
+    __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'DialecticServer',
+    dirname(__DIR__) . DIRECTORY_SEPARATOR . 'DialecticServer',
+    '/var/www/html/DialecticServer',
+]);
+
 $dashboardDataDir = __DIR__ . DIRECTORY_SEPARATOR . 'data';
 $mcpConnectionConfigPath = $dashboardDataDir . DIRECTORY_SEPARATOR . 'mcp_connection_config.json';
 $mcpConnectionPreference = loadMcpConnectionPreference($mcpConnectionConfigPath);
@@ -1123,6 +1131,11 @@ $herikaLogDirs = array_values(array_filter([
 $stobeLogDirs = array_values(array_filter([
     $stobeRoot !== '' ? $stobeRoot . DIRECTORY_SEPARATOR . 'log' : '',
     '/var/www/html/StobeServer/log',
+]));
+
+$dialecticLogDirs = array_values(array_filter([
+    $dialecticRoot !== '' ? $dialecticRoot . DIRECTORY_SEPARATOR . 'log' : '',
+    '/var/www/html/DialecticServer/log',
 ]));
 
 $distroLogSources = [
@@ -1316,6 +1329,83 @@ $stobeLogSources = [
     ],
 ];
 
+$dialecticLogSources = [
+    [
+        'id' => 'dialectic_php_error',
+        'title' => 'Apache Logs (apache_error.log)',
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['apache_error.log', 'php_error.log']),
+    ],
+    [
+        'id' => 'dialectic_core',
+        'title' => 'Dialectic Server (dialectic.log)',
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['dialectic.log']),
+    ],
+    [
+        'id' => 'dialectic_llm_output',
+        'title' => 'LLM Output (output_from_llm.log)',
+        'special' => 'llm_output',
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['output_from_llm.log']),
+    ],
+    [
+        'id' => 'dialectic_llm_context',
+        'title' => 'LLM Context (context_sent_to_llm.log)',
+        'special' => 'llm_context',
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['context_sent_to_llm.log']),
+    ],
+    [
+        'id' => 'dialectic_llm_context_fast',
+        'title' => 'LLM Context Fast (context_sent_to_llm_fast.log)',
+        'special' => 'llm_context',
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['context_sent_to_llm_fast.log']),
+    ],
+    [
+        'id' => 'dialectic_plugin_output',
+        'title' => 'Plugin Output (output_to_plugin.log)',
+        'raw' => true,
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['output_to_plugin.log']),
+    ],
+    [
+        'id' => 'dialectic_stt',
+        'title' => 'Speech-to-Text Log (stt.log)',
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['stt.log']),
+    ],
+    [
+        'id' => 'dialectic_monitor',
+        'title' => 'Monitor Log (monitor.log)',
+        'raw' => true,
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['monitor.log']),
+    ],
+    [
+        'id' => 'dialectic_service',
+        'title' => 'Service Log (service.log)',
+        'raw' => true,
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['service.log']),
+    ],
+    [
+        'id' => 'dialectic_debugstream',
+        'title' => 'Debug Stream Log (debugStream.log)',
+        'raw' => true,
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['debugStream.log', 'debugstream.log']),
+    ],
+    [
+        'id' => 'dialectic_llm_output_fast',
+        'title' => 'LLM Output Fast (output_from_llm_fast.log)',
+        'special' => 'llm_output',
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['output_from_llm_fast.log']),
+    ],
+    [
+        'id' => 'dialectic_manager',
+        'title' => 'Manager Log (manager.log)',
+        'raw' => true,
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['manager.log']),
+    ],
+    [
+        'id' => 'dialectic_relationship_worker',
+        'title' => 'Relationship Worker (relationship_worker.log)',
+        'candidates' => buildFileCandidates($dialecticLogDirs, ['relationship_worker.log']),
+    ],
+];
+
 $mcpHost = 'localhost';
 $mcpPort = 3100;
 $herikaMcpConfigApi = '/HerikaServer/ui/api/chim_mcp_config.php';
@@ -1501,7 +1591,7 @@ $mcpApiSourceLabel = $mcpApiKeySource === 'stobe' ? 'STOBE' : 'CHIM';
 $embedParam = strtolower(trim(strval($_GET['embed'] ?? '')));
 $isEmbeddedView = in_array($embedParam, ['1', 'true', 'yes', 'on'], true);
 $requestedInitialTab = strtolower(trim(strval($_GET['tab'] ?? '')));
-$allowedInitialTabs = ['distro', 'chim', 'stobe'];
+$allowedInitialTabs = ['distro', 'chim', 'stobe', 'dialectic'];
 $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? $requestedInitialTab : '';
 ?>
 <!doctype html>
@@ -1555,6 +1645,10 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
             <img class="tab-button-icon" src="images/stobe-icon.png" alt="" aria-hidden="true">
             <img class="tab-button-logo" src="images/stobe-logo.png" alt="STOBE">
         </button>
+        <button class="tab-button" type="button" data-tab="dialectic" role="tab" aria-selected="false" aria-controls="tab-dialectic">
+            <img class="tab-button-icon" src="images/dialectic-icon.png" alt="" aria-hidden="true">
+            <img class="tab-button-logo" src="images/dialectic-logo.png" alt="Dialectic">
+        </button>
     </div>
 
     <section class="tab-panel active" id="tab-distro" role="tabpanel">
@@ -1607,6 +1701,32 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         </div>
         <div class="file-log-grid">
             <?php foreach ($chimLogSources as $source): ?>
+                <?php renderLogSection($source); ?>
+            <?php endforeach; ?>
+        </div>
+    </section>
+
+    <section class="tab-panel" id="tab-dialectic" role="tabpanel">
+        <div class="title-container">
+            <h2>Dialectic Server Logs</h2>
+            <div class="toolbar-actions">
+                <button class="refresh-button tab-refresh-button" type="button" data-panel="tab-dialectic" title="Reload Dialectic logs">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 0 0-5 5H1l3.5 3.5L8 8H6a2 2 0 1 1 2 2v2a4 4 0 1 0-4-4H2a6 6 0 1 1 6 6v-2a4 4 0 0 0 0-8z"/></svg>
+                    <span>Refresh Logs</span>
+                </button>
+                <button class="refresh-button tab-download-button" type="button" data-panel="tab-dialectic" data-download-prefix="dialectic" title="Download visible Dialectic log entries">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a1 1 0 0 1 1 1v6h2.586l-2.293 2.293a1 1 0 0 1-1.414 0L5.586 7H8V1a1 1 0 0 1 1-1zM4 11h8a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2z"/></svg>
+                    <span>Download Logs</span>
+                </button>
+                <button class="refresh-button tab-timezone-button" type="button" title="Toggle UTC/local browser time">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/></svg>
+                    <span>Timezone: UTC</span>
+                </button>
+            </div>
+        </div>
+        <div class="title-helper"></div>
+        <div class="file-log-grid">
+            <?php foreach ($dialecticLogSources as $source): ?>
                 <?php renderLogSection($source); ?>
             <?php endforeach; ?>
         </div>
