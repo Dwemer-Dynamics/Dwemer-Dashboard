@@ -1202,12 +1202,19 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .dashboard-button.dialectic {
             background-color: rgb(255, 182, 65);
             border-color: rgb(255, 182, 65);
-            color: #1a1a1a;
+            color: #17130d;
         }
 
         .dashboard-button.dialectic:hover {
-            background-color: rgb(231, 157, 42);
-            border-color: rgb(231, 157, 42);
+            background-color: rgb(235, 160, 40);
+            border-color: rgb(235, 160, 40);
+            color: #17130d;
+        }
+
+        .dashboard-button.dialectic:focus-visible {
+            background-color: rgb(255, 182, 65);
+            border-color: rgb(255, 182, 65);
+            color: #17130d;
         }
 
         .dashboard-button.distro-debugger {
