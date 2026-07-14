@@ -321,7 +321,7 @@ if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[
     $stobeHostForUrl = '[' . $stobeHostForUrl . ']';
 }
 $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/index.php', $requestScheme, $stobeHostForUrl);
-$dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/', $requestScheme, $stobeHostForUrl);
+$dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/index.php', $requestScheme, $stobeHostForUrl);
 $distroDebuggerUrl = 'distro_debugger.php';
 $databaseManagerUrl = 'database_manager.php';
 
