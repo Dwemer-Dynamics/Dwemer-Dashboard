@@ -11,15 +11,27 @@ $resolveServerRoot = static function (array $candidates): string {
     return '';
 };
 
-$herikaRoot = $resolveServerRoot([
-    __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'HerikaServer',
-    dirname(__DIR__) . DIRECTORY_SEPARATOR . 'HerikaServer',
-    '/var/www/html/HerikaServer',
-]);
+$serverParam = strtolower(trim(strval($_GET['server'] ?? $_POST['server'] ?? $_GET['app'] ?? $_POST['app'] ?? '')));
+if ($serverParam === '') {
+    $referrer = strtolower(strval($_SERVER['HTTP_REFERER'] ?? ''));
+    if (strpos($referrer, '/dialecticserver/') !== false) {
+        $serverParam = 'dialecticserver';
+    }
+}
+$selectedServerKey = in_array($serverParam, ['dialectic', 'dialecticserver'], true) ? 'dialectic' : 'herika';
+$selectedServerDir = $selectedServerKey === 'dialectic' ? 'DialecticServer' : 'HerikaServer';
+$selectedServerLabel = $selectedServerKey === 'dialectic' ? 'DialecticServer' : 'HerikaServer';
 
-if ($herikaRoot === '') {
+$serverRoot = $resolveServerRoot([
+    __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . $selectedServerDir,
+    dirname(__DIR__) . DIRECTORY_SEPARATOR . $selectedServerDir,
+    '/var/www/html/' . $selectedServerDir,
+]);
+$herikaRoot = $serverRoot;
+
+if ($serverRoot === '') {
     http_response_code(500);
-    echo 'HerikaServer path not found.';
+    echo $selectedServerLabel . ' path not found.';
     exit;
 }
 
@@ -35,30 +47,52 @@ if (!is_string($urlPrefix) || $urlPrefix === '/' || $urlPrefix === null) {
 $urlPrefix = rtrim($urlPrefix, '/');
 $dashboardWebRoot = ($urlPrefix !== '' ? $urlPrefix : '') . '/Dwemer-Dashboard';
 $dashboardSuccessUrl = $dashboardWebRoot . '/';
-$webRoot = ($urlPrefix !== '' ? $urlPrefix : '') . '/HerikaServer';
+$webRoot = ($urlPrefix !== '' ? $urlPrefix : '') . '/' . $selectedServerDir;
 $dashboardDataPath = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR;
 $manualBackupDir = $dashboardDataPath . 'manualbackup' . DIRECTORY_SEPARATOR;
 
-require_once(__DIR__ . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'herika_profile_bootstrap.php');
-dashboardBootstrapHerikaProfile($herikaRoot);
+if ($selectedServerKey === 'herika') {
+    require_once(__DIR__ . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'herika_profile_bootstrap.php');
+    dashboardBootstrapHerikaProfile($serverRoot);
+}
 
-$enginePath = $herikaRoot . DIRECTORY_SEPARATOR;
+$enginePath = $serverRoot . DIRECTORY_SEPARATOR;
 
-require_once($enginePath . "conf" . DIRECTORY_SEPARATOR . "conf.php");
-require_once($enginePath . "lib" . DIRECTORY_SEPARATOR . "{$GLOBALS["DBDRIVER"]}.class.php");
+$configFiles = $selectedServerKey === 'dialectic'
+    ? [
+        $enginePath . "conf" . DIRECTORY_SEPARATOR . "conf.sample.php",
+        $enginePath . "conf" . DIRECTORY_SEPARATOR . "conf.php",
+    ]
+    : [
+        $enginePath . "conf" . DIRECTORY_SEPARATOR . "conf.php",
+        $enginePath . "conf" . DIRECTORY_SEPARATOR . "conf.sample.php",
+    ];
+foreach ($configFiles as $configFile) {
+    if (file_exists($configFile)) {
+        require_once($configFile);
+    }
+}
+if (!isset($GLOBALS["DBDRIVER"]) || trim(strval($GLOBALS["DBDRIVER"])) === '') {
+    $GLOBALS["DBDRIVER"] = 'postgresql';
+}
 require_once($enginePath . "lib" . DIRECTORY_SEPARATOR . "logger.php");
+require_once($enginePath . "lib" . DIRECTORY_SEPARATOR . "{$GLOBALS["DBDRIVER"]}.class.php");
 
 $embedParam = strval($_GET['embed'] ?? $_POST['embed'] ?? '');
 $isEmbed = ($embedParam === '1');
 $debugPaneLink = false;
 
-if (isset($_SESSION["PROFILE"])) {
-    require_once($_SESSION["PROFILE"]);
+if ($selectedServerKey === 'herika' && isset($_SESSION["PROFILE"])) {
+    $sessionProfilePath = strval($_SESSION["PROFILE"]);
+    if ($sessionProfilePath !== '' && file_exists($sessionProfilePath)) {
+        require_once($sessionProfilePath);
+    }
 }
 
 $pattern = '/conf_([a-f0-9]+)\.php/';
-preg_match($pattern, basename($_SESSION["PROFILE"]), $matches);
-$hash = isset($matches[1]) ? $matches[1] : 'default';    
+$profilePathForHash = isset($_SESSION["PROFILE"]) ? strval($_SESSION["PROFILE"]) : '';
+preg_match($pattern, basename($profilePathForHash), $matches);
+$hash = isset($matches[1]) ? $matches[1] : 'default';
 
 $db=new sql();
 $GLOBALS["db"] = $db;
@@ -82,10 +116,16 @@ $configFilepath = $rootPath . "conf" . DIRECTORY_SEPARATOR;
 // Database connection details
 $host = 'localhost';
 $port = '5432';
-$dbname = 'dwemer';
+$dbname = $selectedServerKey === 'dialectic'
+    ? strval($GLOBALS['DIALECTIC_DB_NAME'] ?? 'dialectic')
+    : 'dwemer';
 $schema = 'public';
-$username = 'dwemer';
-$password = 'dwemer';
+$username = $selectedServerKey === 'dialectic'
+    ? strval($GLOBALS['DIALECTIC_DB_USER'] ?? 'dwemer')
+    : 'dwemer';
+$password = $selectedServerKey === 'dialectic'
+    ? strval($GLOBALS['DIALECTIC_DB_PASSWORD'] ?? 'dwemer')
+    : 'dwemer';
 
 // Initialize message variable
 $message = '';
