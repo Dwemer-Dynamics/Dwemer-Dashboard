@@ -31,10 +31,18 @@ $stobeRoot = $resolveServerRoot([
     '/var/www/html/StobeServer',
 ]);
 
+$dialecticRoot = $resolveServerRoot([
+    __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'DialecticServer',
+    dirname(__DIR__) . DIRECTORY_SEPARATOR . 'DialecticServer',
+    '/var/www/html/DialecticServer',
+]);
+
 $herikaUpdateStatus = 'unavailable';
 $herikaUpdateDetail = 'HerikaServer path not found, DB update was not triggered.';
 $stobeUpdateStatus = 'unavailable';
 $stobeUpdateDetail = 'StobeServer path not found, DB update was not triggered.';
+$dialecticUpdateStatus = 'unavailable';
+$dialecticUpdateDetail = 'DialecticServer path not found, DB update was not triggered.';
 $hasCustomBackground = file_exists(__DIR__ . DIRECTORY_SEPARATOR . 'images' . DIRECTORY_SEPARATOR . 'background.jpg');
 
 require_once(__DIR__ . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'herika_profile_bootstrap.php');
@@ -220,6 +228,54 @@ if ($stobeRoot !== '') {
     }
 }
 
+if ($dialecticRoot !== '') {
+    try {
+        $dialecticRunner = $dialecticRoot . DIRECTORY_SEPARATOR . 'tools' . DIRECTORY_SEPARATOR . 'bootstrap-database.php';
+        $disableFunctions = strtolower(strval(ini_get('disable_functions') ?: ''));
+        $canExec = function_exists('exec') && strpos($disableFunctions, 'exec') === false;
+        if (!$canExec || !is_file($dialecticRunner)) {
+            throw new RuntimeException('Dialectic database bootstrap CLI runner is unavailable');
+        }
+
+        $cliCandidates = array_values(array_unique(array_filter([
+            trim(strval(PHP_BINARY ?? '')),
+            '/usr/bin/php',
+            '/usr/local/bin/php',
+            'php',
+        ])));
+        $ranCli = false;
+        $lastCliError = '';
+        foreach ($cliCandidates as $candidate) {
+            $basename = strtolower(basename($candidate));
+            if ($candidate === trim(strval(PHP_BINARY ?? '')) && strpos($basename, 'apache') !== false) {
+                continue;
+            }
+            $output = [];
+            $exitCode = 0;
+            exec(escapeshellarg($candidate) . ' ' . escapeshellarg($dialecticRunner) . ' 2>&1', $output, $exitCode);
+            if ($exitCode === 0) {
+                $ranCli = true;
+                break;
+            }
+            $lastCliError = trim(implode("\n", $output)) ?: 'unknown error';
+        }
+        if (!$ranCli) {
+            throw new RuntimeException($lastCliError);
+        }
+
+        $dialecticUpdateStatus = 'ok';
+        $dialecticUpdateDetail = 'DialecticServer database versioning check completed.';
+    } catch (Throwable $e) {
+        $errorSummary = preg_replace('/\s+/', ' ', trim($e->getMessage())) ?: 'unknown error';
+        if (strlen($errorSummary) > 180) {
+            $errorSummary = substr($errorSummary, 0, 180) . '...';
+        }
+        $dialecticUpdateStatus = 'error';
+        $dialecticUpdateDetail = 'DialecticServer DB update trigger failed: ' . $errorSummary;
+        error_log('[DwemerDashboard] Dialectic DB update trigger failed: ' . $e->getMessage());
+    }
+}
+
 if (
     $herikaRoot !== '' &&
     (
@@ -247,6 +303,7 @@ if (function_exists('deferredDashboardAutomaticBackupInit')) {
 $dbUpdateLines = [
     ['status' => $herikaUpdateStatus, 'detail' => $herikaUpdateDetail],
     ['status' => $stobeUpdateStatus, 'detail' => $stobeUpdateDetail],
+    ['status' => $dialecticUpdateStatus, 'detail' => $dialecticUpdateDetail],
 ];
 
 $chimUrl = '/HerikaServer/ui/index.php';
@@ -264,6 +321,7 @@ if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[
     $stobeHostForUrl = '[' . $stobeHostForUrl . ']';
 }
 $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/index.php', $requestScheme, $stobeHostForUrl);
+$dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/', $requestScheme, $stobeHostForUrl);
 $distroDebuggerUrl = 'distro_debugger.php';
 $databaseManagerUrl = 'database_manager.php';
 
@@ -1141,6 +1199,17 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             border-color: #d2a45a;
         }
 
+        .dashboard-button.dialectic {
+            background-color: rgb(255, 182, 65);
+            border-color: rgb(255, 182, 65);
+            color: #1a1a1a;
+        }
+
+        .dashboard-button.dialectic:hover {
+            background-color: rgb(231, 157, 42);
+            border-color: rgb(231, 157, 42);
+        }
+
         .dashboard-button.distro-debugger {
             background-color: #5e0505;
             border-color: #842121;
@@ -1279,6 +1348,12 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                     <span class="chim-brand">
                         <img class="chim-brand-icon" src="images/stobe-icon.png" alt="StobeServer icon">
                         <img class="chim-brand-main" src="images/stobe-logo.png" alt="StobeServer logo">
+                    </span>
+                </a>
+                <a class="dashboard-button dialectic" href="<?= htmlspecialchars($dialecticUrl, ENT_QUOTES, 'UTF-8') ?>">
+                    <span class="chim-brand">
+                        <img class="chim-brand-icon" src="images/dialectic-icon.png" alt="DialecticServer icon">
+                        <img class="chim-brand-main" src="images/dialectic-logo.png" alt="DialecticServer logo">
                     </span>
                 </a>
             </div>
