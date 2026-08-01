@@ -1,10 +1,14 @@
 {
-    "generated_at": "2026-06-02T00:51:27+00:00",
+    "generated_at": "2026-08-01T22:37:27+00:00",
     "source": "C:\/Users\/reece\/Desktop\/Dwemer Dynamics\/MonoRepo\/Dwemer-Dashboard\/csv\/patreon.csv",
     "members": [
         {
             "name": "Aleksandra Perz",
             "tier": "Puzzlebox (Bronze\/Siparru) Tier"
+        },
+        {
+            "name": "Alex Sav",
+            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
             "name": "Andre",
@@ -39,6 +43,10 @@
             "tier": "Puzzlebox (Bronze\/Siparru) Tier"
         },
         {
+            "name": "Gregoreous",
+            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
+        },
+        {
             "name": "Grey",
             "tier": "Gyro (Silver\/Sarpu) Tier"
         },
@@ -55,19 +63,19 @@
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
+            "name": "ISOlated Thinker",
+            "tier": "Puzzlebox (Bronze\/Siparru) Tier"
+        },
+        {
+            "name": "Jeremy",
+            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
+        },
+        {
             "name": "john ivanhusin",
             "tier": "Puzzlebox (Bronze\/Siparru) Tier"
         },
         {
             "name": "Jonathan Ben Aharon",
-            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
-        },
-        {
-            "name": "Jorres",
-            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
-        },
-        {
-            "name": "Judah Zimmerman",
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
@@ -97,14 +105,6 @@
         {
             "name": "Robert Bateman",
             "tier": "Puzzlebox (Bronze\/Siparru) Tier"
-        },
-        {
-            "name": "RooksGambit",
-            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
-        },
-        {
-            "name": "RPG Tox",
-            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
             "name": "Ryiora",
@@ -151,10 +151,6 @@
             "tier": "Gyro (Silver\/Sarpu) Tier"
         },
         {
-            "name": "Viva La Weird Love",
-            "tier": "Puzzlebox (Bronze\/Siparru) Tier"
-        },
-        {
             "name": "wario00",
             "tier": "Puzzlebox (Bronze\/Siparru) Tier"
         },
@@ -167,12 +163,12 @@
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
-            "name": "XidomeD",
+            "name": "X Bearer",
             "tier": "Gyro (Silver\/Sarpu) Tier"
         },
         {
-            "name": "Zarotian",
-            "tier": "Puzzlebox (Bronze\/Siparru) Tier"
+            "name": "XidomeD",
+            "tier": "Gyro (Silver\/Sarpu) Tier"
         },
         {
             "name": "鼡 銀",
