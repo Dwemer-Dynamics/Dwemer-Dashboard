@@ -145,12 +145,16 @@ class DashboardAutomaticBackup {
                 'name' => 'stobe',
                 'exclude_tables' => [],
             ],
+            [
+                'name' => 'dialectic',
+                'exclude_tables' => [],
+            ],
         ];
     }
 
     private function getBackupScopeSlug(): string
     {
-        return 'herikaserver_stobeserver';
+        return 'herikaserver_stobeserver_dialecticserver';
     }
 
     private function appendFileToBackup(string $sourcePath, string $destPath): bool
