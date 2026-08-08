@@ -1256,8 +1256,8 @@ $chimLogSources = [
     ],
     [
         'id' => 'chim_plugin_output',
-        'title' => 'Plugin Output (ouput_to_plugin.log)',
-        'candidates' => buildFileCandidates($herikaLogDirs, ['ouput_to_plugin.log', 'output_to_plugin.log']),
+        'title' => 'Plugin Output (output_to_plugin.log)',
+        'candidates' => buildFileCandidates($herikaLogDirs, ['output_to_plugin.log', 'ouput_to_plugin.log']), // ouput_to_plugin.log was a typo, not a real log in CHIM
     ],
     [
         'id' => 'chim_stt',
@@ -1283,8 +1283,8 @@ $chimLogSources = [
     ],
     [
         'id' => 'chim_debugstream',
-        'title' => 'Debug Stream Log (debugstream.log)',
-        'candidates' => buildFileCandidates($herikaLogDirs, ['debugstream.log']),
+        'title' => 'Debug Stream Log (debugStream.log)',
+        'candidates' => buildFileCandidates($herikaLogDirs, ['debugStream.log']),
     ],
 ];
 
