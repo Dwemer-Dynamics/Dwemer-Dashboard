@@ -1,15 +1,7 @@
 {
-    "generated_at": "2026-08-01T22:37:27+00:00",
+    "generated_at": "2026-09-01T15:37:57+00:00",
     "source": "C:\/Users\/reece\/Desktop\/Dwemer Dynamics\/MonoRepo\/Dwemer-Dashboard\/csv\/patreon.csv",
     "members": [
-        {
-            "name": "Aleksandra Perz",
-            "tier": "Puzzlebox (Bronze\/Siparru) Tier"
-        },
-        {
-            "name": "Alex Sav",
-            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
-        },
         {
             "name": "Andre",
             "tier": "Gyro (Silver\/Sarpu) Tier"
@@ -67,6 +59,10 @@
             "tier": "Puzzlebox (Bronze\/Siparru) Tier"
         },
         {
+            "name": "jasonlb136",
+            "tier": "Gyro (Silver\/Sarpu) Tier"
+        },
+        {
             "name": "Jeremy",
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
@@ -92,14 +88,6 @@
         },
         {
             "name": "musclex2",
-            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
-        },
-        {
-            "name": "Nathanael Nebula",
-            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
-        },
-        {
-            "name": "Rick Guzman",
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
@@ -140,15 +128,15 @@
         },
         {
             "name": "Trayz Gredner",
-            "tier": "Puzzlebox (Bronze\/Siparru) Tier"
-        },
-        {
-            "name": "Unknwn Prson",
-            "tier": "Puzzlebox (Bronze\/Siparru) Tier"
+            "tier": "Gyro (Silver\/Sarpu) Tier"
         },
         {
             "name": "Vandracon",
             "tier": "Gyro (Silver\/Sarpu) Tier"
+        },
+        {
+            "name": "Viva La Weird Love",
+            "tier": "Puzzlebox (Bronze\/Siparru) Tier"
         },
         {
             "name": "wario00",
