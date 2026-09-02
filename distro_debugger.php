@@ -1648,6 +1648,32 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
             outline-offset: 2px;
         }
 
+        .diagnostics-button[aria-busy="true"] {
+            cursor: wait;
+            pointer-events: none;
+        }
+
+        .diagnostics-button[aria-busy="true"] > svg {
+            display: none;
+        }
+
+        .diagnostics-button[aria-busy="true"]::before {
+            width: 12px;
+            height: 12px;
+            box-sizing: border-box;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            content: '';
+            animation: spin 0.8s linear infinite;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .diagnostics-button[aria-busy="true"]::before {
+                animation: none;
+            }
+        }
+
         .toolbar-menu {
             position: relative;
             display: inline-flex;
@@ -2024,9 +2050,14 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
     const forcedInitialTab = <?= json_encode($forcedInitialTab, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     const allowedLogTabs = new Set(<?= json_encode($allowedInitialTabs, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>);
     const logPanelApiBase = <?= json_encode(strval($_SERVER['PHP_SELF'] ?? 'distro_debugger.php'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    const diagnosticsDownloadOrigin = 'http://127.0.0.1:7135';
+    const diagnosticsDownloadFrame = document.querySelector('iframe[name="diagnosticsDownloadFrame"]');
+    const diagnosticsButtons = Array.from(document.querySelectorAll('.diagnostics-button'));
 
     let useLocalTime = (localStorage.getItem(TIMEZONE_KEY) || UTC_MODE) === LOCAL_MODE;
     const panelLoadPromises = new Map();
+    let diagnosticsLoadingButton = null;
+    let diagnosticsLoadingTimeout = null;
     const mcpStatusApiBase = '<?= h($_SERVER['PHP_SELF'] ?? 'distro_debugger.php') ?>';
     const mcpConnectionConfigApi = mcpStatusApiBase + '?mcp_connection_config=1';
     const mcpHost = '<?= h($mcpHost) ?>';
@@ -2063,6 +2094,55 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
         herika: { entry_found: false, key_present: false, label: 'OpenRouter' },
         stobe: { entry_found: false, key_present: false, label: 'OpenRouter' },
     };
+
+    function setDiagnosticsLoading(button) {
+        if (diagnosticsLoadingTimeout !== null) {
+            window.clearTimeout(diagnosticsLoadingTimeout);
+        }
+
+        diagnosticsLoadingButton = button;
+        button.setAttribute('aria-busy', 'true');
+        button.setAttribute('aria-disabled', 'true');
+        diagnosticsLoadingTimeout = window.setTimeout(clearDiagnosticsLoading, 120000);
+    }
+
+    function clearDiagnosticsLoading() {
+        if (diagnosticsLoadingButton) {
+            diagnosticsLoadingButton.removeAttribute('aria-busy');
+            diagnosticsLoadingButton.removeAttribute('aria-disabled');
+        }
+
+        if (diagnosticsLoadingTimeout !== null) {
+            window.clearTimeout(diagnosticsLoadingTimeout);
+        }
+
+        diagnosticsLoadingButton = null;
+        diagnosticsLoadingTimeout = null;
+    }
+
+    diagnosticsButtons.forEach((button) => {
+        button.addEventListener('click', (event) => {
+            if (button.getAttribute('aria-busy') === 'true') {
+                event.preventDefault();
+                return;
+            }
+
+            setDiagnosticsLoading(button);
+        });
+    });
+
+    window.addEventListener('message', (event) => {
+        if (event.origin !== diagnosticsDownloadOrigin
+            || !diagnosticsDownloadFrame
+            || event.source !== diagnosticsDownloadFrame.contentWindow
+            || !event.data
+            || (event.data.type !== 'dwemerdistro-diagnostics-ready'
+                && event.data.type !== 'dwemerdistro-diagnostics-error')) {
+            return;
+        }
+
+        clearDiagnosticsLoading();
+    });
 
     function setTimezoneMode(mode) {
         localStorage.setItem(TIMEZONE_KEY, mode);
