@@ -1773,7 +1773,7 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
         <div class="title-container">
             <h2>Distro Service Logs</h2>
             <div class="toolbar-actions">
-                <a class="refresh-button diagnostics-button" href="dwemerdistro://download-diagnostics" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
+                <a class="refresh-button diagnostics-button" href="http://127.0.0.1:7135/download-diagnostics" target="diagnosticsDownloadFrame" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
                     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
                     <span>Download Logs</span>
                 </a>
@@ -1815,7 +1815,7 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
         <div class="title-container">
             <h2>CHIM Server Logs</h2>
             <div class="toolbar-actions">
-                <a class="refresh-button diagnostics-button" href="dwemerdistro://download-diagnostics" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
+                <a class="refresh-button diagnostics-button" href="http://127.0.0.1:7135/download-diagnostics" target="diagnosticsDownloadFrame" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
                     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
                     <span>Download Logs</span>
                 </a>
@@ -1856,7 +1856,7 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
         <div class="title-container">
             <h2>Dialectic Server Logs</h2>
             <div class="toolbar-actions">
-                <a class="refresh-button diagnostics-button" href="dwemerdistro://download-diagnostics" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
+                <a class="refresh-button diagnostics-button" href="http://127.0.0.1:7135/download-diagnostics" target="diagnosticsDownloadFrame" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
                     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
                     <span>Download Logs</span>
                 </a>
@@ -1897,7 +1897,7 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
         <div class="title-container">
             <h2>STOBE Server Logs</h2>
             <div class="toolbar-actions">
-                <a class="refresh-button diagnostics-button" href="dwemerdistro://download-diagnostics" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
+                <a class="refresh-button diagnostics-button" href="http://127.0.0.1:7135/download-diagnostics" target="diagnosticsDownloadFrame" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
                     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
                     <span>Download Logs</span>
                 </a>
@@ -2011,6 +2011,9 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
         </div>
     </div>
 </div>
+
+<!-- Receives the launcher diagnostic report download so the debugger page never navigates away. -->
+<iframe name="diagnosticsDownloadFrame" title="Launcher diagnostics download target" tabindex="-1" aria-hidden="true" hidden></iframe>
 
 <script>
 (function() {
