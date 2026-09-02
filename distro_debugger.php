@@ -1406,6 +1406,36 @@ $dialecticLogSources = [
     ],
 ];
 
+$logSourcesByPanel = [
+    'distro' => $distroLogSources,
+    'chim' => $chimLogSources,
+    'stobe' => $stobeLogSources,
+    'dialectic' => $dialecticLogSources,
+];
+
+$requestedLogPanel = strtolower(trim(strval($_GET['log_panel'] ?? '')));
+if ($requestedLogPanel !== '') {
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+
+    if (strtoupper(strval($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'GET') {
+        http_response_code(405);
+        echo '<div class="error-message" role="alert">Method not allowed.</div>';
+        exit;
+    }
+
+    if (!array_key_exists($requestedLogPanel, $logSourcesByPanel)) {
+        http_response_code(400);
+        echo '<div class="error-message" role="alert">Unknown log panel.</div>';
+        exit;
+    }
+
+    foreach ($logSourcesByPanel[$requestedLogPanel] as $source) {
+        renderLogSection($source);
+    }
+    exit;
+}
+
 $mcpHost = 'localhost';
 $mcpPort = 3100;
 $herikaMcpConfigApi = '/HerikaServer/ui/api/chim_mcp_config.php';
@@ -1591,8 +1621,9 @@ $mcpApiSourceLabel = $mcpApiKeySource === 'stobe' ? 'STOBE' : 'CHIM';
 $embedParam = strtolower(trim(strval($_GET['embed'] ?? '')));
 $isEmbeddedView = in_array($embedParam, ['1', 'true', 'yes', 'on'], true);
 $requestedInitialTab = strtolower(trim(strval($_GET['tab'] ?? '')));
-$allowedInitialTabs = ['distro', 'chim', 'stobe', 'dialectic'];
+$allowedInitialTabs = array_keys($logSourcesByPanel);
 $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? $requestedInitialTab : '';
+$initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
 ?>
 <!doctype html>
 <html lang="en">
@@ -1611,6 +1642,119 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
                 url('images/background.jpg') center center / cover no-repeat fixed;
         }
         <?php endif; ?>
+
+        .toolbar-actions .refresh-button:focus-visible {
+            outline: 2px solid rgba(230, 183, 108, 0.75);
+            outline-offset: 2px;
+        }
+
+        .diagnostics-button[aria-busy="true"] {
+            cursor: wait;
+            pointer-events: none;
+        }
+
+        .diagnostics-button[aria-busy="true"] > svg {
+            display: none;
+        }
+
+        .diagnostics-button[aria-busy="true"]::before {
+            width: 12px;
+            height: 12px;
+            box-sizing: border-box;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            content: '';
+            animation: spin 0.8s linear infinite;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .diagnostics-button[aria-busy="true"]::before {
+                animation: none;
+            }
+        }
+
+        .toolbar-menu {
+            position: relative;
+            display: inline-flex;
+        }
+
+        .toolbar-menu-caret {
+            width: 12px;
+            height: 12px;
+            transition: transform 0.2s ease-in-out;
+        }
+
+        .toolbar-menu.open .toolbar-menu-caret {
+            transform: rotate(180deg);
+        }
+
+        .toolbar-menu.open .toolbar-menu-toggle {
+            border-color: rgba(230, 183, 108, 0.5);
+            color: #e6b76c;
+        }
+
+        .toolbar-menu-panel {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            z-index: 55;
+            min-width: 232px;
+            padding: 6px;
+            background: linear-gradient(135deg, rgba(42, 42, 42, 0.98), rgba(28, 28, 28, 0.99));
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            box-shadow: 0 12px 26px rgba(0, 0, 0, 0.45);
+        }
+
+        .toolbar-menu-panel[hidden] {
+            display: none;
+        }
+
+        .toolbar-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            padding: 9px 10px;
+            background: transparent;
+            border: 0;
+            border-radius: 6px;
+            color: #d4d4d4;
+            font-size: 0.86rem;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .toolbar-menu-item svg {
+            width: 15px;
+            height: 15px;
+            flex: 0 0 auto;
+        }
+
+        .toolbar-menu-item:hover {
+            background: rgba(230, 183, 108, 0.12);
+            color: #e6b76c;
+        }
+
+        .toolbar-menu-item:focus-visible {
+            outline: 2px solid rgba(230, 183, 108, 0.75);
+            outline-offset: -2px;
+            color: #e6b76c;
+        }
+
+        @media (max-width: 900px) {
+            .toolbar-menu {
+                width: 100%;
+            }
+
+            .toolbar-menu-panel {
+                left: 0;
+                right: 0;
+                min-width: 0;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1633,129 +1777,186 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
     </header>
 
     <div class="tab-nav" role="tablist" aria-label="Debugger Tabs">
-        <button class="tab-button active" type="button" data-tab="distro" role="tab" aria-selected="true" aria-controls="tab-distro">
+        <button class="tab-button<?= $initialServerTab === 'distro' ? ' active' : '' ?>" type="button" data-tab="distro" role="tab" aria-selected="<?= $initialServerTab === 'distro' ? 'true' : 'false' ?>" aria-controls="tab-distro">
             <img class="tab-button-icon" src="images/kagrenac-icon.png" alt="" aria-hidden="true">
             <span class="tab-distro-label">Distro</span>
         </button>
-        <button class="tab-button" type="button" data-tab="chim" role="tab" aria-selected="false" aria-controls="tab-chim">
+        <button class="tab-button<?= $initialServerTab === 'chim' ? ' active' : '' ?>" type="button" data-tab="chim" role="tab" aria-selected="<?= $initialServerTab === 'chim' ? 'true' : 'false' ?>" aria-controls="tab-chim">
             <img class="tab-button-icon" src="images/chim-icon.png" alt="" aria-hidden="true">
             <img class="tab-button-logo" src="images/chim-logo.png" alt="CHIM">
         </button>
-        <button class="tab-button" type="button" data-tab="stobe" role="tab" aria-selected="false" aria-controls="tab-stobe">
+        <button class="tab-button<?= $initialServerTab === 'stobe' ? ' active' : '' ?>" type="button" data-tab="stobe" role="tab" aria-selected="<?= $initialServerTab === 'stobe' ? 'true' : 'false' ?>" aria-controls="tab-stobe">
             <img class="tab-button-icon" src="images/stobe-icon.png" alt="" aria-hidden="true">
             <img class="tab-button-logo" src="images/stobe-logo.png" alt="STOBE">
         </button>
-        <button class="tab-button" type="button" data-tab="dialectic" role="tab" aria-selected="false" aria-controls="tab-dialectic">
+        <button class="tab-button<?= $initialServerTab === 'dialectic' ? ' active' : '' ?>" type="button" data-tab="dialectic" role="tab" aria-selected="<?= $initialServerTab === 'dialectic' ? 'true' : 'false' ?>" aria-controls="tab-dialectic">
             <img class="tab-button-icon" src="images/dialectic-icon.png" alt="" aria-hidden="true">
             <img class="tab-button-logo" src="images/dialectic-logo.png" alt="Dialectic">
         </button>
     </div>
 
-    <section class="tab-panel active" id="tab-distro" role="tabpanel">
+    <section class="tab-panel<?= $initialServerTab === 'distro' ? ' active' : '' ?>" id="tab-distro" role="tabpanel" data-log-panel="distro" data-loaded="<?= $initialServerTab === 'distro' ? '1' : '0' ?>">
         <div class="title-container">
             <h2>Distro Service Logs</h2>
             <div class="toolbar-actions">
+                <a class="refresh-button diagnostics-button" href="http://127.0.0.1:7135/download-diagnostics" target="diagnosticsDownloadFrame" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
+                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
+                    <span>Download Logs</span>
+                </a>
                 <button class="refresh-button tab-refresh-button" type="button" data-panel="tab-distro" title="Reload Distro logs">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 0 0-5 5H1l3.5 3.5L8 8H6a2 2 0 1 1 2 2v2a4 4 0 1 0-4-4H2a6 6 0 1 1 6 6v-2a4 4 0 0 0 0-8z"/></svg>
                     <span>Refresh Logs</span>
                 </button>
-                <button class="refresh-button tab-download-button" type="button" data-panel="tab-distro" data-download-prefix="distro" title="Download visible Distro log entries">
-                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a1 1 0 0 1 1 1v6h2.586l-2.293 2.293a1 1 0 0 1-1.414 0L5.586 7H8V1a1 1 0 0 1 1-1zM4 11h8a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2z"/></svg>
-                    <span>Download Logs</span>
-                </button>
                 <button class="refresh-button tab-timezone-button" type="button" title="Toggle UTC/local browser time">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/></svg>
                     <span>Timezone: UTC</span>
                 </button>
+                <div class="toolbar-menu" data-toolbar-menu>
+                    <button class="refresh-button toolbar-menu-toggle" type="button" id="toolbarMenuButton-distro" aria-haspopup="menu" aria-expanded="false" aria-controls="toolbarMenu-distro" title="More Distro log options">
+                        <span>Other Logs</span>
+                        <svg class="toolbar-menu-caret" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.5 5.5h9L8 11z"/></svg>
+                    </button>
+                    <div class="toolbar-menu-panel" id="toolbarMenu-distro" role="menu" aria-labelledby="toolbarMenuButton-distro" hidden>
+                        <button class="toolbar-menu-item tab-download-button" type="button" role="menuitem" data-panel="tab-distro" data-download-prefix="distro">
+                            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0a1 1 0 0 1 1 1v6h2.586l-2.293 2.293a1 1 0 0 1-1.414 0L5.586 7H8V1a1 1 0 0 1 1-1zM4 11h8a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2z"/></svg>
+                            <span>Download visible logs (.txt)</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="title-helper">
         </div>
 
-        <div class="file-log-grid">
+        <div class="file-log-grid" data-log-grid="distro" aria-live="polite">
+            <?php if ($initialServerTab === 'distro'): ?>
             <?php foreach ($distroLogSources as $source): ?>
                 <?php renderLogSection($source); ?>
             <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </section>
 
-    <section class="tab-panel" id="tab-chim" role="tabpanel">
+    <section class="tab-panel<?= $initialServerTab === 'chim' ? ' active' : '' ?>" id="tab-chim" role="tabpanel" data-log-panel="chim" data-loaded="<?= $initialServerTab === 'chim' ? '1' : '0' ?>">
         <div class="title-container">
             <h2>CHIM Server Logs</h2>
             <div class="toolbar-actions">
+                <a class="refresh-button diagnostics-button" href="http://127.0.0.1:7135/download-diagnostics" target="diagnosticsDownloadFrame" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
+                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
+                    <span>Download Logs</span>
+                </a>
                 <button class="refresh-button tab-refresh-button" type="button" data-panel="tab-chim" title="Reload CHIM logs">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 0 0-5 5H1l3.5 3.5L8 8H6a2 2 0 1 1 2 2v2a4 4 0 1 0-4-4H2a6 6 0 1 1 6 6v-2a4 4 0 0 0 0-8z"/></svg>
                     <span>Refresh Logs</span>
                 </button>
-                <button class="refresh-button tab-download-button" type="button" data-panel="tab-chim" data-download-prefix="chim" title="Download visible CHIM log entries">
-                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a1 1 0 0 1 1 1v6h2.586l-2.293 2.293a1 1 0 0 1-1.414 0L5.586 7H8V1a1 1 0 0 1 1-1zM4 11h8a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2z"/></svg>
-                    <span>Download Logs</span>
-                </button>
                 <button class="refresh-button tab-timezone-button" type="button" title="Toggle UTC/local browser time">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/></svg>
                     <span>Timezone: UTC</span>
                 </button>
+                <div class="toolbar-menu" data-toolbar-menu>
+                    <button class="refresh-button toolbar-menu-toggle" type="button" id="toolbarMenuButton-chim" aria-haspopup="menu" aria-expanded="false" aria-controls="toolbarMenu-chim" title="More CHIM log options">
+                        <span>Other Logs</span>
+                        <svg class="toolbar-menu-caret" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.5 5.5h9L8 11z"/></svg>
+                    </button>
+                    <div class="toolbar-menu-panel" id="toolbarMenu-chim" role="menu" aria-labelledby="toolbarMenuButton-chim" hidden>
+                        <button class="toolbar-menu-item tab-download-button" type="button" role="menuitem" data-panel="tab-chim" data-download-prefix="chim">
+                            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0a1 1 0 0 1 1 1v6h2.586l-2.293 2.293a1 1 0 0 1-1.414 0L5.586 7H8V1a1 1 0 0 1 1-1zM4 11h8a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2z"/></svg>
+                            <span>Download visible logs (.txt)</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="title-helper">
         </div>
-        <div class="file-log-grid">
+        <div class="file-log-grid" data-log-grid="chim" aria-live="polite">
+            <?php if ($initialServerTab === 'chim'): ?>
             <?php foreach ($chimLogSources as $source): ?>
                 <?php renderLogSection($source); ?>
             <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </section>
 
-    <section class="tab-panel" id="tab-dialectic" role="tabpanel">
+    <section class="tab-panel<?= $initialServerTab === 'dialectic' ? ' active' : '' ?>" id="tab-dialectic" role="tabpanel" data-log-panel="dialectic" data-loaded="<?= $initialServerTab === 'dialectic' ? '1' : '0' ?>">
         <div class="title-container">
             <h2>Dialectic Server Logs</h2>
             <div class="toolbar-actions">
+                <a class="refresh-button diagnostics-button" href="http://127.0.0.1:7135/download-diagnostics" target="diagnosticsDownloadFrame" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
+                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
+                    <span>Download Logs</span>
+                </a>
                 <button class="refresh-button tab-refresh-button" type="button" data-panel="tab-dialectic" title="Reload Dialectic logs">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 0 0-5 5H1l3.5 3.5L8 8H6a2 2 0 1 1 2 2v2a4 4 0 1 0-4-4H2a6 6 0 1 1 6 6v-2a4 4 0 0 0 0-8z"/></svg>
                     <span>Refresh Logs</span>
                 </button>
-                <button class="refresh-button tab-download-button" type="button" data-panel="tab-dialectic" data-download-prefix="dialectic" title="Download visible Dialectic log entries">
-                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a1 1 0 0 1 1 1v6h2.586l-2.293 2.293a1 1 0 0 1-1.414 0L5.586 7H8V1a1 1 0 0 1 1-1zM4 11h8a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2z"/></svg>
-                    <span>Download Logs</span>
-                </button>
                 <button class="refresh-button tab-timezone-button" type="button" title="Toggle UTC/local browser time">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/></svg>
                     <span>Timezone: UTC</span>
                 </button>
-            </div>
-        </div>
-        <div class="title-helper"></div>
-        <div class="file-log-grid">
-            <?php foreach ($dialecticLogSources as $source): ?>
-                <?php renderLogSection($source); ?>
-            <?php endforeach; ?>
-        </div>
-    </section>
-
-    <section class="tab-panel" id="tab-stobe" role="tabpanel">
-        <div class="title-container">
-            <h2>STOBE Server Logs</h2>
-            <div class="toolbar-actions">
-                <button class="refresh-button tab-refresh-button" type="button" data-panel="tab-stobe" title="Reload STOBE logs">
-                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 0 0-5 5H1l3.5 3.5L8 8H6a2 2 0 1 1 2 2v2a4 4 0 1 0-4-4H2a6 6 0 1 1 6 6v-2a4 4 0 0 0 0-8z"/></svg>
-                    <span>Refresh Logs</span>
-                </button>
-                <button class="refresh-button tab-download-button" type="button" data-panel="tab-stobe" data-download-prefix="stobe" title="Download visible STOBE log entries">
-                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a1 1 0 0 1 1 1v6h2.586l-2.293 2.293a1 1 0 0 1-1.414 0L5.586 7H8V1a1 1 0 0 1 1-1zM4 11h8a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2z"/></svg>
-                    <span>Download Logs</span>
-                </button>
-                <button class="refresh-button tab-timezone-button" type="button" title="Toggle UTC/local browser time">
-                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/></svg>
-                    <span>Timezone: UTC</span>
-                </button>
+                <div class="toolbar-menu" data-toolbar-menu>
+                    <button class="refresh-button toolbar-menu-toggle" type="button" id="toolbarMenuButton-dialectic" aria-haspopup="menu" aria-expanded="false" aria-controls="toolbarMenu-dialectic" title="More Dialectic log options">
+                        <span>Other Logs</span>
+                        <svg class="toolbar-menu-caret" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.5 5.5h9L8 11z"/></svg>
+                    </button>
+                    <div class="toolbar-menu-panel" id="toolbarMenu-dialectic" role="menu" aria-labelledby="toolbarMenuButton-dialectic" hidden>
+                        <button class="toolbar-menu-item tab-download-button" type="button" role="menuitem" data-panel="tab-dialectic" data-download-prefix="dialectic">
+                            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0a1 1 0 0 1 1 1v6h2.586l-2.293 2.293a1 1 0 0 1-1.414 0L5.586 7H8V1a1 1 0 0 1 1-1zM4 11h8a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2z"/></svg>
+                            <span>Download visible logs (.txt)</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="title-helper">
         </div>
-        <div class="file-log-grid">
+        <div class="file-log-grid" data-log-grid="dialectic" aria-live="polite">
+            <?php if ($initialServerTab === 'dialectic'): ?>
+            <?php foreach ($dialecticLogSources as $source): ?>
+                <?php renderLogSection($source); ?>
+            <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+    </section>
+
+    <section class="tab-panel<?= $initialServerTab === 'stobe' ? ' active' : '' ?>" id="tab-stobe" role="tabpanel" data-log-panel="stobe" data-loaded="<?= $initialServerTab === 'stobe' ? '1' : '0' ?>">
+        <div class="title-container">
+            <h2>STOBE Server Logs</h2>
+            <div class="toolbar-actions">
+                <a class="refresh-button diagnostics-button" href="http://127.0.0.1:7135/download-diagnostics" target="diagnosticsDownloadFrame" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
+                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
+                    <span>Download Logs</span>
+                </a>
+                <button class="refresh-button tab-refresh-button" type="button" data-panel="tab-stobe" title="Reload STOBE logs">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 0 0-5 5H1l3.5 3.5L8 8H6a2 2 0 1 1 2 2v2a4 4 0 1 0-4-4H2a6 6 0 1 1 6 6v-2a4 4 0 0 0 0-8z"/></svg>
+                    <span>Refresh Logs</span>
+                </button>
+                <button class="refresh-button tab-timezone-button" type="button" title="Toggle UTC/local browser time">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/></svg>
+                    <span>Timezone: UTC</span>
+                </button>
+                <div class="toolbar-menu" data-toolbar-menu>
+                    <button class="refresh-button toolbar-menu-toggle" type="button" id="toolbarMenuButton-stobe" aria-haspopup="menu" aria-expanded="false" aria-controls="toolbarMenu-stobe" title="More STOBE log options">
+                        <span>Other Logs</span>
+                        <svg class="toolbar-menu-caret" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.5 5.5h9L8 11z"/></svg>
+                    </button>
+                    <div class="toolbar-menu-panel" id="toolbarMenu-stobe" role="menu" aria-labelledby="toolbarMenuButton-stobe" hidden>
+                        <button class="toolbar-menu-item tab-download-button" type="button" role="menuitem" data-panel="tab-stobe" data-download-prefix="stobe">
+                            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0a1 1 0 0 1 1 1v6h2.586l-2.293 2.293a1 1 0 0 1-1.414 0L5.586 7H8V1a1 1 0 0 1 1-1zM4 11h8a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2z"/></svg>
+                            <span>Download visible logs (.txt)</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="title-helper">
+        </div>
+        <div class="file-log-grid" data-log-grid="stobe" aria-live="polite">
+            <?php if ($initialServerTab === 'stobe'): ?>
             <?php foreach ($stobeLogSources as $source): ?>
                 <?php renderLogSection($source); ?>
             <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </section>
 </main>
@@ -1837,6 +2038,9 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
     </div>
 </div>
 
+<!-- Receives the launcher diagnostic report download so the debugger page never navigates away. -->
+<iframe name="diagnosticsDownloadFrame" title="Launcher diagnostics download target" tabindex="-1" aria-hidden="true" hidden></iframe>
+
 <script>
 (function() {
     const TIMEZONE_KEY = 'distro_debugger_timezone';
@@ -1844,8 +2048,16 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
     const UTC_MODE = 'utc';
     const LOCAL_MODE = 'local';
     const forcedInitialTab = <?= json_encode($forcedInitialTab, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    const allowedLogTabs = new Set(<?= json_encode($allowedInitialTabs, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>);
+    const logPanelApiBase = <?= json_encode(strval($_SERVER['PHP_SELF'] ?? 'distro_debugger.php'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    const diagnosticsDownloadOrigin = 'http://127.0.0.1:7135';
+    const diagnosticsDownloadFrame = document.querySelector('iframe[name="diagnosticsDownloadFrame"]');
+    const diagnosticsButtons = Array.from(document.querySelectorAll('.diagnostics-button'));
 
     let useLocalTime = (localStorage.getItem(TIMEZONE_KEY) || UTC_MODE) === LOCAL_MODE;
+    const panelLoadPromises = new Map();
+    let diagnosticsLoadingButton = null;
+    let diagnosticsLoadingTimeout = null;
     const mcpStatusApiBase = '<?= h($_SERVER['PHP_SELF'] ?? 'distro_debugger.php') ?>';
     const mcpConnectionConfigApi = mcpStatusApiBase + '?mcp_connection_config=1';
     const mcpHost = '<?= h($mcpHost) ?>';
@@ -1882,6 +2094,55 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         herika: { entry_found: false, key_present: false, label: 'OpenRouter' },
         stobe: { entry_found: false, key_present: false, label: 'OpenRouter' },
     };
+
+    function setDiagnosticsLoading(button) {
+        if (diagnosticsLoadingTimeout !== null) {
+            window.clearTimeout(diagnosticsLoadingTimeout);
+        }
+
+        diagnosticsLoadingButton = button;
+        button.setAttribute('aria-busy', 'true');
+        button.setAttribute('aria-disabled', 'true');
+        diagnosticsLoadingTimeout = window.setTimeout(clearDiagnosticsLoading, 120000);
+    }
+
+    function clearDiagnosticsLoading() {
+        if (diagnosticsLoadingButton) {
+            diagnosticsLoadingButton.removeAttribute('aria-busy');
+            diagnosticsLoadingButton.removeAttribute('aria-disabled');
+        }
+
+        if (diagnosticsLoadingTimeout !== null) {
+            window.clearTimeout(diagnosticsLoadingTimeout);
+        }
+
+        diagnosticsLoadingButton = null;
+        diagnosticsLoadingTimeout = null;
+    }
+
+    diagnosticsButtons.forEach((button) => {
+        button.addEventListener('click', (event) => {
+            if (button.getAttribute('aria-busy') === 'true') {
+                event.preventDefault();
+                return;
+            }
+
+            setDiagnosticsLoading(button);
+        });
+    });
+
+    window.addEventListener('message', (event) => {
+        if (event.origin !== diagnosticsDownloadOrigin
+            || !diagnosticsDownloadFrame
+            || event.source !== diagnosticsDownloadFrame.contentWindow
+            || !event.data
+            || (event.data.type !== 'dwemerdistro-diagnostics-ready'
+                && event.data.type !== 'dwemerdistro-diagnostics-error')) {
+            return;
+        }
+
+        clearDiagnosticsLoading();
+    });
 
     function setTimezoneMode(mode) {
         localStorage.setItem(TIMEZONE_KEY, mode);
@@ -2367,19 +2628,78 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         });
     }
 
-    function setActiveTab(tabName) {
+    async function loadLogPanel(tabName) {
+        if (!allowedLogTabs.has(tabName)) {
+            return false;
+        }
+
+        const panel = document.getElementById('tab-' + tabName);
+        const grid = panel ? panel.querySelector('[data-log-grid="' + tabName + '"]') : null;
+        if (!panel || !grid) {
+            return false;
+        }
+        if (panel.dataset.loaded === '1') {
+            return true;
+        }
+        if (panelLoadPromises.has(tabName)) {
+            return panelLoadPromises.get(tabName);
+        }
+
+        const loadPromise = (async () => {
+            grid.setAttribute('aria-busy', 'true');
+            grid.innerHTML = '<div class="info-message" role="status">Loading logs...</div>';
+
+            try {
+                const url = new URL(logPanelApiBase, window.location.href);
+                url.search = '';
+                url.searchParams.set('log_panel', tabName);
+                const response = await fetch(url.toString(), {
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'text/html' },
+                });
+                if (!response.ok) {
+                    throw new Error('HTTP ' + String(response.status));
+                }
+
+                grid.innerHTML = await response.text();
+                panel.dataset.loaded = '1';
+                initializeLogControls(grid);
+                return true;
+            } catch (error) {
+                grid.innerHTML = '<div class="error-message" role="alert">Could not load logs. <button class="filter-btn lazy-panel-retry" type="button">Retry</button></div>';
+                const retryButton = grid.querySelector('.lazy-panel-retry');
+                if (retryButton) {
+                    retryButton.addEventListener('click', () => {
+                        loadLogPanel(tabName);
+                    });
+                }
+                return false;
+            } finally {
+                grid.removeAttribute('aria-busy');
+                panelLoadPromises.delete(tabName);
+            }
+        })();
+
+        panelLoadPromises.set(tabName, loadPromise);
+        return loadPromise;
+    }
+
+    async function setActiveTab(tabName) {
+        const selectedTab = allowedLogTabs.has(tabName) ? tabName : 'distro';
         document.querySelectorAll('.tab-button').forEach((button) => {
-            const isActive = button.dataset.tab === tabName;
+            const isActive = button.dataset.tab === selectedTab;
             button.classList.toggle('active', isActive);
             button.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
 
         document.querySelectorAll('.tab-panel').forEach((panel) => {
             const panelTab = panel.id.replace('tab-', '');
-            panel.classList.toggle('active', panelTab === tabName);
+            panel.classList.toggle('active', panelTab === selectedTab);
         });
 
-        localStorage.setItem(TAB_KEY, tabName);
+        closeAllToolbarMenus();
+        localStorage.setItem(TAB_KEY, selectedTab);
+        await loadLogPanel(selectedTab);
     }
 
     function downloadPanelLogs(panelId, prefix) {
@@ -2427,6 +2747,48 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         URL.revokeObjectURL(link.href);
     }
 
+    function closeToolbarMenu(menu, returnFocus) {
+        if (!menu || !menu.classList.contains('open')) {
+            return;
+        }
+        const toggle = menu.querySelector('.toolbar-menu-toggle');
+        const panel = menu.querySelector('.toolbar-menu-panel');
+        menu.classList.remove('open');
+        if (panel) {
+            panel.hidden = true;
+        }
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', 'false');
+            if (returnFocus) {
+                toggle.focus();
+            }
+        }
+    }
+
+    function closeAllToolbarMenus(except) {
+        document.querySelectorAll('[data-toolbar-menu].open').forEach((menu) => {
+            if (menu !== except) {
+                closeToolbarMenu(menu, false);
+            }
+        });
+    }
+
+    function openToolbarMenu(menu) {
+        const toggle = menu.querySelector('.toolbar-menu-toggle');
+        const panel = menu.querySelector('.toolbar-menu-panel');
+        if (!toggle || !panel) {
+            return;
+        }
+        closeAllToolbarMenus(menu);
+        menu.classList.add('open');
+        panel.hidden = false;
+        toggle.setAttribute('aria-expanded', 'true');
+        const firstItem = panel.querySelector('.toolbar-menu-item');
+        if (firstItem) {
+            firstItem.focus();
+        }
+    }
+
     function setLlmSectionOpenState(containerId, open) {
         const container = document.getElementById(containerId);
         if (!container) {
@@ -2438,93 +2800,109 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         });
     }
 
-    document.querySelectorAll('.search-input').forEach((input) => {
-        input.addEventListener('input', () => {
-            const targetId = input.dataset.target || '';
-            const containerId = targetId.replace('_container', '');
-            applyLevelFilters(containerId);
-        });
-    });
+    function initializeLogControls(scope) {
+        const root = scope || document;
 
-    document.querySelectorAll('.modal-search-input').forEach((input) => {
-        input.addEventListener('input', () => {
-            const targetId = input.dataset.target || '';
-            const target = document.getElementById(targetId);
-            if (!target) {
-                return;
-            }
-            applySearchToContainer(target, input.value || '');
-        });
-    });
-
-    document.querySelectorAll('.level-filter').forEach((checkbox) => {
-        checkbox.addEventListener('change', () => {
-            const containerId = checkbox.dataset.container || '';
-            if (!containerId) {
-                return;
-            }
-            applyLevelFilters(containerId);
-        });
-    });
-
-    document.querySelectorAll('.filter-btn').forEach((button) => {
-        button.addEventListener('click', () => {
-            const containerId = button.dataset.container || '';
-            const action = button.dataset.action || '';
-            if (!containerId) {
-                return;
-            }
-            document.querySelectorAll('.level-filter[data-container="' + containerId + '"]').forEach((checkbox) => {
-                checkbox.checked = action === 'all';
+        root.querySelectorAll('.search-input').forEach((input) => {
+            input.addEventListener('input', () => {
+                const targetId = input.dataset.target || '';
+                const containerId = targetId.replace('_container', '');
+                applyLevelFilters(containerId);
             });
+        });
+
+        root.querySelectorAll('.modal-search-input').forEach((input) => {
+            input.addEventListener('input', () => {
+                const targetId = input.dataset.target || '';
+                const target = document.getElementById(targetId);
+                if (!target) {
+                    return;
+                }
+                applySearchToContainer(target, input.value || '');
+            });
+        });
+
+        root.querySelectorAll('.level-filter').forEach((checkbox) => {
+            checkbox.addEventListener('change', () => {
+                const containerId = checkbox.dataset.container || '';
+                if (!containerId) {
+                    return;
+                }
+                applyLevelFilters(containerId);
+            });
+        });
+
+        root.querySelectorAll('.filter-btn').forEach((button) => {
+            button.addEventListener('click', () => {
+                const containerId = button.dataset.container || '';
+                const action = button.dataset.action || '';
+                if (!containerId) {
+                    return;
+                }
+                document.querySelectorAll('.level-filter[data-container="' + containerId + '"]').forEach((checkbox) => {
+                    checkbox.checked = action === 'all';
+                });
+                applyLevelFilters(containerId);
+            });
+        });
+
+        root.querySelectorAll('.llm-section-btn').forEach((button) => {
+            button.addEventListener('click', () => {
+                const targetId = button.dataset.target || '';
+                const action = button.dataset.detailsAction || '';
+                if (!targetId) {
+                    return;
+                }
+
+                setLlmSectionOpenState(targetId, action === 'open');
+            });
+        });
+
+        root.querySelectorAll('.log-container[data-level-filter="1"]').forEach((container) => {
+            const containerId = (container.id || '').replace('_container', '');
+            if (containerId === '') {
+                return;
+            }
+            updateLevelCounts(containerId);
             applyLevelFilters(containerId);
         });
-    });
 
-    document.querySelectorAll('.llm-section-btn').forEach((button) => {
-        button.addEventListener('click', () => {
-            const targetId = button.dataset.target || '';
-            const action = button.dataset.detailsAction || '';
-            if (!targetId) {
-                return;
-            }
+        root.querySelectorAll('.expand-button').forEach((button) => {
+            button.addEventListener('click', () => {
+                const sourceId = button.getAttribute('data-source') || '';
+                const modalId = button.getAttribute('data-modal') || '';
+                if (!sourceId || !modalId) {
+                    return;
+                }
 
-            setLlmSectionOpenState(targetId, action === 'open');
+                const source = document.getElementById(sourceId);
+                const modal = document.getElementById(modalId);
+                const modalContent = document.getElementById(modalId + '_content');
+                if (!source || !modal || !modalContent) {
+                    return;
+                }
+
+                modalContent.innerHTML = '<div class="log-container">' + source.innerHTML + '</div>';
+                modal.style.display = 'block';
+                convertTimestampElements(modal);
+            });
         });
-    });
 
-    document.querySelectorAll('.log-container[data-level-filter="1"]').forEach((container) => {
-        const containerId = (container.id || '').replace('_container', '');
-        if (containerId === '') {
-            return;
-        }
-        updateLevelCounts(containerId);
-        applyLevelFilters(containerId);
-    });
-
-    document.querySelectorAll('.expand-button').forEach((button) => {
-        button.addEventListener('click', () => {
-            const sourceId = button.getAttribute('data-source') || '';
-            const modalId = button.getAttribute('data-modal') || '';
-            if (!sourceId || !modalId) {
-                return;
-            }
-
-            const source = document.getElementById(sourceId);
-            const modal = document.getElementById(modalId);
-            const modalContent = document.getElementById(modalId + '_content');
-            if (!source || !modal || !modalContent) {
-                return;
-            }
-
-            modalContent.innerHTML = '<div class="log-container">' + source.innerHTML + '</div>';
-            modal.style.display = 'block';
-            convertTimestampElements(modal);
-        });
-    });
+        convertTimestampElements(root);
+    }
 
     document.body.addEventListener('click', async (event) => {
         const target = event.target instanceof Element ? event.target : null;
+        const closeButton = target ? target.closest('.close-modal') : null;
+        if (closeButton instanceof HTMLElement) {
+            const modalId = closeButton.getAttribute('data-close-modal');
+            const modal = modalId ? document.getElementById(modalId) : null;
+            if (modal) {
+                modal.style.display = 'none';
+            }
+            return;
+        }
+
         const copyBtn = target ? target.closest('.copy-llm-btn') : null;
         if (!(copyBtn instanceof HTMLElement)) {
             return;
@@ -2559,19 +2937,6 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         }, 1200);
     });
 
-    document.querySelectorAll('.close-modal').forEach((button) => {
-        button.addEventListener('click', () => {
-            const modalId = button.getAttribute('data-close-modal');
-            if (!modalId) {
-                return;
-            }
-            const modal = document.getElementById(modalId);
-            if (modal) {
-                modal.style.display = 'none';
-            }
-        });
-    });
-
     window.addEventListener('click', (event) => {
         if (event.target && event.target.classList && event.target.classList.contains('log-modal')) {
             event.target.style.display = 'none';
@@ -2599,6 +2964,75 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
             const prefix = downloadBtn.getAttribute('data-download-prefix') || 'distro_debugger';
             downloadPanelLogs(panelId, prefix);
         });
+    });
+
+    document.querySelectorAll('[data-toolbar-menu]').forEach((menu) => {
+        const toggle = menu.querySelector('.toolbar-menu-toggle');
+        const panel = menu.querySelector('.toolbar-menu-panel');
+        if (!toggle || !panel) {
+            return;
+        }
+
+        toggle.addEventListener('click', () => {
+            if (menu.classList.contains('open')) {
+                closeToolbarMenu(menu, false);
+            } else {
+                openToolbarMenu(menu);
+            }
+        });
+
+        toggle.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                openToolbarMenu(menu);
+            }
+        });
+
+        panel.addEventListener('keydown', (event) => {
+            const items = Array.from(panel.querySelectorAll('.toolbar-menu-item'));
+            if (items.length === 0) {
+                return;
+            }
+            const current = items.indexOf(document.activeElement);
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                items[(current + 1 + items.length) % items.length].focus();
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                items[(current - 1 + items.length) % items.length].focus();
+            } else if (event.key === 'Home') {
+                event.preventDefault();
+                items[0].focus();
+            } else if (event.key === 'End') {
+                event.preventDefault();
+                items[items.length - 1].focus();
+            } else if (event.key === 'Tab') {
+                closeToolbarMenu(menu, false);
+            }
+        });
+
+        panel.addEventListener('click', (event) => {
+            if (event.target && event.target.closest('.toolbar-menu-item')) {
+                closeToolbarMenu(menu, true);
+            }
+        });
+    });
+
+    document.addEventListener('click', (event) => {
+        const openMenu = document.querySelector('[data-toolbar-menu].open');
+        if (openMenu && !openMenu.contains(event.target)) {
+            closeToolbarMenu(openMenu, false);
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') {
+            return;
+        }
+        const openMenu = document.querySelector('[data-toolbar-menu].open');
+        if (openMenu) {
+            closeToolbarMenu(openMenu, true);
+        }
     });
 
     document.querySelectorAll('.tab-timezone-button').forEach((timezoneBtn) => {
@@ -2675,15 +3109,20 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         });
     }
 
+    const initialLoadedPanel = document.querySelector('.tab-panel[data-loaded="1"]');
+    if (initialLoadedPanel) {
+        initializeLogControls(initialLoadedPanel);
+    }
+
     const initialTab = forcedInitialTab || localStorage.getItem(TAB_KEY) || 'distro';
+    let initialTabPromise;
     if (document.querySelector('.tab-button[data-tab="' + initialTab + '"]')) {
-        setActiveTab(initialTab);
+        initialTabPromise = setActiveTab(initialTab);
     } else {
-        setActiveTab('distro');
+        initialTabPromise = setActiveTab('distro');
     }
 
     updateTimezoneToggleText();
-    convertTimestampElements(document);
     updateMcpSourceUi();
     renderMcpMeta(false);
 
@@ -2701,9 +3140,11 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
 
     const loadingOverlay = document.getElementById('loadingOverlay');
     if (loadingOverlay) {
-        window.setTimeout(() => {
-            loadingOverlay.classList.remove('active');
-        }, 180);
+        Promise.resolve(initialTabPromise).finally(() => {
+            window.setTimeout(() => {
+                loadingOverlay.classList.remove('active');
+            }, 180);
+        });
     }
 })();
 </script>
