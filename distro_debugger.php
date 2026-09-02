@@ -1406,6 +1406,36 @@ $dialecticLogSources = [
     ],
 ];
 
+$logSourcesByPanel = [
+    'distro' => $distroLogSources,
+    'chim' => $chimLogSources,
+    'stobe' => $stobeLogSources,
+    'dialectic' => $dialecticLogSources,
+];
+
+$requestedLogPanel = strtolower(trim(strval($_GET['log_panel'] ?? '')));
+if ($requestedLogPanel !== '') {
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+
+    if (strtoupper(strval($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'GET') {
+        http_response_code(405);
+        echo '<div class="error-message" role="alert">Method not allowed.</div>';
+        exit;
+    }
+
+    if (!array_key_exists($requestedLogPanel, $logSourcesByPanel)) {
+        http_response_code(400);
+        echo '<div class="error-message" role="alert">Unknown log panel.</div>';
+        exit;
+    }
+
+    foreach ($logSourcesByPanel[$requestedLogPanel] as $source) {
+        renderLogSection($source);
+    }
+    exit;
+}
+
 $mcpHost = 'localhost';
 $mcpPort = 3100;
 $herikaMcpConfigApi = '/HerikaServer/ui/api/chim_mcp_config.php';
@@ -1591,8 +1621,9 @@ $mcpApiSourceLabel = $mcpApiKeySource === 'stobe' ? 'STOBE' : 'CHIM';
 $embedParam = strtolower(trim(strval($_GET['embed'] ?? '')));
 $isEmbeddedView = in_array($embedParam, ['1', 'true', 'yes', 'on'], true);
 $requestedInitialTab = strtolower(trim(strval($_GET['tab'] ?? '')));
-$allowedInitialTabs = ['distro', 'chim', 'stobe', 'dialectic'];
+$allowedInitialTabs = array_keys($logSourcesByPanel);
 $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? $requestedInitialTab : '';
+$initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
 ?>
 <!doctype html>
 <html lang="en">
@@ -1720,25 +1751,25 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
     </header>
 
     <div class="tab-nav" role="tablist" aria-label="Debugger Tabs">
-        <button class="tab-button active" type="button" data-tab="distro" role="tab" aria-selected="true" aria-controls="tab-distro">
+        <button class="tab-button<?= $initialServerTab === 'distro' ? ' active' : '' ?>" type="button" data-tab="distro" role="tab" aria-selected="<?= $initialServerTab === 'distro' ? 'true' : 'false' ?>" aria-controls="tab-distro">
             <img class="tab-button-icon" src="images/kagrenac-icon.png" alt="" aria-hidden="true">
             <span class="tab-distro-label">Distro</span>
         </button>
-        <button class="tab-button" type="button" data-tab="chim" role="tab" aria-selected="false" aria-controls="tab-chim">
+        <button class="tab-button<?= $initialServerTab === 'chim' ? ' active' : '' ?>" type="button" data-tab="chim" role="tab" aria-selected="<?= $initialServerTab === 'chim' ? 'true' : 'false' ?>" aria-controls="tab-chim">
             <img class="tab-button-icon" src="images/chim-icon.png" alt="" aria-hidden="true">
             <img class="tab-button-logo" src="images/chim-logo.png" alt="CHIM">
         </button>
-        <button class="tab-button" type="button" data-tab="stobe" role="tab" aria-selected="false" aria-controls="tab-stobe">
+        <button class="tab-button<?= $initialServerTab === 'stobe' ? ' active' : '' ?>" type="button" data-tab="stobe" role="tab" aria-selected="<?= $initialServerTab === 'stobe' ? 'true' : 'false' ?>" aria-controls="tab-stobe">
             <img class="tab-button-icon" src="images/stobe-icon.png" alt="" aria-hidden="true">
             <img class="tab-button-logo" src="images/stobe-logo.png" alt="STOBE">
         </button>
-        <button class="tab-button" type="button" data-tab="dialectic" role="tab" aria-selected="false" aria-controls="tab-dialectic">
+        <button class="tab-button<?= $initialServerTab === 'dialectic' ? ' active' : '' ?>" type="button" data-tab="dialectic" role="tab" aria-selected="<?= $initialServerTab === 'dialectic' ? 'true' : 'false' ?>" aria-controls="tab-dialectic">
             <img class="tab-button-icon" src="images/dialectic-icon.png" alt="" aria-hidden="true">
             <img class="tab-button-logo" src="images/dialectic-logo.png" alt="Dialectic">
         </button>
     </div>
 
-    <section class="tab-panel active" id="tab-distro" role="tabpanel">
+    <section class="tab-panel<?= $initialServerTab === 'distro' ? ' active' : '' ?>" id="tab-distro" role="tabpanel" data-log-panel="distro" data-loaded="<?= $initialServerTab === 'distro' ? '1' : '0' ?>">
         <div class="title-container">
             <h2>Distro Service Logs</h2>
             <div class="toolbar-actions">
@@ -1771,14 +1802,16 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         <div class="title-helper">
         </div>
 
-        <div class="file-log-grid">
+        <div class="file-log-grid" data-log-grid="distro" aria-live="polite">
+            <?php if ($initialServerTab === 'distro'): ?>
             <?php foreach ($distroLogSources as $source): ?>
                 <?php renderLogSection($source); ?>
             <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </section>
 
-    <section class="tab-panel" id="tab-chim" role="tabpanel">
+    <section class="tab-panel<?= $initialServerTab === 'chim' ? ' active' : '' ?>" id="tab-chim" role="tabpanel" data-log-panel="chim" data-loaded="<?= $initialServerTab === 'chim' ? '1' : '0' ?>">
         <div class="title-container">
             <h2>CHIM Server Logs</h2>
             <div class="toolbar-actions">
@@ -1810,14 +1843,16 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         </div>
         <div class="title-helper">
         </div>
-        <div class="file-log-grid">
+        <div class="file-log-grid" data-log-grid="chim" aria-live="polite">
+            <?php if ($initialServerTab === 'chim'): ?>
             <?php foreach ($chimLogSources as $source): ?>
                 <?php renderLogSection($source); ?>
             <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </section>
 
-    <section class="tab-panel" id="tab-dialectic" role="tabpanel">
+    <section class="tab-panel<?= $initialServerTab === 'dialectic' ? ' active' : '' ?>" id="tab-dialectic" role="tabpanel" data-log-panel="dialectic" data-loaded="<?= $initialServerTab === 'dialectic' ? '1' : '0' ?>">
         <div class="title-container">
             <h2>Dialectic Server Logs</h2>
             <div class="toolbar-actions">
@@ -1849,14 +1884,16 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         </div>
         <div class="title-helper">
         </div>
-        <div class="file-log-grid">
+        <div class="file-log-grid" data-log-grid="dialectic" aria-live="polite">
+            <?php if ($initialServerTab === 'dialectic'): ?>
             <?php foreach ($dialecticLogSources as $source): ?>
                 <?php renderLogSection($source); ?>
             <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </section>
 
-    <section class="tab-panel" id="tab-stobe" role="tabpanel">
+    <section class="tab-panel<?= $initialServerTab === 'stobe' ? ' active' : '' ?>" id="tab-stobe" role="tabpanel" data-log-panel="stobe" data-loaded="<?= $initialServerTab === 'stobe' ? '1' : '0' ?>">
         <div class="title-container">
             <h2>STOBE Server Logs</h2>
             <div class="toolbar-actions">
@@ -1888,10 +1925,12 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         </div>
         <div class="title-helper">
         </div>
-        <div class="file-log-grid">
+        <div class="file-log-grid" data-log-grid="stobe" aria-live="polite">
+            <?php if ($initialServerTab === 'stobe'): ?>
             <?php foreach ($stobeLogSources as $source): ?>
                 <?php renderLogSection($source); ?>
             <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </section>
 </main>
@@ -1980,8 +2019,11 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
     const UTC_MODE = 'utc';
     const LOCAL_MODE = 'local';
     const forcedInitialTab = <?= json_encode($forcedInitialTab, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    const allowedLogTabs = new Set(<?= json_encode($allowedInitialTabs, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>);
+    const logPanelApiBase = <?= json_encode(strval($_SERVER['PHP_SELF'] ?? 'distro_debugger.php'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
     let useLocalTime = (localStorage.getItem(TIMEZONE_KEY) || UTC_MODE) === LOCAL_MODE;
+    const panelLoadPromises = new Map();
     const mcpStatusApiBase = '<?= h($_SERVER['PHP_SELF'] ?? 'distro_debugger.php') ?>';
     const mcpConnectionConfigApi = mcpStatusApiBase + '?mcp_connection_config=1';
     const mcpHost = '<?= h($mcpHost) ?>';
@@ -2503,20 +2545,78 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         });
     }
 
-    function setActiveTab(tabName) {
+    async function loadLogPanel(tabName) {
+        if (!allowedLogTabs.has(tabName)) {
+            return false;
+        }
+
+        const panel = document.getElementById('tab-' + tabName);
+        const grid = panel ? panel.querySelector('[data-log-grid="' + tabName + '"]') : null;
+        if (!panel || !grid) {
+            return false;
+        }
+        if (panel.dataset.loaded === '1') {
+            return true;
+        }
+        if (panelLoadPromises.has(tabName)) {
+            return panelLoadPromises.get(tabName);
+        }
+
+        const loadPromise = (async () => {
+            grid.setAttribute('aria-busy', 'true');
+            grid.innerHTML = '<div class="info-message" role="status">Loading logs...</div>';
+
+            try {
+                const url = new URL(logPanelApiBase, window.location.href);
+                url.search = '';
+                url.searchParams.set('log_panel', tabName);
+                const response = await fetch(url.toString(), {
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'text/html' },
+                });
+                if (!response.ok) {
+                    throw new Error('HTTP ' + String(response.status));
+                }
+
+                grid.innerHTML = await response.text();
+                panel.dataset.loaded = '1';
+                initializeLogControls(grid);
+                return true;
+            } catch (error) {
+                grid.innerHTML = '<div class="error-message" role="alert">Could not load logs. <button class="filter-btn lazy-panel-retry" type="button">Retry</button></div>';
+                const retryButton = grid.querySelector('.lazy-panel-retry');
+                if (retryButton) {
+                    retryButton.addEventListener('click', () => {
+                        loadLogPanel(tabName);
+                    });
+                }
+                return false;
+            } finally {
+                grid.removeAttribute('aria-busy');
+                panelLoadPromises.delete(tabName);
+            }
+        })();
+
+        panelLoadPromises.set(tabName, loadPromise);
+        return loadPromise;
+    }
+
+    async function setActiveTab(tabName) {
+        const selectedTab = allowedLogTabs.has(tabName) ? tabName : 'distro';
         document.querySelectorAll('.tab-button').forEach((button) => {
-            const isActive = button.dataset.tab === tabName;
+            const isActive = button.dataset.tab === selectedTab;
             button.classList.toggle('active', isActive);
             button.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
 
         document.querySelectorAll('.tab-panel').forEach((panel) => {
             const panelTab = panel.id.replace('tab-', '');
-            panel.classList.toggle('active', panelTab === tabName);
+            panel.classList.toggle('active', panelTab === selectedTab);
         });
 
         closeAllToolbarMenus();
-        localStorage.setItem(TAB_KEY, tabName);
+        localStorage.setItem(TAB_KEY, selectedTab);
+        await loadLogPanel(selectedTab);
     }
 
     function downloadPanelLogs(panelId, prefix) {
@@ -2617,93 +2717,109 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         });
     }
 
-    document.querySelectorAll('.search-input').forEach((input) => {
-        input.addEventListener('input', () => {
-            const targetId = input.dataset.target || '';
-            const containerId = targetId.replace('_container', '');
-            applyLevelFilters(containerId);
-        });
-    });
+    function initializeLogControls(scope) {
+        const root = scope || document;
 
-    document.querySelectorAll('.modal-search-input').forEach((input) => {
-        input.addEventListener('input', () => {
-            const targetId = input.dataset.target || '';
-            const target = document.getElementById(targetId);
-            if (!target) {
-                return;
-            }
-            applySearchToContainer(target, input.value || '');
-        });
-    });
-
-    document.querySelectorAll('.level-filter').forEach((checkbox) => {
-        checkbox.addEventListener('change', () => {
-            const containerId = checkbox.dataset.container || '';
-            if (!containerId) {
-                return;
-            }
-            applyLevelFilters(containerId);
-        });
-    });
-
-    document.querySelectorAll('.filter-btn').forEach((button) => {
-        button.addEventListener('click', () => {
-            const containerId = button.dataset.container || '';
-            const action = button.dataset.action || '';
-            if (!containerId) {
-                return;
-            }
-            document.querySelectorAll('.level-filter[data-container="' + containerId + '"]').forEach((checkbox) => {
-                checkbox.checked = action === 'all';
+        root.querySelectorAll('.search-input').forEach((input) => {
+            input.addEventListener('input', () => {
+                const targetId = input.dataset.target || '';
+                const containerId = targetId.replace('_container', '');
+                applyLevelFilters(containerId);
             });
+        });
+
+        root.querySelectorAll('.modal-search-input').forEach((input) => {
+            input.addEventListener('input', () => {
+                const targetId = input.dataset.target || '';
+                const target = document.getElementById(targetId);
+                if (!target) {
+                    return;
+                }
+                applySearchToContainer(target, input.value || '');
+            });
+        });
+
+        root.querySelectorAll('.level-filter').forEach((checkbox) => {
+            checkbox.addEventListener('change', () => {
+                const containerId = checkbox.dataset.container || '';
+                if (!containerId) {
+                    return;
+                }
+                applyLevelFilters(containerId);
+            });
+        });
+
+        root.querySelectorAll('.filter-btn').forEach((button) => {
+            button.addEventListener('click', () => {
+                const containerId = button.dataset.container || '';
+                const action = button.dataset.action || '';
+                if (!containerId) {
+                    return;
+                }
+                document.querySelectorAll('.level-filter[data-container="' + containerId + '"]').forEach((checkbox) => {
+                    checkbox.checked = action === 'all';
+                });
+                applyLevelFilters(containerId);
+            });
+        });
+
+        root.querySelectorAll('.llm-section-btn').forEach((button) => {
+            button.addEventListener('click', () => {
+                const targetId = button.dataset.target || '';
+                const action = button.dataset.detailsAction || '';
+                if (!targetId) {
+                    return;
+                }
+
+                setLlmSectionOpenState(targetId, action === 'open');
+            });
+        });
+
+        root.querySelectorAll('.log-container[data-level-filter="1"]').forEach((container) => {
+            const containerId = (container.id || '').replace('_container', '');
+            if (containerId === '') {
+                return;
+            }
+            updateLevelCounts(containerId);
             applyLevelFilters(containerId);
         });
-    });
 
-    document.querySelectorAll('.llm-section-btn').forEach((button) => {
-        button.addEventListener('click', () => {
-            const targetId = button.dataset.target || '';
-            const action = button.dataset.detailsAction || '';
-            if (!targetId) {
-                return;
-            }
+        root.querySelectorAll('.expand-button').forEach((button) => {
+            button.addEventListener('click', () => {
+                const sourceId = button.getAttribute('data-source') || '';
+                const modalId = button.getAttribute('data-modal') || '';
+                if (!sourceId || !modalId) {
+                    return;
+                }
 
-            setLlmSectionOpenState(targetId, action === 'open');
+                const source = document.getElementById(sourceId);
+                const modal = document.getElementById(modalId);
+                const modalContent = document.getElementById(modalId + '_content');
+                if (!source || !modal || !modalContent) {
+                    return;
+                }
+
+                modalContent.innerHTML = '<div class="log-container">' + source.innerHTML + '</div>';
+                modal.style.display = 'block';
+                convertTimestampElements(modal);
+            });
         });
-    });
 
-    document.querySelectorAll('.log-container[data-level-filter="1"]').forEach((container) => {
-        const containerId = (container.id || '').replace('_container', '');
-        if (containerId === '') {
-            return;
-        }
-        updateLevelCounts(containerId);
-        applyLevelFilters(containerId);
-    });
-
-    document.querySelectorAll('.expand-button').forEach((button) => {
-        button.addEventListener('click', () => {
-            const sourceId = button.getAttribute('data-source') || '';
-            const modalId = button.getAttribute('data-modal') || '';
-            if (!sourceId || !modalId) {
-                return;
-            }
-
-            const source = document.getElementById(sourceId);
-            const modal = document.getElementById(modalId);
-            const modalContent = document.getElementById(modalId + '_content');
-            if (!source || !modal || !modalContent) {
-                return;
-            }
-
-            modalContent.innerHTML = '<div class="log-container">' + source.innerHTML + '</div>';
-            modal.style.display = 'block';
-            convertTimestampElements(modal);
-        });
-    });
+        convertTimestampElements(root);
+    }
 
     document.body.addEventListener('click', async (event) => {
         const target = event.target instanceof Element ? event.target : null;
+        const closeButton = target ? target.closest('.close-modal') : null;
+        if (closeButton instanceof HTMLElement) {
+            const modalId = closeButton.getAttribute('data-close-modal');
+            const modal = modalId ? document.getElementById(modalId) : null;
+            if (modal) {
+                modal.style.display = 'none';
+            }
+            return;
+        }
+
         const copyBtn = target ? target.closest('.copy-llm-btn') : null;
         if (!(copyBtn instanceof HTMLElement)) {
             return;
@@ -2736,19 +2852,6 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
             copyBtn.classList.remove('copied', 'failed');
             copyBtn.setAttribute('title', 'Copy to clipboard');
         }, 1200);
-    });
-
-    document.querySelectorAll('.close-modal').forEach((button) => {
-        button.addEventListener('click', () => {
-            const modalId = button.getAttribute('data-close-modal');
-            if (!modalId) {
-                return;
-            }
-            const modal = document.getElementById(modalId);
-            if (modal) {
-                modal.style.display = 'none';
-            }
-        });
     });
 
     window.addEventListener('click', (event) => {
@@ -2923,15 +3026,20 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         });
     }
 
+    const initialLoadedPanel = document.querySelector('.tab-panel[data-loaded="1"]');
+    if (initialLoadedPanel) {
+        initializeLogControls(initialLoadedPanel);
+    }
+
     const initialTab = forcedInitialTab || localStorage.getItem(TAB_KEY) || 'distro';
+    let initialTabPromise;
     if (document.querySelector('.tab-button[data-tab="' + initialTab + '"]')) {
-        setActiveTab(initialTab);
+        initialTabPromise = setActiveTab(initialTab);
     } else {
-        setActiveTab('distro');
+        initialTabPromise = setActiveTab('distro');
     }
 
     updateTimezoneToggleText();
-    convertTimestampElements(document);
     updateMcpSourceUi();
     renderMcpMeta(false);
 
@@ -2949,9 +3057,11 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
 
     const loadingOverlay = document.getElementById('loadingOverlay');
     if (loadingOverlay) {
-        window.setTimeout(() => {
-            loadingOverlay.classList.remove('active');
-        }, 180);
+        Promise.resolve(initialTabPromise).finally(() => {
+            window.setTimeout(() => {
+                loadingOverlay.classList.remove('active');
+            }, 180);
+        });
     }
 })();
 </script>
