@@ -1612,20 +1612,6 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
         }
         <?php endif; ?>
 
-        .toolbar-actions .diagnostics-button {
-            background: linear-gradient(135deg, #e6b76c, #d09b45);
-            border-color: rgba(230, 183, 108, 0.9);
-            color: #17130d;
-            font-weight: 600;
-        }
-
-        .toolbar-actions .diagnostics-button:hover,
-        .toolbar-actions .diagnostics-button:focus-visible {
-            background: linear-gradient(135deg, #f2c98a, #e0ac57);
-            border-color: #f2c98a;
-            color: #17130d;
-        }
-
         .toolbar-actions .refresh-button:focus-visible {
             outline: 2px solid rgba(230, 183, 108, 0.75);
             outline-offset: 2px;
@@ -1758,7 +1744,7 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
             <div class="toolbar-actions">
                 <a class="refresh-button diagnostics-button" href="dwemerdistro://generate-diagnostics" title="Run the DwemerDistro Launcher diagnostic report, then open the folder holding the generated files">
                     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
-                    <span>Launcher Diagnostic Logs</span>
+                    <span>Download Logs</span>
                 </a>
                 <button class="refresh-button tab-refresh-button" type="button" data-panel="tab-distro" title="Reload Distro logs">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 0 0-5 5H1l3.5 3.5L8 8H6a2 2 0 1 1 2 2v2a4 4 0 1 0-4-4H2a6 6 0 1 1 6 6v-2a4 4 0 0 0 0-8z"/></svg>
@@ -1798,7 +1784,7 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
             <div class="toolbar-actions">
                 <a class="refresh-button diagnostics-button" href="dwemerdistro://generate-diagnostics" title="Run the DwemerDistro Launcher diagnostic report, then open the folder holding the generated files">
                     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
-                    <span>Launcher Diagnostic Logs</span>
+                    <span>Download Logs</span>
                 </a>
                 <button class="refresh-button tab-refresh-button" type="button" data-panel="tab-chim" title="Reload CHIM logs">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 0 0-5 5H1l3.5 3.5L8 8H6a2 2 0 1 1 2 2v2a4 4 0 1 0-4-4H2a6 6 0 1 1 6 6v-2a4 4 0 0 0 0-8z"/></svg>
@@ -1837,7 +1823,7 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
             <div class="toolbar-actions">
                 <a class="refresh-button diagnostics-button" href="dwemerdistro://generate-diagnostics" title="Run the DwemerDistro Launcher diagnostic report, then open the folder holding the generated files">
                     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
-                    <span>Launcher Diagnostic Logs</span>
+                    <span>Download Logs</span>
                 </a>
                 <button class="refresh-button tab-refresh-button" type="button" data-panel="tab-dialectic" title="Reload Dialectic logs">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 0 0-5 5H1l3.5 3.5L8 8H6a2 2 0 1 1 2 2v2a4 4 0 1 0-4-4H2a6 6 0 1 1 6 6v-2a4 4 0 0 0 0-8z"/></svg>
@@ -1876,7 +1862,7 @@ $forcedInitialTab = in_array($requestedInitialTab, $allowedInitialTabs, true) ? 
             <div class="toolbar-actions">
                 <a class="refresh-button diagnostics-button" href="dwemerdistro://generate-diagnostics" title="Run the DwemerDistro Launcher diagnostic report, then open the folder holding the generated files">
                     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
-                    <span>Launcher Diagnostic Logs</span>
+                    <span>Download Logs</span>
                 </a>
                 <button class="refresh-button tab-refresh-button" type="button" data-panel="tab-stobe" title="Reload STOBE logs">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 0 0-5 5H1l3.5 3.5L8 8H6a2 2 0 1 1 2 2v2a4 4 0 1 0-4-4H2a6 6 0 1 1 6 6v-2a4 4 0 0 0 0-8z"/></svg>
