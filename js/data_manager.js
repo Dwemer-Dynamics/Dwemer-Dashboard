@@ -1,5 +1,7 @@
-/* Playthroughs & data — shared UI for the CHIM, STOBE and Dialectic databases.
-   Each mod is fetched independently so an unavailable mod cannot block the others. */
+/* Storage & Cleanup — shared UI for the CHIM, STOBE and Dialectic databases.
+   Each mod is fetched independently so an unavailable mod cannot block the others.
+   Views that render a server's own management page are server-rendered fragments:
+   navigating to or away from one always uses a full page load. */
 (function () {
     'use strict';
 
@@ -7,9 +9,43 @@
     var PAGE = body.dataset.page || 'data_manager.php';
     var ENDPOINT = body.dataset.endpoint || 'api/data_manager.php';
     var MODS = ['chim', 'stobe', 'dialectic'];
-    var VIEWS = ['playthroughs', 'storage', 'backups', 'advanced'];
     var LIMIT = 50;
     var MAX_QUERY = 120;
+
+    /* Routing table shared with the server so both sides resolve links the same way. */
+    var ROUTES = (function () {
+        var fallback = {
+            views: {all: [], chim: ['playthroughs', 'storage'], stobe: ['playthroughs', 'storage'],
+                dialectic: ['playthroughs', 'storage'], shared: ['databases']},
+            aliases: {},
+            fragments: {}
+        };
+        try {
+            var parsed = JSON.parse(body.dataset.routes || '');
+            if (parsed && parsed.views) {
+                return {views: parsed.views, aliases: parsed.aliases || {}, fragments: parsed.fragments || {}};
+            }
+        } catch (error) {
+            /* fall through */
+        }
+        return fallback;
+    }());
+    var IS_FRAGMENT = body.dataset.fragment === '1';
+
+    function viewsFor(mod) {
+        var list = ROUTES.views[mod];
+        return Array.isArray(list) ? list : [];
+    }
+
+    function defaultView(mod) {
+        var list = viewsFor(mod);
+        return list.length === 0 ? 'playthroughs' : list[0];
+    }
+
+    function isFragmentRoute(route) {
+        var list = ROUTES.fragments[route.mod];
+        return Array.isArray(list) && list.indexOf(route.view) !== -1;
+    }
 
     var overview = document.getElementById('dm-overview');
     var detail = document.getElementById('dm-detail');
@@ -29,7 +65,6 @@
     var searchInput = document.getElementById('dm-q');
     var searchMod = document.getElementById('dm-search-mod');
     var clearLink = document.getElementById('dm-clear');
-    var backupScope = document.getElementById('dm-backup-scope');
 
     var navToken = 0;
     var controllers = [];
@@ -136,14 +171,34 @@
 
     /* ---------- url + state ---------- */
 
+    /* Mirrors dm_resolve_route(): retired view names stay valid as aliases. */
+    function resolveRoute(mod, view) {
+        if (!ROUTES.views.hasOwnProperty(mod)) {
+            mod = 'all';
+        }
+        var alias = (ROUTES.aliases[mod] || {})[view];
+        if (Array.isArray(alias) && alias.length === 2) {
+            return {mod: alias[0], view: alias[1]};
+        }
+        if (mod === 'all') {
+            return {mod: 'all', view: 'playthroughs'};
+        }
+        if (viewsFor(mod).indexOf(view) === -1) {
+            return {mod: mod, view: defaultView(mod)};
+        }
+        return {mod: mod, view: view};
+    }
+
     function parseQuery(search) {
         var params = new URLSearchParams((search || '').split('?').pop() || '');
-        var mod = (params.get('mod') || 'all').toLowerCase();
-        var view = (params.get('view') || 'playthroughs').toLowerCase();
+        var resolved = resolveRoute(
+            (params.get('mod') || 'all').toLowerCase(),
+            (params.get('view') || '').toLowerCase()
+        );
         var offset = parseInt(params.get('offset') || '0', 10);
         return {
-            mod: (mod === 'all' || MODS.indexOf(mod) !== -1) ? mod : 'all',
-            view: VIEWS.indexOf(view) !== -1 ? view : 'playthroughs',
+            mod: resolved.mod,
+            view: resolved.view,
             q: (params.get('q') || '').trim().slice(0, MAX_QUERY),
             offset: isFinite(offset) && offset > 0 ? offset : 0
         };
@@ -276,7 +331,6 @@
         fillSummary(data);
         fillSnapshots(data);
         fillStorage(data);
-        fillTools(data);
     }
 
     function resetDetail() {
@@ -288,9 +342,6 @@
         clear(snapshots);
         clear(storage);
         removeWarnings();
-        Array.prototype.forEach.call(detail.querySelectorAll('[data-tool]'), clear);
-        clear(backupScope);
-        clear(document.getElementById('dm-advanced-scope'));
         paging.hidden = true;
     }
 
@@ -451,60 +502,6 @@
         storage.appendChild(table);
     }
 
-    function fillTools(data) {
-        var tools = data.tools || {};
-        var label = str(data.label) || 'this mod';
-
-        setTool('snapshots', tools.snapshots, 'Open ' + label + ' snapshot tools',
-            'Snapshot tools are not available for ' + label + ' yet.');
-        setTool('cleanup', tools.cleanup, 'Open ' + label + ' cleanup tools',
-            'Cleanup tools are not available for ' + label + ' yet.');
-        setTool('backup', tools.backup, 'Open backup tools',
-            'Backup tools are not available yet.');
-        setTool('advanced', tools.advanced, 'Open existing maintenance tools',
-            'Maintenance tools are not available for ' + label + ' yet.');
-
-        var scope = str(tools.backup_scope);
-        clear(backupScope);
-        backupScope.hidden = scope === '';
-        if (scope !== '') {
-            backupScope.textContent = scope;
-        }
-        document.getElementById('dm-advanced-scope').textContent = scope;
-    }
-
-    /* Tool URLs come from the API. Accept only same-origin relative paths and
-       http(s) so a bad value cannot become a javascript: link. */
-    function safeUrl(value) {
-        var raw = str(value);
-        if (raw === '') {
-            return '';
-        }
-        var resolved;
-        try {
-            resolved = new URL(raw, window.location.href);
-        } catch (error) {
-            return '';
-        }
-        if ((resolved.protocol !== 'http:' && resolved.protocol !== 'https:') || resolved.origin !== window.location.origin) {
-            return '';
-        }
-        return resolved.href;
-    }
-
-    function setTool(key, url, linkText, missingText) {
-        var holder = detail.querySelector('[data-tool="' + key + '"]');
-        clear(holder);
-        var href = safeUrl(url);
-        if (href === '') {
-            holder.appendChild(el('span', 'dm-state', missingText));
-            return;
-        }
-        var link = el('a', null, linkText);
-        link.href = href;
-        holder.appendChild(link);
-    }
-
     /* ---------- chrome ---------- */
 
     function markActive(link, active) {
@@ -516,12 +513,22 @@
         }
     }
 
+    /* Keep the current task selected when it exists for the target mod. */
+    function modUrl(mod) {
+        var target = resolveRoute(mod, state.view);
+        var url = PAGE + '?mod=' + encodeURIComponent(target.mod);
+        if (target.mod !== 'all') {
+            url += '&view=' + encodeURIComponent(target.view);
+        }
+        return url;
+    }
+
     function updateChrome() {
         var isAll = state.mod === 'all';
 
         Array.prototype.forEach.call(document.querySelectorAll('[data-mod-link]'), function (link) {
             var mod = link.dataset.modLink;
-            link.href = pageUrl({mod: mod, view: state.view, q: '', offset: 0});
+            link.href = modUrl(mod);
             if (link.closest('.dm-tabs-mod')) {
                 markActive(link, mod === state.mod);
             }
@@ -533,10 +540,10 @@
             markActive(link, view === state.view);
         });
 
-        viewTabs.hidden = isAll;
+        viewTabs.hidden = viewsFor(state.mod).length === 0;
         readonlyNote.hidden = !isAll;
         overview.hidden = !isAll;
-        detail.hidden = isAll;
+        detail.hidden = isAll || IS_FRAGMENT;
 
         Array.prototype.forEach.call(detail.querySelectorAll('.dm-view'), function (pane) {
             pane.hidden = pane.dataset.view !== state.view;
@@ -554,9 +561,13 @@
         abortInflight();
         navToken += 1;
         updateChrome();
+        if (IS_FRAGMENT) {
+            /* The tools on this page are server-rendered; there is nothing to fetch. */
+            return;
+        }
         if (state.mod === 'all') {
             renderOverview(navToken);
-        } else {
+        } else if (MODS.indexOf(state.mod) !== -1) {
             renderDetail(navToken);
         }
     }
@@ -575,11 +586,20 @@
         if (!link) {
             return;
         }
+        var next = parseQuery(link.getAttribute('href'));
+        /* Server-rendered tools and mod switches replace the whole document, so
+           let the browser navigate instead of swapping panes in place. */
+        if (IS_FRAGMENT || isFragmentRoute(next) || next.mod !== state.mod) {
+            return;
+        }
         event.preventDefault();
-        go(parseQuery(link.getAttribute('href')), true);
+        go(next, true);
     });
 
     searchForm.addEventListener('submit', function (event) {
+        if (IS_FRAGMENT) {
+            return;
+        }
         event.preventDefault();
         // Submitting is an explicit request for fresh results, so never reuse the cache.
         lastKey = '';
@@ -596,6 +616,10 @@
     });
 
     document.getElementById('dm-refresh').addEventListener('click', function () {
+        if (IS_FRAGMENT) {
+            window.location.reload();
+            return;
+        }
         lastKey = '';
         lastData = null;
         render();

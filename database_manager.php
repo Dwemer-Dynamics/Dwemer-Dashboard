@@ -1,5 +1,23 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) session_start();
+require_once __DIR__ . '/lib/storage_manager_actions.php';
+
+// Compatibility URL only: every control and action now runs through the shared page.
+$isStorageFragment = defined('DWEMER_STORAGE_FRAGMENT') && DWEMER_STORAGE_FRAGMENT === true;
+if (!$isStorageFragment) {
+    $params = ['mod' => 'shared', 'view' => 'databases'];
+    foreach (['server', 'action', 'filename', 'target', 'version_tab'] as $key) {
+        if (isset($_GET[$key]) && is_string($_GET[$key])) $params[$key] = $_GET[$key];
+    }
+    $url = 'data_manager.php?' . http_build_query($params);
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
+        http_response_code(409);
+        echo 'These tools have moved. Nothing was changed. <a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">Open Storage &amp; Cleanup</a> and try again.';
+        exit;
+    }
+    header('Location: ' . $url, true, 302);
+    exit;
+}
 
 $resolveServerRoot = static function (array $candidates): string {
     foreach ($candidates as $candidate) {
@@ -21,13 +39,14 @@ if ($serverParam === '') {
 $selectedServerKey = in_array($serverParam, ['dialectic', 'dialecticserver'], true) ? 'dialectic' : 'herika';
 $selectedServerDir = $selectedServerKey === 'dialectic' ? 'DialecticServer' : 'HerikaServer';
 $selectedServerLabel = $selectedServerKey === 'dialectic' ? 'DialecticServer' : 'HerikaServer';
+$versionServerLabel = $selectedServerKey === 'dialectic' ? 'DIALECTIC' : 'CHIM';
 
 $serverRoot = $resolveServerRoot([
     __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . $selectedServerDir,
     dirname(__DIR__) . DIRECTORY_SEPARATOR . $selectedServerDir,
     '/var/www/html/' . $selectedServerDir,
 ]);
-$herikaRoot = $serverRoot;
+$herikaRoot = $resolveServerRoot([dirname(__DIR__) . '/HerikaServer', '/var/www/html/HerikaServer']);
 
 if ($serverRoot === '') {
     http_response_code(500);
@@ -79,8 +98,13 @@ require_once($enginePath . "lib" . DIRECTORY_SEPARATOR . "logger.php");
 require_once($enginePath . "lib" . DIRECTORY_SEPARATOR . "{$GLOBALS["DBDRIVER"]}.class.php");
 
 $embedParam = strval($_GET['embed'] ?? $_POST['embed'] ?? '');
-$isEmbed = ($embedParam === '1');
+$isEmbed = $isStorageFragment || ($embedParam === '1');
 $debugPaneLink = false;
+
+// Action links must keep the central route and its mod/task selection.
+$dashboardActionUrlBase = $isStorageFragment
+    ? ((string)DWEMER_STORAGE_FRAGMENT_ROUTE . '&')
+    : '?';
 
 if ($selectedServerKey === 'herika' && isset($_SESSION["PROFILE"])) {
     $sessionProfilePath = strval($_SESSION["PROFILE"]);
@@ -120,12 +144,9 @@ $dbname = $selectedServerKey === 'dialectic'
     ? strval($GLOBALS['DIALECTIC_DB_NAME'] ?? 'dialectic')
     : 'dwemer';
 $schema = 'public';
-$username = $selectedServerKey === 'dialectic'
-    ? strval($GLOBALS['DIALECTIC_DB_USER'] ?? 'dwemer')
-    : 'dwemer';
-$password = $selectedServerKey === 'dialectic'
-    ? strval($GLOBALS['DIALECTIC_DB_PASSWORD'] ?? 'dwemer')
-    : 'dwemer';
+// Combined tools use the Distro cluster; the selected server's SQL driver owns its version queries.
+$username = 'dwemer';
+$password = 'dwemer';
 
 // Initialize message variable
 $message = '';
@@ -214,7 +235,7 @@ function repairDashboardOghmaTable(sql $db): array {
                 WHERE topic IS NOT NULL AND BTRIM(topic::text) <> ''
             )
             DELETE FROM public.oghma o
-            USING ranked r
+            USING ranked
             WHERE o.ctid = r.ctid
               AND r.rn > 1
         ");
@@ -422,7 +443,7 @@ function repairDashboardCoreConstraints(sql $db): array {
                     WHERE topic IS NOT NULL AND BTRIM(topic::text) <> ''
                 )
                 DELETE FROM public.oghma o
-                USING ranked r
+                USING ranked
                 WHERE o.ctid = r.ctid
                   AND r.rn > 1
             ");
@@ -532,7 +553,7 @@ function repairDashboardCoreConstraints(sql $db): array {
                     WHERE id IS NOT NULL AND BTRIM(id::text) <> ''
                 )
                 DELETE FROM public.conf_opts c
-                USING ranked r
+                USING ranked
                 WHERE c.ctid = r.ctid
                   AND r.rn > 1
             ");
@@ -811,96 +832,9 @@ function backupFileContainsDatabaseSection(string $backupPath, string $databaseN
     return false;
 }
 
-function inspectBackupScope(string $backupPath, ?string $filename = null): array
+function inspectBackupScope(string $backupPath, ?string $filename = null, bool $inspect = false): array
 {
-    $resolvedName = trim(strval($filename ?? basename($backupPath)));
-    $lowerName = strtolower($resolvedName);
-    $includesDwemer = false;
-    $includesStobe = false;
-    $explicit = false;
-
-    $handle = @fopen($backupPath, 'rb');
-    if ($handle !== false) {
-        $lineCount = 0;
-        while (($line = fgets($handle)) !== false && $lineCount < 400) {
-            $lineCount++;
-            $trimmed = trim($line);
-            if ($trimmed === getDashboardBackupMarker()) {
-                $explicit = true;
-            }
-            if (preg_match('/^-- DATABASE:\s*dwemer\b/i', $trimmed) === 1 || preg_match('/^\\\\connect\s+dwemer\b/i', $trimmed) === 1) {
-                $includesDwemer = true;
-                $explicit = true;
-            }
-            if (preg_match('/^-- DATABASE:\s*stobe\b/i', $trimmed) === 1 || preg_match('/^\\\\connect\s+stobe\b/i', $trimmed) === 1) {
-                $includesStobe = true;
-                $explicit = true;
-            }
-            if ($includesDwemer && $includesStobe) {
-                break;
-            }
-        }
-        fclose($handle);
-    }
-
-    if (!$includesDwemer && backupFileContainsDatabaseSection($backupPath, 'dwemer')) {
-        $includesDwemer = true;
-        $explicit = true;
-    }
-    if (!$includesStobe && backupFileContainsDatabaseSection($backupPath, 'stobe')) {
-        $includesStobe = true;
-        $explicit = true;
-    }
-
-    if (
-        !$includesStobe &&
-        (
-            strpos($lowerName, 'stobe') !== false ||
-            strpos($lowerName, 'stobeserver') !== false
-        )
-    ) {
-        $includesStobe = true;
-    }
-    if (
-        !$includesDwemer &&
-        (
-            strpos($lowerName, 'dwemer') !== false ||
-            strpos($lowerName, 'herika') !== false ||
-            strpos($lowerName, 'herikaserver') !== false ||
-            strpos($lowerName, 'chim') !== false
-        )
-    ) {
-        $includesDwemer = true;
-    }
-
-    if (!$includesDwemer && !$includesStobe) {
-        $includesDwemer = true;
-    }
-
-    $scopeSlug = getBackupScopeSlugFromFlags($includesDwemer, $includesStobe);
-    if ($includesDwemer && $includesStobe) {
-        $scopeLabel = 'HerikaServer + StobeServer';
-        $scopeShortLabel = 'HerikaServer + StobeServer';
-        $badgeClass = 'backup-scope-both';
-    } elseif ($includesStobe) {
-        $scopeLabel = 'StobeServer only';
-        $scopeShortLabel = 'StobeServer';
-        $badgeClass = 'backup-scope-stobe';
-    } else {
-        $scopeLabel = $explicit ? 'HerikaServer only' : 'HerikaServer only (legacy)';
-        $scopeShortLabel = 'HerikaServer';
-        $badgeClass = 'backup-scope-herika';
-    }
-
-    return [
-        'includes_dwemer' => $includesDwemer,
-        'includes_stobe' => $includesStobe,
-        'scope_slug' => $scopeSlug,
-        'scope_label' => $scopeLabel,
-        'scope_short_label' => $scopeShortLabel,
-        'badge_class' => $badgeClass,
-        'explicit' => $explicit,
-    ];
+    return sm_backup_scope($backupPath, $filename, $inspect, $GLOBALS['selectedServerKey'] ?? 'herika');
 }
 
 function getBackupScopeSlugFromConfigs(array $databaseConfigs): string
@@ -921,16 +855,7 @@ function getBackupScopeSlugFromConfigs(array $databaseConfigs): string
 
 function getBackupRestoreSuccessMessage(array $scope): string
 {
-    $includesDwemer = !empty($scope['includes_dwemer']);
-    $includesStobe = !empty($scope['includes_stobe']);
-
-    if ($includesDwemer && $includesStobe) {
-        return 'HerikaServer and STOBE databases restored successfully.';
-    }
-    if ($includesStobe) {
-        return 'STOBE database restored successfully.';
-    }
-    return 'HerikaServer database restored successfully.';
+    return ($scope['scope_short_label'] ?? 'Selected') . ' database restore completed. Restart the affected servers and games.';
 }
 
 function appendFileToExistingFile(string $sourcePath, string $destPath): bool
@@ -1099,13 +1024,16 @@ function restoreDatabaseBackupFile(
     string $password,
     string &$errorMessage = ''
 ): bool {
-    $scope = inspectBackupScope($backupPath);
+    $scope = inspectBackupScope($backupPath, null, true);
     $restoreTargets = [];
     if (!empty($scope['includes_dwemer'])) {
         $restoreTargets[] = 'dwemer';
     }
     if (!empty($scope['includes_stobe'])) {
         $restoreTargets[] = 'stobe';
+    }
+    if (!empty($scope['includes_dialectic'])) {
+        $restoreTargets[] = 'dialectic';
     }
     if (empty($restoreTargets)) {
         $restoreTargets[] = 'dwemer';
@@ -1117,7 +1045,7 @@ function restoreDatabaseBackupFile(
         }
     }
 
-    $primaryDb = !empty($scope['includes_dwemer']) ? 'dwemer' : 'stobe';
+    $primaryDb = $restoreTargets[0];
 
     $psqlCommand = "PGPASSWORD=" . escapeshellarg($password)
         . " psql -h " . escapeshellarg($host)
@@ -1581,7 +1509,7 @@ if (
             }
             $message = "<p><strong>Database version reset successfully!</strong></p>";
             $message .= "<p>Table: <strong>" . htmlspecialchars($tablename) . "</strong></p>";
-            $message .= "<p>Target: <strong>" . ($versionTarget === 'stobe' ? 'STOBE' : 'CHIM') . "</strong></p>";
+            $message .= "<p>Target: <strong>" . ($versionTarget === 'stobe' ? 'STOBE' : $versionServerLabel) . "</strong></p>";
             $message .= "<p>This update will be re-applied on the next server restart.</p>";
         } else {
             $message = "<p><strong>Error:</strong> Invalid table name.</p>";
@@ -1637,13 +1565,17 @@ if (
             $result = $db->fetchOne("SELECT COUNT(*) as count FROM public.database_versioning");
             $count = intval($result['count'] ?? 0);
             $db->execQuery("DELETE FROM public.database_versioning");
-            repairHerikaBootstrapTablesIfNeeded($db, $herikaRoot, $repairOutput);
-            $updateOk = runPhpScriptAndCapture($herikaRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'apply_db_updates.php', $updateOutput);
+            if ($selectedServerKey === 'herika') {
+                repairHerikaBootstrapTablesIfNeeded($db, $herikaRoot, $repairOutput);
+                $updateOk = runPhpScriptAndCapture($herikaRoot . DIRECTORY_SEPARATOR . 'debug' . DIRECTORY_SEPARATOR . 'apply_db_updates.php', $updateOutput);
+            } else {
+                $updateOutput = 'Restart DIALECTIC to apply its own database updates.';
+            }
         }
 
         $message = "<p><strong>All database versions reset successfully!</strong></p>";
         $message .= "<p>Reset <strong>{$count}</strong> version entries.</p>";
-        $message .= "<p>Target: <strong>" . ($versionTarget === 'stobe' ? 'STOBE' : 'CHIM') . "</strong></p>";
+        $message .= "<p>Target: <strong>" . ($versionTarget === 'stobe' ? 'STOBE' : $versionServerLabel) . "</strong></p>";
         if ($versionTarget !== 'stobe' && trim($repairOutput) !== '') {
             $message .= "<p><strong>Bootstrap repair:</strong></p><pre>" . htmlspecialchars($repairOutput) . "</pre>";
         }
@@ -1748,7 +1680,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'restore_auto' && isset($_GET[
         }
         
         if ($validFile && file_exists($backupPath)) {
-            $backupScope = inspectBackupScope($backupPath, $filename);
+            $backupScope = inspectBackupScope($backupPath, $filename, true);
             $restoreError = '';
             if (!restoreDatabaseBackupFile($backupPath, $host, $port, $username, $password, $restoreError)) {
                 $message .= "<p><strong>Error:</strong> Failed to restore from automatic backup.</p>";
@@ -1787,7 +1719,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'import_from_server' && isse
     
     // Security: ensure file is within uploads directory and has .sql extension
     if ($fullPath && strpos($fullPath, realpath($uploadsDir)) === 0 && pathinfo($fullPath, PATHINFO_EXTENSION) === 'sql' && file_exists($fullPath)) {
-        $backupScope = inspectBackupScope($fullPath, $serverFile);
+        $backupScope = inspectBackupScope($fullPath, $serverFile, true);
         $restoreError = '';
         if (!restoreDatabaseBackupFile($fullPath, $host, $port, $username, $password, $restoreError)) {
             $message .= "<p><strong>Error:</strong> Failed to import SQL file.</p>";
@@ -1836,13 +1768,13 @@ if (isset($_GET['action']) && $_GET['action'] === 'backup') {
             $port,
             $username,
             getDashboardBackupDatabaseConfigs(false),
-            $backupError
+            $backupErro
         );
 
         if ($backupCreated && file_exists($backupFile) && filesize($backupFile) > 0) {
             clearstatcache(true, $backupFile);
             $fileSize = filesize($backupFile);
-            $generatedScope = inspectBackupScope($backupFile, $filename);
+            $generatedScope = inspectBackupScope($backupFile, $filename, true);
             
             // Check if the file contains error messages instead of actual backup data
             $firstLine = file_get_contents($backupFile, false, null, 0, 100);
@@ -1896,7 +1828,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'backup') {
 }
 
 // Check if the form has been submitted
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_FILES['sql_file']) || (!isset($_POST['action']) && !isset($_POST['_sm_legacy_action'])))) {
     // Check if a file was uploaded without errors
     if (isset($_FILES['sql_file']) && $_FILES['sql_file']['error'] === UPLOAD_ERR_OK) {
         // Validate the uploaded file
@@ -1914,7 +1846,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (in_array($fileExtension, $allowedfileExtensions)) {
             // Directory where the uploaded file will be moved
             $uploadFileDir = $rootPath . 'data' . DIRECTORY_SEPARATOR;
-            $destPath = $uploadFileDir . 'dwemer.sql';
+            $destPath = $uploadFileDir . 'storage_restore_' . bin2hex(random_bytes(8)) . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', basename($fileName));
 
             // Ensure the upload directory exists
             if (!file_exists($uploadFileDir)) {
@@ -1924,7 +1856,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Move the file to the destination directory with the new name
             if (move_uploaded_file($fileTmpPath, $destPath)) {
-                $backupScope = inspectBackupScope($destPath, $fileName);
+                $backupScope = inspectBackupScope($destPath, $fileName, true);
                 $restoreError = '';
                 if (!restoreDatabaseBackupFile($destPath, $host, $port, $username, $password, $restoreError)) {
                     $message .= "<p>Failed to import SQL file.</p>";
@@ -1957,12 +1889,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 ?>
 
+<?php
+if ($isStorageFragment) {
+    $storageFragmentStyle = $webRoot . '/ui/css/main.css';
+    if (function_exists('dwemer_storage_fragment_style')) {
+        dwemer_storage_fragment_style($storageFragmentStyle);
+    } else {
+        echo '<link rel="stylesheet" href="' . htmlspecialchars($storageFragmentStyle, ENT_QUOTES, 'UTF-8') . '">';
+    }
+}
+?>
+<?php if (!$isStorageFragment): ?>
 <!DOCTYPE html>
 <html>
 <head>
     <link rel="icon" type="image/x-icon" href="images/favicon.ico">
     <link rel="stylesheet" href="<?php echo htmlspecialchars($webRoot, ENT_QUOTES, 'UTF-8'); ?>/ui/css/main.css">
     <title>Database Manager</title>
+<?php endif; ?>
     <style>
         /* Database Manager - Modern styling */
         body {
@@ -2751,8 +2695,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             100% { width: 100%; }
         }
     </style>
+<?php if (!$isStorageFragment): ?>
 </head>
 <body>
+<?php endif; ?>
     <!-- Loading Overlay -->
     <div id="importLoadingOverlay" class="loading-overlay">
         <div class="loading-content">
@@ -2773,7 +2719,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <div class="indent5">
     <div class="page-header">
         <div class="page-header-top">
+            <?php if ($isStorageFragment): ?>
+            <h2>Backup, restore and maintenance</h2>
+            <?php else: ?>
             <h1>Database Manager</h1>
+            <?php endif; ?>
             <?php if (!$isEmbed): ?>
             <a class="back-link" href="<?php echo htmlspecialchars($dashboardWebRoot . '/index.php', ENT_QUOTES, 'UTF-8'); ?>">Back to Dashboard</a>
             <?php endif; ?>
@@ -2795,7 +2745,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <div class="card-actions">
                 <a href="/pgAdmin/" target="_blank" class="button" style="background-color: rgb(1 53 166 / 90%); color: white; width: 100%; text-align: center;">
-                    Open Database Manager
+                    Open Database Manage
                 </a>
             </div>
         </div>
@@ -2808,7 +2758,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <p style="color: #ccc; font-size: 14px;">Creates a one-time downloadable combined backup file.</p>
             </div>
             <div class="card-actions">
-                <a href="?action=backup" class="button" style="background-color: #176529; color: white; width: 100%; text-align: center;">
+                <a href="<?php echo htmlspecialchars($dashboardActionUrlBase, ENT_QUOTES, 'UTF-8'); ?>action=backup" class="button" style="background-color: #176529; color: white; width: 100%; text-align: center;">
                     Create Backup
                 </a>
             </div>
@@ -2822,7 +2772,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <p><strong>⚠️ Important:</strong> Make sure Skyrim is stopped before running maintenance.</p>
             </div>
             <div class="card-actions">
-                <button onclick="if (confirm('Database maintenance will optimize and compact the HerikaServer and StobeServer databases.\n\n- Make sure Skyrim game is stopped\n- To reclaim unused space, free temporary space is required\n- During this operation tables will be locked, do not interrupt\n- This could take some time, please wait until you see the confirmation\n\nContinue?')) { window.open('?action=maintenance', 'Database_maintenance', 'resizable=yes,scrollbars=yes,titlebar=no,width=900,height=700'); return false; }" 
+                <button type="button" data-sm-action="maintenance"
                         class="button" style="background-color: #fd7e14; color: white; width: 100%;">
                     Run Database Maintenance
                 </button>
@@ -2838,13 +2788,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <div class="card-actions">
                 <div style="display: flex; gap: 10px; width: 100%;">
-                    <button onclick="if (confirm('⚠️ FACTORY RESET HERIKASERVER\n\nThis will wipe and reinstall the HerikaServer database to its default configuration.\n\n❌ ALL HERIKASERVER DATA WILL BE PERMANENTLY LOST:\n- All event logs\n- All diaries and memories\n- All custom Oghma and NPC Biography management profiles\n\n✅ HerikaServer will be reset to fresh installation state\n\nThis action CANNOT be undone!\n\nAre you absolutely sure you want to continue?')) { window.open('?action=factory_reset&target=herika', 'Database_factory_reset', 'resizable=yes,scrollbars=yes,titlebar=no,width=980,height=720'); return false; }"
+                    <button type="button" data-sm-action="factory_reset" data-sm-target="herika"
                             class="button" style="background-color: #dc3545; color: white; width: 100%;">
-                        Factory Reset HerikaServer
+                        Factory Reset HerikaServe
                     </button>
-                    <button onclick="if (confirm('⚠️ FACTORY RESET STOBESERVER\n\nThis will wipe and reinstall the StobeServer database to its default configuration.\n\n❌ ALL STOBESERVER DATA WILL BE PERMANENTLY LOST\n\n✅ StobeServer will be reset to fresh installation state\n\nThis action CANNOT be undone!\n\nAre you absolutely sure you want to continue?')) { window.open('?action=factory_reset&target=stobe', 'Database_factory_reset', 'resizable=yes,scrollbars=yes,titlebar=no,width=980,height=720'); return false; }"
+                    <button type="button" data-sm-action="factory_reset" data-sm-target="stobe"
                             class="button" style="background-color: #b91c1c; color: white; width: 100%;">
-                        Factory Reset StobeServer
+                        Factory Reset StobeServe
                     </button>
                 </div>
             </div>
@@ -2951,17 +2901,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                             
                             <div class="backup-actions">
-                                <button onclick="window.location.href='?action=download_auto&filename=<?php echo urlencode($backup['filename']); ?>'" 
+                                <button onclick="window.location.href='<?php echo htmlspecialchars($dashboardActionUrlBase, ENT_QUOTES, 'UTF-8'); ?>action=download_auto&filename=<?php echo urlencode($backup['filename']); ?>'"
                                         class="button backup-btn" style="background-color: #176529;" 
                                         title="Download backup file">
                                     📥
                                 </button>
-                                <button onclick="if (confirm('⚠️ RESTORE DATABASES\n\nRestore from: <?php echo htmlspecialchars($backup['filename']); ?>\n\nBackup scope: <?php echo htmlspecialchars(strval($backup['scope']['scope_label'] ?? 'HerikaServer only')); ?>\n\nThis will COMPLETELY REPLACE the databases included in this backup.\n\n❌ Current data will be lost!\n✅ Databases will be restored to backup state\n\nAre you absolutely sure you want to continue?')) { window.location.href='?action=restore_auto&filename=<?php echo urlencode($backup['filename']); ?>'; }" 
+                                <button type="button" data-sm-action="restore_auto" data-sm-filename="<?php echo htmlspecialchars($backup['filename'], ENT_QUOTES, 'UTF-8'); ?>"
                                         class="button backup-btn" style="background-color: rgb(1 53 166 / 90%);" 
                                         title="Restore database from this backup">
                                     🔄
                                 </button>
-                                <button onclick="if (confirm('⚠️ DELETE BACKUP\n\nDelete: <?php echo htmlspecialchars($backup['filename']); ?>\n\nThis action cannot be undone!\n\nAre you sure you want to permanently delete this backup?')) { window.location.href='?action=delete_auto&filename=<?php echo urlencode($backup['filename']); ?>'; }" 
+                                <button type="button" data-sm-action="delete_auto" data-sm-filename="<?php echo htmlspecialchars($backup['filename'], ENT_QUOTES, 'UTF-8'); ?>"
                                         class="button backup-btn" style="background-color: rgba(166, 53, 63, 0.9);" 
                                         title="Delete this backup file">
                                     🗑️
@@ -3138,8 +3088,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <div class="versioning-tabs">
             <button type="button" class="version-tab <?php echo $activeVersionTab === 'chim' ? 'active' : ''; ?>" data-version-tab="chim">
+                <?php if ($selectedServerKey === 'dialectic'): ?>
+                <span>DIALECTIC</span>
+                <?php else: ?>
                 <img class="version-tab-icon" src="images/chim-icon.png" alt="" aria-hidden="true">
                 <img class="version-tab-logo" src="images/chim-logo.png" alt="CHIM">
+                <?php endif; ?>
             </button>
             <button type="button" class="version-tab <?php echo $activeVersionTab === 'stobe' ? 'active' : ''; ?>" data-version-tab="stobe">
                 <img class="version-tab-icon" src="images/stobe-icon.png" alt="" aria-hidden="true">
@@ -3151,8 +3105,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="versioning-panel <?php echo $activeVersionTab === 'chim' ? 'active' : ''; ?>" data-version-panel="chim">
                 <?php if (!empty($chimDbVersions)): ?>
                     <div class="version-panel-title-row">
-                        <h4 style="margin: 0;">CHIM Version Entries (<?php echo count($chimDbVersions); ?> total)</h4>
+                        <h4 style="margin: 0;"><?php echo $versionServerLabel; ?> Version Entries (<?php echo count($chimDbVersions); ?> total)</h4>
                         <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+                            <?php if ($selectedServerKey === 'herika'): ?>
                             <form method="post" style="margin: 0;" onsubmit="return confirm('Repair Oghma Table\n\nThis fixes missing Oghma topic uniqueness required for CSV imports and game-startup imports. It preserves custom entries where possible. Continue?');">
                                 <input type="hidden" name="action" value="repair_oghma_table">
                                 <?php if ($isEmbed): ?><input type="hidden" name="embed" value="1"><?php endif; ?>
@@ -3167,9 +3122,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     Repair Database Constraints
                                 </button>
                             </form>
-                            <form method="post" style="margin: 0;" onsubmit="return confirm('Reset ALL CHIM database version entries? The dashboard will immediately rerun CHIM DB updates and repair empty bootstrap tables where possible.');">
+                            <?php endif; ?>
+                            <form method="post" style="margin: 0;" onsubmit="return confirm('Reset all selected database version entries? CHIM rebuilds immediately; DIALECTIC applies updates on its next restart.');">
                                 <input type="hidden" name="action" value="reset_all_db_versions">
-                                <input type="hidden" name="version_target" value="herika">
+                                <input type="hidden" name="version_target" value="<?php echo $selectedServerKey; ?>">
                                 <button type="submit" class="button" style="background-color: #dc3545; color: white; padding: 8px 16px; font-size: 14px;">
                                     Reset All Versions
                                 </button>
@@ -3192,9 +3148,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <td style="font-family: monospace; font-size: 13px;"><?php echo htmlspecialchars(strval($entry['tablename'] ?? '')); ?></td>
                                         <td style="font-size: 12px; color: #ccc;"><?php echo htmlspecialchars(formatVersionDate(strval($entry['version'] ?? ''))); ?></td>
                                         <td style="text-align: center;">
-                                            <form method="post" style="margin: 0;" onsubmit="return confirm('Reset CHIM version entry for <?php echo htmlspecialchars(strval($entry['tablename'] ?? '')); ?>?');">
+                                            <form method="post" style="margin: 0;" onsubmit="return confirm('Reset the selected database version entry for <?php echo htmlspecialchars(strval($entry['tablename'] ?? '')); ?>?');">
                                                 <input type="hidden" name="action" value="reset_db_version">
-                                                <input type="hidden" name="version_target" value="herika">
+                                                <input type="hidden" name="version_target" value="<?php echo $selectedServerKey; ?>">
                                                 <input type="hidden" name="tablename" value="<?php echo htmlspecialchars(strval($entry['tablename'] ?? '')); ?>">
                                                 <button type="submit" class="button" style="background-color: #fd7e14; color: white; padding: 4px 12px; font-size: 12px;">
                                                     Reset
@@ -3209,8 +3165,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php else: ?>
                     <div class="empty-state">
                         <div class="empty-state-icon">DB</div>
-                        <p style="margin: 0;">No CHIM database versioning entries found.</p>
-                        <small style="color: #666; display: block; margin-top: 8px;">The CHIM database_versioning table is empty or does not exist.</small>
+                        <p style="margin: 0;">No <?php echo $versionServerLabel; ?> database versioning entries found.</p>
+                        <small style="color: #666; display: block; margin-top: 8px;">The <?php echo $versionServerLabel; ?> database_versioning table is empty or does not exist.</small>
                     </div>
                 <?php endif; ?>
             </div>
@@ -3334,8 +3290,7 @@ function initVersioningTabs() {
 document.addEventListener('DOMContentLoaded', initVersioningTabs);
 </script>
 
+<?php if (!$isStorageFragment): ?>
 </body>
 </html>
-
-
-
+<?php endif; ?>

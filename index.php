@@ -324,6 +324,7 @@ $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/index.php', $requestScheme, $st
 $dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/index.php', $requestScheme, $stobeHostForUrl);
 $distroDebuggerUrl = 'distro_debugger.php';
 $databaseManagerUrl = 'data_manager.php?mod=all&view=playthroughs';
+$databaseManagerLabel = 'Storage & Cleanup';
 
 $normalizePatronName = static function (string $name): string {
     $normalized = trim(preg_replace('/\s+/', ' ', $name) ?? '');
@@ -1373,7 +1374,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 </a>
                 <a class="dashboard-button database-manager" href="<?= htmlspecialchars($databaseManagerUrl, ENT_QUOTES, 'UTF-8') ?>">
                     <span class="chim-brand">
-                        <span class="database-manager-label">Playthroughs &amp; Data</span>
+                        <span class="database-manager-label"><?= htmlspecialchars($databaseManagerLabel, ENT_QUOTES, 'UTF-8') ?></span>
                     </span>
                 </a>
             </div>

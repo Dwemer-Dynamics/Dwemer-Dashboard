@@ -504,3 +504,194 @@ a:hover {
         flex: 1 0 100%;
     }
 }
+
+
+/* ---------- Shared tools rendered natively from each server ---------- */
+
+.dm-tool {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.dm-card-shared .dm-state {
+    color: var(--dm-muted);
+}
+
+/* Scope banner for the mixed-mod database tools */
+.dm-scope {
+    border: 1px solid var(--dm-warn);
+    border-radius: 10px;
+    background: rgba(255, 182, 65, 0.08);
+    padding: 14px;
+    margin-bottom: 14px;
+}
+
+.dm-scope > h2 {
+    margin-top: 0;
+}
+
+.dm-scope p {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: var(--dm-text);
+}
+
+.dm-scope .dm-note {
+    color: var(--dm-muted);
+}
+
+.dm-scope-switch {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0 8px;
+    font-size: 14px;
+}
+
+.dm-tabs-server {
+    margin-bottom: 0;
+}
+
+.dm-tabs-server .dm-tab {
+    font-size: 14px;
+}
+
+/* Host for a server's own management markup. The mod's stylesheets load first
+   so its controls keep their normal look; only page chrome is neutralised. */
+
+/* Mod pages style a bare `main`; keep that off the shared shell's own <main>. */
+.dm-shell > main {
+    padding: 0;
+    margin: 0;
+    width: auto;
+    min-height: 0;
+}
+
+.dm-fragment-host {
+    margin-top: 4px;
+}
+
+/* Native modules share readable body type; each game's decorative UI must not restyle the shell. */
+body[data-page="data_manager.php"] {
+    font-family: Arial, sans-serif !important;
+    font-size: 15px !important;
+    background: var(--dm-bg-top) !important;
+    color: var(--dm-text) !important;
+}
+.dm-shell { font-family: Arial, sans-serif; }
+/* Legacy resets assign a game font to every element instead of inheriting it. */
+.dm-shell :where(div, span, p, a, label, summary, strong, small, li, td, th, button, input, textarea, select) {
+    font-family: inherit;
+}
+.dm-fragment-body h2,
+.dm-fragment-body h3,
+.dm-fragment-body h4,
+.dm-fragment-body p,
+.dm-fragment-body .subtitle {
+    font-family: Arial, sans-serif !important;
+    text-transform: none !important;
+}
+.dm-fragment-body .subtitle { font-weight: normal !important; line-height: 1.45 !important; }
+.dm-fragment-body input:not([type="checkbox"]):not([type="radio"]),
+.dm-fragment-body textarea,
+.dm-fragment-body select { color: var(--dm-text) !important; }
+.dm-fragment-body input::placeholder,
+.dm-fragment-body textarea::placeholder { color: var(--dm-muted) !important; opacity: 1; }
+.dm-fragment-body .page-header { padding: 14px !important; margin-bottom: 14px !important; }
+.dm-fragment-body .content-section { margin-bottom: 14px !important; }
+.dm-fragment-body details.storage-help { text-align: left; margin-top: 10px; }
+.dm-fragment-body details.storage-help > summary { cursor: pointer; color: var(--dm-muted); padding: 4px 0; }
+
+.dm-fragment-body {
+    min-width: 0;
+    overflow-x: auto;
+}
+
+.dm-fragment-body main,
+.dm-fragment-body > main {
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    max-width: 100%;
+    min-height: 0;
+}
+
+/* The standalone pages pin a decorative footer to the viewport. */
+.dm-fragment-body footer {
+    display: none;
+}
+
+.dm-fragment-body img,
+.dm-fragment-body table,
+.dm-fragment-body pre {
+    max-width: 100%;
+}
+
+.dm-fragment-body pre {
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.dm-fragment-body :focus-visible {
+    outline: 2px solid var(--dm-accent);
+    outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+    .dm-fragment-body main,
+    .dm-fragment-body > main {
+        padding: 0;
+    }
+
+    .dm-fragment-body .grid-container,
+    .dm-fragment-body .content-grid,
+    .dm-fragment-body .page-grid,
+    .dm-fragment-body .backup-restore-grid,
+    .dm-fragment-body .manager-sections {
+        grid-template-columns: 1fr;
+        display: block;
+    }
+
+    .dm-fragment-body .content-section,
+    .dm-fragment-body .panel,
+    .dm-fragment-body .card-tile,
+    .dm-fragment-body .message {
+        margin-bottom: 12px;
+        padding: 12px;
+    }
+}
+
+/* Narrow phones: nothing may overflow the viewport. */
+@media (max-width: 420px) {
+    .dm-shell {
+        padding: 10px 10px 28px;
+    }
+
+    .dm-head-links {
+        width: 100%;
+    }
+
+    .dm-tab {
+        padding: 6px 10px;
+    }
+
+    .dm-tool a {
+        flex: 1 1 100%;
+    }
+
+    /* Anything still wider scrolls inside the fragment instead of the page. */
+    .dm-fragment-body div,
+    .dm-fragment-body section,
+    .dm-fragment-body fieldset {
+        max-width: 100%;
+    }
+
+    .dm-fragment-body input:not([type="checkbox"]):not([type="radio"]),
+    .dm-fragment-body select,
+    .dm-fragment-body textarea {
+        max-width: 100%;
+    }
+}
