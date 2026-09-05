@@ -1,629 +1,488 @@
-/* Storage & Cleanup — shared UI for the CHIM, STOBE and Dialectic databases.
-   Each mod is fetched independently so an unavailable mod cannot block the others.
-   Views that render a server's own management page are server-rendered fragments:
-   navigating to or away from one always uses a full page load. */
-(function () {
+(() => {
     'use strict';
+    const config = JSON.parse(document.getElementById('sm-config').textContent);
+    const content = document.getElementById('sm-content');
+    const status = document.getElementById('sm-status');
+    const dialog = document.getElementById('sm-dialog');
+    const dialogBody = document.getElementById('sm-dialog-body');
+    const dialogActions = document.getElementById('sm-dialog-actions');
+    const labels = {all:'Distro', chim:'CHIM', stobe:'STOBE', dialectic:'DIALECTIC'};
+    const query = new URLSearchParams(location.search);
+    let mod = query.get('mod') || 'all';
+    let view = query.get('view') || '';
+    if (mod === 'shared') { mod = 'all'; view = 'backups'; }
+    if (!labels[mod]) mod = 'all';
+    view = ({manage:'snapshots', playthroughs:'snapshots', storage:'cleanup', databases:'backups'})[view] || view;
+    if (location.hash === '#retention-section' && mod === 'chim') view = 'cleanup';
+    const views = mod === 'all' ? {overview:'Overview',backups:'Backups',advanced:'Advanced'}
+        : {snapshots:'Snapshots',cleanup:'Cleanup',backups:'Backups',advanced:'Advanced'};
+    if (!views[view]) view = Object.keys(views)[0];
+    let search = (query.get('q') || '').slice(0,120);
+    let offset = Math.max(0, Math.min(1000000, Number(query.get('offset')) || 0));
+    let busy = false, dirty = false, generation = 0, previewTimer = null;
+    const retentionUrl = config.prefix + '/HerikaServer/ui/api/playthrough_retention.php?summary=1';
 
-    var body = document.body;
-    var PAGE = body.dataset.page || 'data_manager.php';
-    var ENDPOINT = body.dataset.endpoint || 'api/data_manager.php';
-    var MODS = ['chim', 'stobe', 'dialectic'];
-    var LIMIT = 50;
-    var MAX_QUERY = 120;
-
-    /* Routing table shared with the server so both sides resolve links the same way. */
-    var ROUTES = (function () {
-        var fallback = {
-            views: {all: [], chim: ['playthroughs', 'storage'], stobe: ['playthroughs', 'storage'],
-                dialectic: ['playthroughs', 'storage'], shared: ['databases']},
-            aliases: {},
-            fragments: {}
-        };
-        try {
-            var parsed = JSON.parse(body.dataset.routes || '');
-            if (parsed && parsed.views) {
-                return {views: parsed.views, aliases: parsed.aliases || {}, fragments: parsed.fragments || {}};
-            }
-        } catch (error) {
-            /* fall through */
-        }
-        return fallback;
-    }());
-    var IS_FRAGMENT = body.dataset.fragment === '1';
-
-    function viewsFor(mod) {
-        var list = ROUTES.views[mod];
-        return Array.isArray(list) ? list : [];
-    }
-
-    function defaultView(mod) {
-        var list = viewsFor(mod);
-        return list.length === 0 ? 'playthroughs' : list[0];
-    }
-
-    function isFragmentRoute(route) {
-        var list = ROUTES.fragments[route.mod];
-        return Array.isArray(list) && list.indexOf(route.view) !== -1;
-    }
-
-    var overview = document.getElementById('dm-overview');
-    var detail = document.getElementById('dm-detail');
-    var viewTabs = document.getElementById('dm-view-tabs');
-    var readonlyNote = document.getElementById('dm-readonly');
-    var liveRegion = document.getElementById('dm-live-region');
-    var summary = document.getElementById('dm-summary');
-    var summaryState = document.getElementById('dm-summary-state');
-    var summaryFacts = document.getElementById('dm-summary-facts');
-    var snapshots = document.getElementById('dm-snapshots');
-    var storage = document.getElementById('dm-storage');
-    var paging = document.getElementById('dm-paging');
-    var prevLink = document.getElementById('dm-prev');
-    var nextLink = document.getElementById('dm-next');
-    var rangeLabel = document.getElementById('dm-range');
-    var searchForm = document.getElementById('dm-search');
-    var searchInput = document.getElementById('dm-q');
-    var searchMod = document.getElementById('dm-search-mod');
-    var clearLink = document.getElementById('dm-clear');
-
-    var navToken = 0;
-    var controllers = [];
-    var state = parseQuery(window.location.search);
-    /* Last successful payload, so switching task tabs does not re-query the server
-       for data it already has. Keyed by everything the request depends on. */
-    var lastKey = '';
-    var lastData = null;
-
-    /* ---------- small helpers ---------- */
-
-    function el(tag, className, text) {
-        var node = document.createElement(tag);
-        if (className) {
-            node.className = className;
-        }
-        if (text !== undefined && text !== null) {
-            node.textContent = String(text);
-        }
+    // DOM-only rendering keeps names, notes, SQL filenames and server messages inert.
+    function el(tag, text, cls) {
+        const node = document.createElement(tag);
+        if (text !== undefined && text !== null) node.textContent = String(text);
+        if (cls) node.className = cls;
         return node;
     }
-
-    function clear(node) {
-        while (node.firstChild) {
-            node.removeChild(node.firstChild);
+    function button(text, handler, cls = '') {
+        const node = el('button', text, cls);
+        node.type = 'button';
+        node.addEventListener('click', handler);
+        return node;
+    }
+    function link(text, targetMod, targetView, cls = 'sm-button') {
+        const node = el('a', text, cls);
+        node.href = '?mod=' + targetMod + '&view=' + targetView;
+        return node;
+    }
+    function note(text, cls = 'sm-help') { return el('p', text, cls); }
+    function bytes(value) {
+        if (value === null || value === undefined) return 'Not recorded';
+        const n = Math.max(0, Number(value) || 0);
+        const unit = n ? Math.min(4, Math.floor(Math.log(n) / Math.log(1024))) : 0;
+        return (n / 1024 ** unit).toLocaleString(undefined, {maximumFractionDigits:1}) + ' ' + ['B','KB','MB','GB','TB'][unit];
+    }
+    function number(value) { return value === null || value === undefined ? 'Not recorded' : Number(value).toLocaleString(); }
+    function date(value) {
+        if (!value) return 'Not recorded';
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString(undefined, {dateStyle:'medium',timeStyle:'short'});
+    }
+    function announce(text, kind = '') { status.textContent = text; status.className = 'sm-status ' + kind; }
+    function toolbar(title, description, searchable = false) {
+        const row = el('div', null, 'sm-toolbar');
+        const heading = el('div'); heading.append(el('h2', title), note(description)); row.append(heading);
+        if (searchable) {
+            const form = el('form'); const input = el('input');
+            input.type = 'search'; input.value = search; input.maxLength = 120;
+            input.placeholder = 'Search ' + title.toLowerCase(); input.setAttribute('aria-label', input.placeholder);
+            const submit = el('button','Search'); submit.type = 'submit'; form.append(input, submit);
+            form.addEventListener('submit', event => { event.preventDefault(); search = input.value.trim(); offset = 0; load(); });
+            row.append(form);
         }
+        return row;
     }
-
-    function str(value) {
-        return typeof value === 'string' ? value.trim() : '';
+    function panel(title) {
+        const node = el('section', null, 'sm-panel');
+        if (title) node.append(el('h3',title,null));
+        return node;
     }
-
-    function formatBytes(value) {
-        if (typeof value !== 'number' || !isFinite(value) || value < 0) {
-            return '';
-        }
-        var units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        var size = value;
-        var unit = 0;
-        while (size >= 1024 && unit < units.length - 1) {
-            size = size / 1024;
-            unit += 1;
-        }
-        return size.toFixed(unit === 0 || size >= 100 ? 0 : 1) + ' ' + units[unit];
+    function metrics(items) {
+        const list = el('dl', null, 'sm-metrics');
+        items.forEach(([label,value,small]) => { const item = el('div', null, 'sm-metric'); item.append(el('dt',label),el('dd',value,small ? 'sm-small' : '')); list.append(item); });
+        return list;
     }
-
-    function formatCount(value) {
-        if (typeof value !== 'number' || !isFinite(value) || value < 0) {
-            return '';
-        }
-        return Math.round(value).toLocaleString();
-    }
-
-    // Preserve the server's clock rather than interpreting an unzoned date as browser time.
-    function formatSaved(value) {
-        var match = str(value).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}:\d{2})/);
-        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        if (!match || !months[Number(match[2]) - 1]) return str(value);
-        return Number(match[3]) + ' ' + months[Number(match[2]) - 1] + ' ' + match[1] + ', ' + match[4];
-    }
-
-    /* Missing values stay visible as "Unknown" rather than being hidden. */
-    function valueNode(text) {
-        var span = el('span', 'dm-cellv');
-        if (text) {
-            span.textContent = text;
-        } else {
-            span.appendChild(el('span', 'dm-unknown', 'Unknown'));
-        }
-        return span;
-    }
-
-    function addFact(list, term, text) {
-        var dd = el('dd');
-        dd.appendChild(valueNode(text));
-        var pair = el('div', 'dm-fact');
-        pair.appendChild(el('dt', null, term));
-        pair.appendChild(dd);
-        list.appendChild(pair);
-    }
-
-    function cell(label, text, numeric) {
-        var td = el('td', numeric ? 'dm-num' : null);
-        td.setAttribute('data-label', label);
-        td.appendChild(valueNode(text));
-        return td;
-    }
-
-    function headRow(titles, firstNumericIndex) {
-        var row = el('tr');
-        titles.forEach(function (title, index) {
-            var th = el('th', index >= firstNumericIndex ? 'dm-num' : null, title);
-            th.setAttribute('scope', 'col');
-            row.appendChild(th);
+    function table(headers, rows) {
+        const wrap = el('div', null, 'sm-table-wrap'), grid = el('table', null, 'sm-table');
+        wrap.tabIndex = 0;
+        wrap.setAttribute('role', 'region');
+        wrap.setAttribute('aria-label', headers[0] + ' results');
+        const head = el('thead'), hr = el('tr'), body = el('tbody');
+        headers.forEach(text => { const th = el('th',text); th.scope = 'col'; hr.append(th); });
+        head.append(hr);
+        rows.forEach(cells => {
+            const row = el('tr');
+            cells.forEach((value, i) => { const td = el('td'); td.dataset.label = headers[i]; td.append(value instanceof Node ? value : document.createTextNode(String(value))); row.append(td); });
+            body.append(row);
         });
-        var head = el('thead');
-        head.appendChild(row);
-        return head;
+        grid.append(head,body); wrap.append(grid); return wrap;
+    }
+    function pager(list) {
+        const node = el('div', null, 'sm-pager');
+        node.append(note(list.total ? (list.offset + 1) + '–' + Math.min(list.offset + list.limit,list.total) + ' of ' + number(list.total) : '0 results'));
+        const actions = el('div',null,'sm-actions');
+        const prev = button('Previous', () => { offset = Math.max(0,offset - list.limit); load(); });
+        const next = button('Next', () => { offset += list.limit; load(); });
+        prev.disabled = offset === 0; next.disabled = offset + list.limit >= list.total;
+        actions.append(prev,next); node.append(actions); return node;
+    }
+    function openDialog(title, body, actions = []) {
+        document.getElementById('sm-dialog-title').textContent = title;
+        dialogBody.replaceChildren(...body);
+        dialogActions.replaceChildren(button('Cancel', () => dialog.close()), ...actions);
+        if (!dialog.open) dialog.showModal();
+    }
+    document.getElementById('sm-dialog-close').addEventListener('click', () => { if (!busy) dialog.close(); });
+    dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
+    window.addEventListener('beforeunload', event => { if (busy || dirty) { event.preventDefault(); event.returnValue = ''; } });
+    document.addEventListener('click', event => {
+        const anchor = event.target.closest('a');
+        if (busy && anchor) { event.preventDefault(); announce('Wait for the current operation to finish.'); }
+    });
+    function confirmAction(title, description, run, danger = true, extra = []) {
+        openDialog(title, [note(description, 'sm-muted'), ...extra],
+            [button(title, () => perform(run), danger ? 'sm-danger' : 'sm-primary')]);
+    }
+    async function request(url, options = {}) {
+        const response = await fetch(url, {credentials:'same-origin', ...options});
+        if (response.headers.get('Content-Disposition')?.includes('attachment')) {
+            const blob = await response.blob(), target = URL.createObjectURL(blob), anchor = el('a');
+            const disposition = response.headers.get('Content-Disposition');
+            const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+            const plain = disposition.match(/filename="?([^";]+)"?/i);
+            anchor.download = encoded ? decodeURIComponent(encoded[1]) : plain ? plain[1] : 'database-backup.sql';
+            anchor.href = target; anchor.click(); setTimeout(() => URL.revokeObjectURL(target), 60000);
+            return {ok:true,message:'Backup download prepared.'};
+        }
+        let data;
+        try { data = await response.json(); } catch { throw new Error('The server response could not be read (HTTP ' + response.status + '). Check Server Logs before repeating an operation.'); }
+        if (!response.ok || data.ok !== true) {
+            const error = new Error(data.error || data.message || 'The request failed.');
+            error.details = data.details; throw error;
+        }
+        return data;
+    }
+    function action(operation, fields = {}, targetMod = mod) {
+        const body = new FormData();
+        body.set('mod',targetMod); body.set('operation',operation); body.set('_sm_csrf',config.csrf);
+        body.set('_sm_scope',targetMod === 'all' ? 'CHIM, STOBE and DIALECTIC databases' : labels[targetMod] + ' database');
+        Object.entries(fields).forEach(([key,value]) => body.set(key,value));
+        return request('api/storage_action.php', {method:'POST',body});
+    }
+    function retention(actionName, fields = {}) {
+        return request(retentionUrl, {method:'POST',body:new URLSearchParams({csrf_token:config.retentionCsrf,action:actionName,...fields})});
+    }
+    // Mutations are never retried automatically. Keep failures visible and scoped.
+    async function perform(run, refresh = true) {
+        if (busy) return;
+        busy = true;
+        const buttons = [...document.querySelectorAll('button,input,select,textarea')];
+        const prior = buttons.map(node => node.disabled); buttons.forEach(node => node.disabled = true);
+        announce('Working… Keep this page open. Large databases can take several minutes.');
+        try {
+            const data = await run();
+            dialog.close(); dirty = false;
+            announce(data.message || 'Done.', 'sm-success');
+            if (data.details?.length) showResult(data);
+            if (refresh) await load();
+            return data;
+        } catch (error) {
+            dialog.close(); announce(error.message, 'sm-error');
+            if (error.details?.length) showResult({message:error.message,details:error.details});
+        } finally {
+            busy = false;
+            buttons.forEach((node,i) => { if (node.isConnected) node.disabled = prior[i]; });
+        }
+    }
+    function showResult(data) {
+        const details = el('pre',null,'sm-result');
+        details.textContent = data.details.map(item => (item.label || item.database || item.name || '') + ': ' + (item.ok ? 'Completed' : 'Failed') + '\n' + (item.output || '')).join('\n\n');
+        openDialog('Operation results',[note(data.message),details]);
+        dialogActions.replaceChildren(button('Close',()=>dialog.close()));
+    }
+    function field(label, name, type = 'text', value = '', help = '') {
+        const wrap = el('div',null,'sm-field'), input = el(type === 'textarea' ? 'textarea' : 'input');
+        input.id = 'sm-field-' + name; input.name = name;
+        if (type !== 'textarea') input.type = type;
+        const labelNode = el('label',label); labelNode.htmlFor = input.id;
+        if (type === 'checkbox') { input.checked = value === true; labelNode.className = 'sm-check'; labelNode.prepend(input); wrap.append(labelNode); }
+        else { input.value = value; wrap.append(labelNode,input); }
+        if (help) { const hint = note(help); hint.id = input.id + '-help'; input.setAttribute('aria-describedby',hint.id); wrap.append(hint); }
+        return {wrap,input};
     }
 
-    function announce(text) {
-        liveRegion.textContent = text;
+    async function overview(ticket) {
+        const grid = el('div',null,'sm-grid');
+        content.replaceChildren(toolbar('Your mod databases','Choose a mod to manage its snapshots and cleanup settings.'),grid);
+        await Promise.all(['chim','stobe','dialectic'].map(async key => {
+            const card = panel(labels[key]); grid.append(card); card.append(note('Loading…'));
+            try {
+                const data = await request('api/data_manager.php?mod=' + key);
+                if (ticket !== generation) return;
+                card.replaceChildren(el('h3',labels[key]),note(data.game),metrics([['Database',bytes(data.live.database_bytes)],['Snapshots',number(data.snapshots.all_total)]]),
+                    note('Loaded snapshot: ' + (data.live.loaded_snapshot || 'None recorded')),el('br'),link('Manage ' + labels[key],key,'snapshots'));
+            } catch (error) { card.replaceChildren(el('h3',labels[key]),note(error.message,'sm-error'),link('Open tools',key,'snapshots')); }
+        }));
+        if (ticket !== generation) return;
+        const shared = panel('Backups for the whole setup');
+        shared.style.marginTop = '16px';
+        shared.append(note('Automatic archives can contain all three mod databases. Inspect a backup before restoring it; scope is checked from the file.'),el('br'),link('Manage database backups','all','backups'));
+        content.append(shared);
     }
-
-    /* ---------- url + state ---------- */
-
-    /* Mirrors dm_resolve_route(): retired view names stay valid as aliases. */
-    function resolveRoute(mod, view) {
-        if (!ROUTES.views.hasOwnProperty(mod)) {
-            mod = 'all';
+    function snapshotDetails(snapshot) {
+        const details = el('div',null,'sm-details'), list = el('dl');
+        const entries = [['Name',snapshot.name],['Player',snapshot.player || 'Not recorded'],['Saved on',date(snapshot.created_at)],['In-game date',snapshot.game_date || 'Not recorded'],
+            ['Events at save',number(snapshot.event_count)],['Size at save',bytes(snapshot.size_bytes)],['Type',snapshot.kind],['Notes',snapshot.notes || 'No notes']];
+        if (mod === 'stobe') {
+            let members = snapshot.members;
+            if (typeof members === 'string') { try { members = JSON.parse(members); } catch { members = []; } }
+            if (Array.isArray(members)) entries.push(['Faction members',members.map(member => typeof member === 'string' ? member : member.name || member.actor_name || 'Unnamed').join(', ') || 'Not recorded']);
         }
-        var alias = (ROUTES.aliases[mod] || {})[view];
-        if (Array.isArray(alias) && alias.length === 2) {
-            return {mod: alias[0], view: alias[1]};
+        entries.forEach(([label,value]) => list.append(el('dt',label),el('dd',value))); details.append(list);
+        const actions = [];
+        if (mod === 'chim' && !snapshot.loaded && snapshot.name.toLowerCase() !== 'default') {
+            actions.push(button(snapshot.pinned ? 'Remove protection' : 'Protect snapshot', () => confirmAction(snapshot.pinned ? 'Remove protection' : 'Protect snapshot',
+                snapshot.pinned ? 'This snapshot can then be deleted manually or by eligible automatic cleanup.' : 'Keep this snapshot out of manual and automatic cleanup.',
+                () => retention('pin',{profile_id:snapshot.id,pinned:snapshot.pinned ? '0':'1'}).then(() => ({ok:true,message:'Snapshot protection updated.'})), snapshot.pinned)));
         }
-        if (mod === 'all') {
-            return {mod: 'all', view: 'playthroughs'};
-        }
-        if (viewsFor(mod).indexOf(view) === -1) {
-            return {mod: mod, view: defaultView(mod)};
-        }
-        return {mod: mod, view: view};
+        openDialog(snapshot.name,[details],actions);
+        dialogActions.firstChild.textContent = 'Close';
     }
-
-    function parseQuery(search) {
-        var params = new URLSearchParams((search || '').split('?').pop() || '');
-        var resolved = resolveRoute(
-            (params.get('mod') || 'all').toLowerCase(),
-            (params.get('view') || '').toLowerCase()
-        );
-        var offset = parseInt(params.get('offset') || '0', 10);
-        return {
-            mod: resolved.mod,
-            view: resolved.view,
-            q: (params.get('q') || '').trim().slice(0, MAX_QUERY),
-            offset: isFinite(offset) && offset > 0 ? offset : 0
+    function newSnapshot(setup = false) {
+        if (setup) {
+            confirmAction('Set up snapshots','Save the current database as the protected default recovery snapshot. This does not create a game save.',
+                () => action('setup'),false); return;
+        }
+        const form = el('form',null,'sm-form'), name = field('Snapshot name','name'), notes = field('Notes (optional)','notes','textarea');
+        name.input.required = true; name.input.maxLength = 128; notes.input.maxLength = 4000;
+        form.append(name.wrap,notes.wrap,note('Saves the current mod database. Your game save is separate.'));
+        form.addEventListener('submit',event=>{event.preventDefault();if(form.reportValidity())perform(()=>action('create_snapshot',{name:name.input.value,notes:notes.input.value}));});
+        openDialog('Save a snapshot',[form],[button('Save snapshot',()=>form.requestSubmit(),'sm-primary')]); name.input.focus();
+    }
+    function snapshots(data) {
+        const list = data.snapshots, top = toolbar('Snapshots','Saved copies of this mod’s database. Use a matching game save when restoring.',true);
+        const create = button('Save snapshot',()=>newSnapshot(),'sm-primary'); top.append(create);
+        content.replaceChildren(top);
+        if (!list.metadata_available && mod !== 'stobe') {
+            content.append(note('Snapshots have not been set up for this database yet.','sm-warning'),button('Set up snapshots',()=>newSnapshot(true),'sm-primary')); return;
+        }
+        const summary = panel();
+        summary.append(metrics([['Loaded snapshot',data.live.loaded_snapshot || 'None recorded',true],['Saved snapshots',number(list.all_total)],['Database',bytes(data.live.database_bytes)]]));
+        content.append(summary);
+        if (!list.items.length) { content.append(note(search ? 'No snapshots match your search.' : 'No snapshots saved yet. Save one before making major changes.','sm-empty')); return; }
+        const rows = list.items.map(snapshot => {
+            const name = el('div'); name.append(el('div',snapshot.name,'sm-name'),note(snapshot.player || 'Player not recorded'));
+            if (snapshot.loaded) name.append(el('span','Loaded','sm-badge sm-loaded'));
+            else if (snapshot.protected) name.append(el('span','Protected','sm-badge'));
+            const when = el('div'); when.append(note(date(snapshot.created_at),''));
+            when.append(note(snapshot.game_date || 'In-game date not recorded'));
+            const actions = el('div',null,'sm-actions');
+            actions.append(button('Details',()=>snapshotDetails(snapshot)));
+            const restore = button('Restore',()=>confirmAction('Restore snapshot',
+                'Restore “' + snapshot.name + '” in ' + labels[mod] + '. Stop the game first, then load the matching game save after restoring.',
+                ()=>action('restore_snapshot',{profile_id:snapshot.id}),true,
+                [note(mod === 'stobe' ? 'STOBE saves your current database as a new automatic snapshot before switching.' : 'The currently loaded snapshot is updated from your live database before switching.','sm-warning')]));
+            restore.disabled = snapshot.loaded;
+            const remove = button('Delete',()=>confirmAction('Delete snapshot','Permanently delete “' + snapshot.name + '” from ' + labels[mod] + '. The live database and your game saves are not deleted.',
+                ()=>action('delete_snapshot',{profile_id:snapshot.id})), 'sm-danger');
+            remove.disabled = snapshot.protected; remove.title = snapshot.protected ? 'Loaded, default and protected snapshots cannot be deleted.' : '';
+            actions.append(restore,remove);
+            return [name,when,bytes(snapshot.size_bytes),actions];
+        });
+        content.append(table(['Snapshot','Saved / in-game date','Size at save','Actions'],rows),pager(list));
+    }
+    function storageBreakdown(data) {
+        const box = panel('Where space is used');
+        box.append(note(bytes(data.live.database_bytes) + ' total · database storage, not game saves or files on disk'));
+        data.live.categories.forEach(item => {
+            const row = el('div',null,'sm-category'), bar = el('div',null,'sm-bar'), fill = el('span');
+            fill.style.width = Math.min(100,100*item.bytes/Math.max(1,data.live.database_bytes)) + '%'; bar.append(fill);
+            row.append(note(item.label,''),bar,el('strong',bytes(item.bytes))); box.append(row);
+        });
+        const details = el('details',null,'sm-details'); details.append(el('summary','How these numbers work'),
+            note('Sizes include table indexes and overhead. “Snapshots & other database storage” is the remaining database size, not an exact snapshot total. Deleting rows makes space reusable; it may not shrink database files.'));
+        box.append(details); return box;
+    }
+    async function cleanup(data,ticket) {
+        content.replaceChildren(toolbar('Cleanup','Choose what to keep. Preview eligible data before deleting anything.'),storageBreakdown(data));
+        if (mod !== 'chim') {
+            const box = panel('Manual cleanup');
+            box.append(note('Automatic data-retention rules are not available for ' + labels[mod] + '. Remove unwanted snapshots from the Snapshots tab; database backups have their own controls.'),el('br'),
+                link('Review snapshots',mod,'snapshots'),document.createTextNode(' '),link('Review backups',mod,'backups'));
+            content.append(box); return;
+        }
+        const host = panel('Cleanup settings'); host.append(note('Loading saved settings…')); content.append(host);
+        const state = await request(retentionUrl);
+        if (ticket !== generation) return;
+        retentionForm(host,state);
+    }
+    function retentionForm(host,state) {
+        host.replaceChildren();
+        const form = el('form',null,'sm-form'), grid = el('div',null,'sm-grid sm-two'), inputs = {};
+        const add = (parent,label,name,type,help,min,max) => {
+            const f = field(label,name,type,state.settings[name],help); inputs[name]=f.input;
+            if (min !== undefined) { f.input.min=min;f.input.max=max;f.input.step=1;f.input.required=true; }
+            parent.append(f.wrap);
         };
-    }
-
-    function pageUrl(next) {
-        var url = PAGE + '?mod=' + encodeURIComponent(next.mod) + '&view=' + encodeURIComponent(next.view);
-        if (next.q) {
-            url += '&q=' + encodeURIComponent(next.q);
-        }
-        if (next.offset > 0) {
-            url += '&offset=' + String(next.offset);
-        }
-        return url;
-    }
-
-    function go(next, push) {
-        state = next;
-        if (push) {
-            window.history.pushState(null, '', pageUrl(state));
-        }
-        render();
-    }
-
-    /* ---------- requests ---------- */
-
-    function abortInflight() {
-        controllers.forEach(function (controller) {
-            controller.abort();
+        const diagnostic = panel(), snapshotsPanel = panel();
+        add(diagnostic,'Clean up debug logs','diagnostics_enabled','checkbox','Off by default. Only database debug logs are eligible; events, memories and diaries are kept.');
+        add(diagnostic,'Delete debug logs older than','diagnostic_days','number','Real-world days, not in-game days.',1,3650);
+        add(diagnostic,'Also target this size per log table (MB)','diagnostic_max_mb','number','0 turns off the size target. Cleanup runs in small batches, so a large table may need several rounds.',0,102400);
+        add(snapshotsPanel,'Clean up automatic snapshots','snapshots_enabled','checkbox','Only CHIM Dragon Break snapshots are eligible. Manual, default, loaded and protected snapshots are kept.');
+        add(snapshotsPanel,'Automatic snapshots to keep','snapshot_keep','number','Keep this many recent eligible snapshots.',1,100);
+        add(snapshotsPanel,'Preview events older than','event_days','number','In-game days back from the latest recorded game time. 0 turns off this preview.',0,3650);
+        snapshotsPanel.append(note('Preview only — events are never deleted. CHIM may still need them to build NPC memories.','sm-warning'));
+        grid.append(diagnostic,snapshotsPanel); form.append(grid);
+        add(form,'Run cleanup automatically','automatic','checkbox','Off by default. When enabled, CHIM periodically applies the saved debug-log and automatic-snapshot rules.');
+        const last = state.last_run;
+        form.append(note(last ? 'Last cleanup: ' + date(last.at) + ' · ' + number(last.rows || 0) + ' log rows and ' + number(last.snapshots || 0) + ' snapshots deleted' : 'No cleanup has run yet.'));
+        const actions = el('div',null,'sm-actions'), previewArea = el('div');
+        const save = button('Save settings',()=>form.requestSubmit(),'sm-primary');
+        const preview = button('Preview cleanup',async()=>{
+            const result = await perform(()=>retention('preview'),false);
+            if (result?.preview) renderPreview(result.preview,previewArea);
         });
-        controllers = [];
-    }
-
-    function load(mod, offset, query) {
-        var controller = new AbortController();
-        controllers.push(controller);
-        var url = ENDPOINT + '?mod=' + encodeURIComponent(mod) + '&offset=' + String(offset);
-        if (query) {
-            url += '&q=' + encodeURIComponent(query);
-        }
-        return fetch(url, {
-            signal: controller.signal,
-            credentials: 'same-origin',
-            headers: {Accept: 'application/json'}
-        }).then(function (response) {
-            return response.json().catch(function () {
-                return null;
-            }).then(function (data) {
-                var message = str(data && data.error);
-                if (response.status === 503) {
-                    return {unavailable: true, message: message || 'This mod is not available right now.'};
-                }
-                if (!response.ok || !data || data.ok !== true) {
-                    throw new Error(message || 'Could not load data (HTTP ' + response.status + ').');
-                }
-                if (data.available === false) {
-                    return {unavailable: true, message: 'This mod is not installed or its database is not reachable.'};
-                }
-                return data;
-            });
+        actions.append(save,preview); form.append(actions); host.append(form,previewArea);
+        form.addEventListener('input',()=>{
+            dirty=true;preview.disabled=true;previewArea.replaceChildren(note('Settings changed. Save them before previewing cleanup.','sm-warning'));
+            if(previewTimer)clearTimeout(previewTimer);
+        });
+        form.addEventListener('submit',event=>{
+            event.preventDefault();if(!form.reportValidity())return;
+            const values = Object.fromEntries(Object.entries(inputs).map(([key,input])=>[key,input.type==='checkbox'?(input.checked?'1':'0'):input.value]));
+            confirmAction('Save cleanup settings',values.automatic==='1' ? 'Automatic cleanup will use these rules without asking each time. Events and memories remain untouched.' : 'Save these rules. Automatic cleanup will remain off; you can preview and run cleanup manually.',
+                ()=>retention('save',values).then(()=>({ok:true,message:'Cleanup settings saved.'})),values.automatic==='1');
         });
     }
-
-    function isStale(token, error) {
-        return token !== navToken || (error && error.name === 'AbortError');
+    function renderPreview(plan,area) {
+        const box = panel('Cleanup preview'), diagnostics = plan.diagnostics || [], snapshots = plan.snapshots || [];
+        box.style.marginTop='16px';
+        box.append(note('This preview expires in five minutes. Only the listed data can be removed in this round.'));
+        if(plan.message)box.append(note(plan.message));
+        if (diagnostics.length) box.append(table(['Debug log table','Rows to delete','Estimated size'],diagnostics.map(item=>[item.table,number(item.rows),bytes(item.bytes_estimate)])));
+        else box.append(note('No debug-log rows to delete with the saved settings.'));
+        box.append(note(snapshots.length ? 'Automatic snapshots to delete: '+snapshots.map(item=>item.name).join(', ') : 'No automatic snapshots to delete.'));
+        box.append(note(plan.events?.cutoff_gamets ? number(plan.events.older_rows)+' events are older than the cutoff. None will be deleted.' : 'Event preview is off. No events will be deleted.','sm-warning'));
+        const run = button('Run cleanup now',()=>confirmAction('Run cleanup now','Permanently remove the debug-log rows and automatic snapshots listed in this preview. Events and memories are kept.',
+            ()=>retention('run',{preview_token:plan.token}).then(result=>({ok:true,message:result.result?.message || 'Cleanup finished.'}))), 'sm-danger');
+        run.disabled=!(snapshots.length || diagnostics.some(item=>Number(item.rows)>0));
+        box.append(el('br'),run,note('Sizes are estimates. Freed space becomes reusable inside the database; files may not shrink.'));
+        area.replaceChildren(box);
+        if(previewTimer)clearTimeout(previewTimer);
+        previewTimer=setTimeout(()=>{run.disabled=true;box.append(note('Preview expired. Run a new preview before cleanup.','sm-warning'));},Math.max(0,Date.parse(plan.expires_at)-Date.now()));
     }
-
-    /* ---------- overview (mod=all, read-only) ---------- */
-
-    function renderOverview(token) {
-        var pending = MODS.length;
-
-        function settle() {
-            pending -= 1;
-            if (pending === 0 && token === navToken) {
-                announce('Overview loaded.');
-            }
-        }
-
-        MODS.forEach(function (mod) {
-            var card = overview.querySelector('[data-card="' + mod + '"]');
-            var cardState = card.querySelector('[data-card-state]');
-            var facts = card.querySelector('[data-card-facts]');
-            card.setAttribute('aria-busy', 'true');
-            cardState.className = 'dm-state';
-            cardState.hidden = false;
-            cardState.textContent = 'Loading…';
-            clear(facts);
-
-            load(mod, 0, '').then(function (data) {
-                if (token !== navToken) {
-                    return;
-                }
-                card.setAttribute('aria-busy', 'false');
-                if (data.unavailable) {
-                    cardState.textContent = data.message;
-                } else {
-                    cardState.hidden = true;
-                    var live = data.live || {};
-                    var snaps = data.snapshots || {};
-                    addFact(facts, 'Database total', formatBytes(live.database_bytes));
-                    addFact(facts, 'Saved snapshots',
-                        snaps.metadata_available === false ? '' : formatCount(snaps.total));
-                    addFact(facts, 'Loaded snapshot', str(live.loaded_snapshot));
-                }
-                settle();
-            }).catch(function (error) {
-                if (isStale(token, error)) {
-                    return;
-                }
-                card.setAttribute('aria-busy', 'false');
-                cardState.className = 'dm-state is-error';
-                cardState.textContent = error.message;
-                settle();
-            });
-        });
-
-        announce('Loading overview for all mods.');
-    }
-
-    /* ---------- one mod ---------- */
-
-    function requestKey() {
-        return state.mod + '|' + String(state.offset) + '|' + state.q;
-    }
-
-    function fillDetail(data) {
-        summary.setAttribute('aria-busy', 'false');
-        summaryState.hidden = true;
-        fillSummary(data);
-        fillSnapshots(data);
-        fillStorage(data);
-    }
-
-    function resetDetail() {
-        summary.setAttribute('aria-busy', 'true');
-        summaryState.className = 'dm-state';
-        summaryState.hidden = false;
-        summaryState.textContent = 'Loading…';
-        clear(summaryFacts);
-        clear(snapshots);
-        clear(storage);
-        removeWarnings();
-        paging.hidden = true;
-    }
-
-    function renderDetail(token) {
-        resetDetail();
-
-        if (lastKey === requestKey() && lastData) {
-            fillDetail(lastData);
+    async function previewRestore(fields) {
+        if (mod === 'all' && !fields.destination) {
+            const select = el('select'); select.id = 'sm-restore-destination';
+            [['chim','CHIM'],['dialectic','DIALECTIC']].forEach(([value,text]) => { const option=el('option',text);option.value=value;select.append(option); });
+            const label=el('label','Destination if the file does not identify a database');label.htmlFor=select.id;
+            const field=el('div',null,'sm-field');field.append(label,select,note('Connection markers and recognized filenames take precedence. Use STOBE’s Backups tab for an unlabeled STOBE-only dump.'));
+            openDialog('Inspect backup',[note(fields.filename || fields.backup?.name),field],[button('Inspect backup',()=>previewRestore({...fields,destination:select.value}),'sm-primary')]);
             return;
         }
-
-        announce('Loading data.');
-        load(state.mod, state.offset, state.q).then(function (data) {
-            if (token !== navToken) {
-                return;
+        const result = await perform(()=>action('preview_restore',fields),false);
+        if(!result?.preview)return;
+        const preview=result.preview;
+        confirmAction('Restore database backup','Replace '+preview.scope+' using “'+preview.filename+'” ('+bytes(preview.bytes)+'). Stop all affected games and servers first.',
+            ()=>action('restore_backup',{...fields,preview_token:preview.token}),true,
+            [note('Use only backups you trust. SQL backups contain commands that run on your database. This is not a game save.','sm-warning'),
+             note(preview.combined ? 'Shared restore is not all-or-nothing. If it fails, some databases may already have changed. Keep a current backup of every affected mod.' : 'A supported STOBE pg_dump backup is restored in one transaction. Load the matching Kenshi save afterward.','sm-warning')]);
+    }
+    function uploadBackup() {
+        const form=el('form',null,'sm-form'), file=field('Backup file','backup','file','',mod==='stobe'?'STOBE .sql or .sql.gz only. Combined archives belong under Distro.':'Plain .sql only. The next step inspects which databases it contains.');
+        file.input.accept=mod==='stobe'?'.sql,.gz':'.sql';file.input.required=true;form.append(file.wrap);
+        form.addEventListener('submit',event=>{event.preventDefault();if(form.reportValidity())previewRestore({source:'upload',backup:file.input.files[0]});});
+        openDialog('Restore from a file',[form],[button('Inspect backup',()=>form.requestSubmit(),'sm-primary')]);
+    }
+    async function backups(ticket) {
+        content.replaceChildren(toolbar('Database backups','Separate SQL files for recovering database data. Game saves and server files are not included.',true));
+        if(!['all','stobe'].includes(mod)) {
+            const box=panel('Shared backups live under Distro');
+            box.append(note('The shared archive list can include multiple mods. Open Distro to inspect the exact scope before restoring. Selecting '+labels[mod]+' here does not filter a shared restore.'),el('br'),link('Open Distro backups','all','backups'));
+            content.append(box);return;
+        }
+        const actions=el('div',null,'sm-actions');
+        actions.append(button(mod==='all'?'Export CHIM + STOBE':'Create STOBE backup',()=>confirmAction(mod==='all'?'Export CHIM + STOBE':'Create STOBE backup',
+            mod==='all'?'Download a backup containing CHIM and STOBE. This existing manual export does not include DIALECTIC.':'Save a STOBE database backup on the server.',
+            ()=>action(mod==='all'?'export_backup':'create_backup'),false),'sm-primary'),button('Restore from file',uploadBackup));
+        content.firstChild.append(actions);
+        const data=await request('api/storage_tools.php?'+new URLSearchParams({mod,view:'backups',q:search,offset}));
+        if(ticket!==generation)return;
+        if(data.automatic) {
+            const box=panel('Automatic database backups'), form=el('form',null,'sm-form');
+            const enabled=field('Create automatic backups','enabled','checkbox',data.automatic.enabled,'Off by default. Archives can contain CHIM, STOBE and DIALECTIC.');
+            const keep=field('Backups to keep','keep','number',data.automatic.keep,'Old automatic backup files are removed as new backups are created.');
+            keep.input.min=1;keep.input.max=10;keep.input.step=1;keep.input.required=true;
+            const row=el('div',null,'sm-grid sm-two');row.append(enabled.wrap,keep.wrap);form.append(row,button('Save backup settings',()=>form.requestSubmit()));
+            form.addEventListener('input',()=>dirty=true);
+            form.addEventListener('submit',event=>{event.preventDefault();if(form.reportValidity())confirmAction('Save backup settings',
+                (enabled.input.checked?'Enable automatic backups':'Disable automatic backups')+' and keep '+keep.input.value+' automatic archives. Reducing the limit can remove older backup files when the next archive is created.',
+                ()=>action('save_backup_settings',{enabled:enabled.input.checked?'1':'0',keep:keep.input.value}),false);});
+            box.append(form);content.append(box);
+        }
+        const list=data.backups;
+        if(!list.items.length){content.append(note(search?'No backups match your search.':'No backup files found in the server’s backup folders.','sm-empty'));return;}
+        content.append(table(['Backup file','Saved on','Size','Scope hint','Actions'],list.items.map(item=>{
+            const name=el('div');name.append(el('div',item.filename,'sm-name'),note(item.source==='automatic'?'Automatic archive':item.source==='manual'?'Server import folder':'STOBE backup folder'));
+            const fields={filename:item.filename,source:item.source}, actions=el('div',null,'sm-actions');
+            actions.append(button('Restore',()=>previewRestore(fields)));
+            if(item.can_download)actions.append(button('Download',()=>perform(()=>action('download_backup',fields),false)));
+            if(item.can_delete)actions.append(button('Delete',()=>confirmAction('Delete backup file','Permanently delete “'+item.filename+'”. This does not change the live database.',
+                ()=>action('delete_backup',fields)),'sm-danger'));
+            return[name,date(item.modified*1000),bytes(item.size),item.scope,actions];
+        })),note('Scope hints come from filenames. Restore inspects the file contents before asking you to confirm.'),pager(list));
+    }
+    async function advanced(ticket) {
+        content.replaceChildren(toolbar('Advanced','Maintenance and repair tools. Stop the affected game before making database changes.'));
+        const box=panel('Database tools'), actions=el('div',null,'sm-actions');
+        if(mod==='all') {
+            actions.append(button('Compact CHIM + STOBE',()=>confirmAction('Compact CHIM + STOBE','Run VACUUM FULL ANALYZE for CHIM and STOBE only. This locks tables and can take a long time. Stop Skyrim, Kenshi and their servers first.',
+                ()=>action('maintenance')),'sm-danger'));
+            box.append(note('Shared maintenance can reclaim unused disk space. It does not choose or delete old events.'),el('br'),actions);
+            content.append(box);
+            const legacy=el('details',null,'sm-panel sm-details');legacy.append(el('summary','STOBE rebuild tools — destructive'));
+            legacy.append(note('These shared tools preserve the old Dashboard rebuild operations. The STOBE tab also has its own database reset and version-reset controls.'),el('br'),
+                button('Reset STOBE from base schema',()=>confirmAction('Reset STOBE from base schema','Replace STOBE’s live tables with its base schema and replay updates. Stop Kenshi and STOBE, and make a backup first.',()=>action('stobe_factory_reset')),'sm-danger'),document.createTextNode(' '),
+                button('Replay STOBE updates',()=>confirmAction('Replay STOBE updates','Clear all STOBE version entries and immediately run its database updates. Back up STOBE first.',()=>action('stobe_replay_versions')),'sm-danger'));
+            content.append(legacy);
+            const grid=el('div',null,'sm-grid');['chim','stobe','dialectic'].forEach(key=>{const p=panel(labels[key]);p.append(note('Version entries and supported repairs for this mod.'),el('br'),link('Open '+labels[key]+' tools',key,'advanced'));grid.append(p);});content.append(grid);return;
+        }
+        if(mod==='stobe') {
+            actions.append(button('Analyze database',()=>confirmAction('Analyze STOBE database','Run VACUUM ANALYZE to update database statistics and make deleted-row space reusable. It does not shrink database files.',
+                ()=>action('vacuum_analyze'),false)),button('Rebuild indexes',()=>confirmAction('Rebuild STOBE indexes','Rebuild database indexes. This can block database activity; stop Kenshi and STOBE first.',()=>action('reindex_database'))));
+        }
+        if(mod==='chim') {
+            actions.append(button('Repair Oghma table',()=>confirmAction('Repair Oghma table','Remove duplicate CHIM knowledge topics and repair topic uniqueness. Make a database backup first.',()=>action('repair_oghma_table'))),
+                button('Repair constraints',()=>confirmAction('Repair CHIM constraints','Repair uniqueness constraints in Oghma and configuration options. Duplicate rows may be removed or backed up by the repair.',()=>action('repair_core_constraints'))));
+        }
+        const pgAdmin=el('a','Open pgAdmin','sm-button');pgAdmin.href=config.prefix+'/pgAdmin/';pgAdmin.target='_blank';pgAdmin.rel='noopener';actions.append(pgAdmin);
+        box.append(actions);content.append(box);
+        if(mod!=='dialectic') {
+            const danger=el('details',null,'sm-panel sm-details');danger.append(el('summary','Factory reset — destructive'));
+            danger.append(note('Deletes live '+labels[mod]+' database content and rebuilds its tables. Make a database backup first. This is not needed for ordinary storage cleanup.'),el('br'),
+                button('Factory reset '+labels[mod],()=>confirmAction('Factory reset '+labels[mod],'Permanently reset the live '+labels[mod]+' database. Stop the game and server. This cannot be undone without a backup.',()=>action('factory_reset_database')),'sm-danger'));
+            content.append(danger);
+        }
+        const header=toolbar('Database version entries','Reset an entry only when troubleshooting a database update.',true);
+        header.append(button('Reset all versions',()=>confirmAction('Reset all '+labels[mod]+' versions',
+            mod==='chim'?'Clear all CHIM version entries and immediately replay its database updates. Back up first.':mod==='stobe'?'Clear all STOBE version entries. Its updates will be reapplied on startup.':'Clear all DIALECTIC version entries. Restart DIALECTIC to apply its own updates.',
+            ()=>action('reset_all_db_versions')),'sm-danger'));
+        content.append(header);
+        const data=await request('api/storage_tools.php?'+new URLSearchParams({mod,view:'advanced',q:search,offset}));
+        if(ticket!==generation)return;
+        const list=data.versions;
+        if(!list.items.length){content.append(note(list.available?'No matching version entries.':'This database has no version entries yet.','sm-empty'));return;}
+        content.append(table(['Table','Version','Action'],list.items.map(item=>[item.name,item.version,button('Reset entry',()=>confirmAction('Reset version entry','Reset the '+labels[mod]+' version entry for “'+item.name+'”. The update can be reapplied on startup.',
+            ()=>action('reset_db_version',{table:item.name})))])),pager(list));
+    }
+    async function load() {
+        const ticket=++generation;
+        if(previewTimer)clearTimeout(previewTimer);
+        content.setAttribute('aria-busy','true');
+        content.replaceChildren(note('Loading '+views[view].toLowerCase()+'…','sm-empty'));
+        try {
+            if(view==='overview')await overview(ticket);
+            else if(view==='backups')await backups(ticket);
+            else if(view==='advanced')await advanced(ticket);
+            else {
+                const data=await request('api/data_manager.php?'+new URLSearchParams({mod,q:search,offset}));
+                if(ticket!==generation)return;
+                if(view==='snapshots')snapshots(data);else await cleanup(data,ticket);
+                if(data.warnings?.length)content.append(note(data.warnings.join(' '),'sm-warning'));
             }
-            summary.setAttribute('aria-busy', 'false');
-            if (data.unavailable) {
-                summaryState.textContent = data.message;
-                announce(data.message);
-                return;
-            }
-            lastKey = requestKey();
-            lastData = data;
-            fillDetail(data);
-            announce((str(data.label) || 'Mod') + ' data loaded.');
-        }).catch(function (error) {
-            if (isStale(token, error)) {
-                return;
-            }
-            summary.setAttribute('aria-busy', 'false');
-            summaryState.className = 'dm-state is-error';
-            summaryState.textContent = error.message;
-            announce(error.message);
-        });
+        } catch(error) {
+            if(ticket===generation)content.append(note(error.message,'sm-error'),button('Try loading again',()=>load()));
+        } finally { if(ticket===generation)content.setAttribute('aria-busy','false'); }
     }
-
-    function removeWarnings() {
-        Array.prototype.forEach.call(summary.querySelectorAll('.dm-warn'), function (node) {
-            node.remove();
-        });
-    }
-
-    function fillSummary(data) {
-        var live = data.live || {};
-        var snaps = data.snapshots || {};
-        addFact(summaryFacts, 'Game', str(data.game));
-        addFact(summaryFacts, 'Database total', formatBytes(live.database_bytes));
-        addFact(summaryFacts, 'Saved snapshots', snaps.metadata_available === false ? '' : formatCount(snaps.all_total ?? snaps.total));
-        addFact(summaryFacts, 'Loaded snapshot', str(live.loaded_snapshot));
-
-        var warnings = Array.isArray(data.warnings) ? data.warnings : [];
-        warnings.forEach(function (warning) {
-            var text = str(warning);
-            if (text) {
-                summary.appendChild(el('p', 'dm-warn', text));
-            }
-        });
-    }
-
-    function fillSnapshots(data) {
-        var snaps = data.snapshots || {};
-        var items = Array.isArray(snaps.items) ? snaps.items : [];
-        clear(snapshots);
-
-        if (snaps.metadata_available === false) {
-            snapshots.appendChild(el('p', 'dm-state',
-                'Snapshot details are not available for ' + (str(data.label) || 'this mod') + '.'));
-            return;
-        }
-        if (items.length === 0) {
-            var emptyText = state.q ? 'No snapshots match “' + state.q + '”.' : 'No saved snapshots yet.';
-            if (snaps.total > 0) emptyText = 'There are no snapshots on this page. Go back to an earlier page.';
-            snapshots.appendChild(el('p', 'dm-state', emptyText));
-            fillPaging(snaps, 0);
-            return;
-        }
-
-        var table = el('table', 'dm-table');
-        table.appendChild(el('caption', null, 'Saved snapshots. Dates come from the snapshot, not from live play.'));
-        table.appendChild(headRow(['Snapshot', 'Player', 'Game date', 'Saved', 'Size', 'Events'], 4));
-
-        var tbody = el('tbody');
-        items.forEach(function (item) {
-            var row = el('tr');
-            var nameCell = cell('Snapshot', str(item.name));
-            var nameValue = nameCell.firstChild;
-            if (item.loaded === true) {
-                nameValue.appendChild(el('span', 'dm-badge', 'Loaded'));
-            }
-            if (item.pinned === true) {
-                nameValue.appendChild(el('span', 'dm-badge is-quiet', 'Pinned'));
-            }
-            if (str(item.kind)) {
-                nameValue.appendChild(el('span', 'dm-badge is-quiet', str(item.kind)));
-            }
-            row.appendChild(nameCell);
-            row.appendChild(cell('Player', str(item.player)));
-            row.appendChild(cell('Game date', str(item.game_date)));
-            row.appendChild(cell('Saved', formatSaved(item.created_at)));
-            row.appendChild(cell('Size', formatBytes(item.size_bytes), true));
-            row.appendChild(cell('Events', formatCount(item.event_count), true));
-            tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-        snapshots.appendChild(table);
-
-        fillPaging(snaps, items.length);
-    }
-
-    function fillPaging(snaps, shown) {
-        var offset = typeof snaps.offset === 'number' && snaps.offset > 0 ? snaps.offset : 0;
-        var total = typeof snaps.total === 'number' && snaps.total > 0 ? snaps.total : shown;
-        var limit = typeof snaps.limit === 'number' && snaps.limit > 0 ? snaps.limit : LIMIT;
-        var last = shown > 0 ? offset + shown : 0;
-
-        paging.hidden = false;
-        rangeLabel.textContent = 'Showing ' + formatCount(offset + 1) + '–' + formatCount(last)
-            + ' of ' + formatCount(total);
-
-        prevLink.hidden = offset <= 0;
-        prevLink.href = pageUrl({
-            mod: state.mod,
-            view: state.view,
-            q: state.q,
-            offset: Math.max(0, offset - limit)
-        });
-        nextLink.hidden = offset + shown >= total;
-        nextLink.href = pageUrl({mod: state.mod, view: state.view, q: state.q, offset: offset + limit});
-    }
-
-    function fillStorage(data) {
-        var live = data.live || {};
-        var categories = Array.isArray(live.categories) ? live.categories : [];
-        clear(storage);
-
-        if (categories.length === 0) {
-            storage.appendChild(el('p', 'dm-state', 'No stored data categories were reported.'));
-            return;
-        }
-
-        var total = formatBytes(live.database_bytes);
-        var table = el('table', 'dm-table');
-        table.appendChild(el('caption', null, total
-            ? 'Database total: ' + total
-            : 'Database total is unknown.'));
-        table.appendChild(headRow(['Category', 'Size', 'Rows (approx.)'], 1));
-
-        var tbody = el('tbody');
-        categories.forEach(function (category) {
-            var row = el('tr');
-            row.appendChild(cell('Category', str(category.label) || str(category.key)));
-            row.appendChild(cell('Size', formatBytes(category.bytes), true));
-            row.appendChild(cell('Rows (approx.)', formatCount(category.rows_estimate), true));
-            tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-        storage.appendChild(table);
-    }
-
-    /* ---------- chrome ---------- */
-
-    function markActive(link, active) {
-        link.classList.toggle('is-active', active);
-        if (active) {
-            link.setAttribute('aria-current', 'page');
-        } else {
-            link.removeAttribute('aria-current');
-        }
-    }
-
-    /* Keep the current task selected when it exists for the target mod. */
-    function modUrl(mod) {
-        var target = resolveRoute(mod, state.view);
-        var url = PAGE + '?mod=' + encodeURIComponent(target.mod);
-        if (target.mod !== 'all') {
-            url += '&view=' + encodeURIComponent(target.view);
-        }
-        return url;
-    }
-
-    function updateChrome() {
-        var isAll = state.mod === 'all';
-
-        Array.prototype.forEach.call(document.querySelectorAll('[data-mod-link]'), function (link) {
-            var mod = link.dataset.modLink;
-            link.href = modUrl(mod);
-            if (link.closest('.dm-tabs-mod')) {
-                markActive(link, mod === state.mod);
-            }
-        });
-
-        Array.prototype.forEach.call(viewTabs.querySelectorAll('[data-view-link]'), function (link) {
-            var view = link.dataset.viewLink;
-            link.href = pageUrl({mod: state.mod, view: view, q: state.q, offset: state.offset});
-            markActive(link, view === state.view);
-        });
-
-        viewTabs.hidden = viewsFor(state.mod).length === 0;
-        readonlyNote.hidden = !isAll;
-        overview.hidden = !isAll;
-        detail.hidden = isAll || IS_FRAGMENT;
-
-        Array.prototype.forEach.call(detail.querySelectorAll('.dm-view'), function (pane) {
-            pane.hidden = pane.dataset.view !== state.view;
-        });
-
-        searchMod.value = state.mod;
-        if (searchInput.value !== state.q) {
-            searchInput.value = state.q;
-        }
-        clearLink.hidden = state.q === '';
-        clearLink.href = pageUrl({mod: state.mod, view: 'playthroughs', q: '', offset: 0});
-    }
-
-    function render() {
-        abortInflight();
-        navToken += 1;
-        updateChrome();
-        if (IS_FRAGMENT) {
-            /* The tools on this page are server-rendered; there is nothing to fetch. */
-            return;
-        }
-        if (state.mod === 'all') {
-            renderOverview(navToken);
-        } else if (MODS.indexOf(state.mod) !== -1) {
-            renderDetail(navToken);
-        }
-    }
-
-    /* ---------- events ---------- */
-
-    document.addEventListener('click', function (event) {
-        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-            return;
-        }
-        var target = event.target;
-        if (!target || typeof target.closest !== 'function') {
-            return;
-        }
-        var link = target.closest('a[data-mod-link], a[data-view-link], a.dm-page-link, a.dm-clear');
-        if (!link) {
-            return;
-        }
-        var next = parseQuery(link.getAttribute('href'));
-        /* Server-rendered tools and mod switches replace the whole document, so
-           let the browser navigate instead of swapping panes in place. */
-        if (IS_FRAGMENT || isFragmentRoute(next) || next.mod !== state.mod) {
-            return;
-        }
-        event.preventDefault();
-        go(next, true);
+    document.querySelectorAll('[data-mod]').forEach(anchor=>{
+        const key=anchor.dataset.mod;anchor.classList.toggle('is-active',key===mod);
+        if(key===mod)anchor.setAttribute('aria-current','page');
+        anchor.href='?mod='+key+'&view='+(key==='all'?(view==='backups'||view==='advanced'?view:'overview'):(view==='overview'?'snapshots':view));
     });
-
-    searchForm.addEventListener('submit', function (event) {
-        if (IS_FRAGMENT) {
-            return;
-        }
-        event.preventDefault();
-        // Submitting is an explicit request for fresh results, so never reuse the cache.
-        lastKey = '';
-        go({
-            mod: state.mod,
-            view: 'playthroughs',
-            q: searchInput.value.trim().slice(0, MAX_QUERY),
-            offset: 0
-        }, true);
+    const tasks=document.getElementById('sm-tasks');
+    Object.entries(views).forEach(([key,label])=>{
+        const anchor=link(label,mod,key,'sm-task'+(key===view?' is-active':''));
+        if(key===view)anchor.setAttribute('aria-current','page');tasks.append(anchor);
     });
-
-    window.addEventListener('popstate', function () {
-        go(parseQuery(window.location.search), false);
+    document.getElementById('sm-refresh').addEventListener('click',()=>{
+        if(busy)return;
+        if(dirty)confirmAction('Discard unsaved settings','Reload the saved settings and discard your edits.',async()=>({ok:true,message:'Saved settings reloaded.'}),false);
+        else {announce('');load();}
     });
-
-    document.getElementById('dm-refresh').addEventListener('click', function () {
-        if (IS_FRAGMENT) {
-            window.location.reload();
-            return;
-        }
-        lastKey = '';
-        lastData = null;
-        render();
-    });
-
-    render();
-}());
+    load();
+})();

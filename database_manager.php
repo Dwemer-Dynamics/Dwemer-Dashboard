@@ -1099,6 +1099,7 @@ function renderDatabaseMaintenanceResultsAndExit(array $results): void
         }
     }
 
+    if (defined('DWEMER_STORAGE_ACTIONS_ONLY')) sm_action_finish($allSuccessful, 'Database maintenance finished.', $results);
     echo "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Database Maintenance</title>";
     echo "<style>
         body{font-family:Arial,sans-serif;background:#1f1f1f;color:#f5f5f5;padding:24px;}
@@ -1221,6 +1222,7 @@ function renderFactoryResetResultsAndExit(array $results): void
         }
     }
 
+    if (defined('DWEMER_STORAGE_ACTIONS_ONLY')) sm_action_finish($allSuccessful, 'Factory reset finished.', $results);
     echo "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Factory Reset</title>";
     echo "<style>
         body{font-family:Arial,sans-serif;background:#1f1f1f;color:#f5f5f5;padding:24px;}
@@ -1260,6 +1262,16 @@ require_once(__DIR__ . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'auto
 
 if (function_exists('deferredDashboardAutomaticBackupInit')) {
     deferredDashboardAutomaticBackupInit();
+}
+
+// Only the shared action adapter can supply a frozen, preview-verified restore file.
+if (defined('DWEMER_STORAGE_RESTORE_FILE') && ($_POST['action'] ?? '') === 'restore_prepared_backup') {
+    $preparedScope = inspectBackupScope(DWEMER_STORAGE_RESTORE_FILE, null, true);
+    $preparedError = '';
+    $preparedOk = restoreDatabaseBackupFile(DWEMER_STORAGE_RESTORE_FILE, $host, $port, $username, $password, $preparedError);
+    sm_action_finish($preparedOk, $preparedOk ? getBackupRestoreSuccessMessage($preparedScope)
+        : 'Restore failed. Some databases may already have changed. Check the details before trying again.',
+        $preparedOk ? [] : [['label' => $preparedScope['scope_label'], 'ok' => false, 'output' => $preparedError]]);
 }
 
 if (isset($_GET['action']) && $_GET['action'] === 'maintenance') {
@@ -1440,6 +1452,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } catch (Throwable $e) {
         $message = "<p><strong>Error repairing Oghma table:</strong> " . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') . "</p>";
     }
+    if (defined('DWEMER_STORAGE_ACTIONS_ONLY')) sm_action_finish(!preg_match('/error|failed/i', strip_tags($message)), $message);
     setDatabaseManagerFlashMessage($message);
     $qs = $_SERVER['QUERY_STRING'] ?? '';
     $redirectUrl = ($_SERVER['PHP_SELF'] ?? 'database_manager.php') . ($qs ? ('?' . $qs) : '');
@@ -1468,6 +1481,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } catch (Throwable $e) {
         $message = "<p><strong>Error repairing database constraints:</strong> " . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') . "</p>";
     }
+    if (defined('DWEMER_STORAGE_ACTIONS_ONLY')) sm_action_finish(!preg_match('/error|failed/i', strip_tags($message)), $message);
     setDatabaseManagerFlashMessage($message);
     $qs = $_SERVER['QUERY_STRING'] ?? '';
     $redirectUrl = ($_SERVER['PHP_SELF'] ?? 'database_manager.php') . ($qs ? ('?' . $qs) : '');
@@ -1518,6 +1532,7 @@ if (
         $message = "<p><strong>Error:</strong> " . htmlspecialchars($e->getMessage()) . "</p>";
     }
 
+    if (defined('DWEMER_STORAGE_ACTIONS_ONLY')) sm_action_finish(!preg_match('/error|failed/i', strip_tags($message)), $message);
     $qs = $_SERVER['QUERY_STRING'] ?? '';
     $redirectUrl = ($_SERVER['PHP_SELF'] ?? 'database_manager.php') . ($qs ? ('?' . $qs) : '');
     header('Location: ' . $redirectUrl);
@@ -1587,6 +1602,7 @@ if (
         $message = "<p><strong>Error:</strong> " . htmlspecialchars($e->getMessage()) . "</p>";
     }
 
+    if (defined('DWEMER_STORAGE_ACTIONS_ONLY')) sm_action_finish(!preg_match('/error|failed/i', strip_tags($message)), $message);
     setDatabaseManagerFlashMessage($message);
     $params = $_GET;
     $params['version_tab'] = ($versionTarget === 'stobe') ? 'stobe' : 'chim';
@@ -1689,6 +1705,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'restore_auto' && isset($_GET[
                 }
             } else {
                 $successMessage = getBackupRestoreSuccessMessage($backupScope);
+                if (defined('DWEMER_STORAGE_ACTIONS_ONLY')) sm_action_finish(true, $successMessage);
                 echo "<script type='text/javascript'>\n".
                      "  try {\n".
                      "    const msg = " . json_encode($successMessage) . ";\n".
@@ -1728,6 +1745,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'import_from_server' && isse
             }
         } else {
             $successMessage = getBackupRestoreSuccessMessage($backupScope);
+            if (defined('DWEMER_STORAGE_ACTIONS_ONLY')) sm_action_finish(true, $successMessage);
             echo "<script type='text/javascript'>\n".
                  "  try {\n".
                  "    const msg = " . json_encode($successMessage) . ";\n".
@@ -1886,6 +1904,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_FILES['sql_file']) || (!is
     } else {
         $message .= '<p>No file uploaded or there was an upload error.</p>';
     }
+}
+// API requests stop before any legacy layout or expensive listing queries.
+if (defined('DWEMER_STORAGE_ACTIONS_ONLY')) {
+    sm_action_finish(!preg_match('/error|failed/i', strip_tags($message)), $message);
 }
 ?>
 

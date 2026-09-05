@@ -130,6 +130,11 @@ function dm_overview($conn, string $mod, int $offset, string $search): array
                     'event_count' => isset($p['eventlog_count']) ? (int)$p['eventlog_count'] : null,
                     'loaded' => ($p['is_active'] ?? false) === true, 'kind' => $kind,
                     'pinned' => $p['retention_pinned'] ?? null,
+                    'notes' => (string)($p['notes'] ?? ''),
+                    'members' => $p['player_faction_members'] ?? [],
+                    'storage_type' => $p['storage_type'] ?? 'dump',
+                    'protected' => ($p['is_active'] ?? false) === true || strtolower((string)($p['name'] ?? '')) === 'default'
+                        || ($p['retention_pinned'] ?? false) === true,
                 ];
             }
         }
