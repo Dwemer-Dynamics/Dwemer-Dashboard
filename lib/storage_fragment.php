@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Shared "Storage & Cleanup" routing and native fragment rendering.
+ * Shared "Playthrough Management" routing and native fragment rendering.
  *
  * A fragment is the ORIGINAL manager page from a mod server (or the legacy
  * Dashboard database manager) included in-process by the shared route. It is

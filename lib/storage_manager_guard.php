@@ -23,7 +23,7 @@ function sm_guard(string $kind, string $mod): array
     }
     if ($method === 'GET' && in_array($queryAction, $legacyActions, true)) {
         http_response_code(405);
-        throw new StorageManagerRequestException('This action now requires confirmation. Open Storage & Cleanup and use its action button. Nothing was changed.');
+        throw new StorageManagerRequestException('This action now requires confirmation. Open Playthrough Management and use its action button. Nothing was changed.');
     }
     if ($method === 'POST') {
         $token = $_POST['_sm_csrf'] ?? null;
@@ -31,7 +31,7 @@ function sm_guard(string $kind, string $mod): array
         if (!is_string($token) || !hash_equals($_SESSION['storage_csrf'], $token)
             || !is_string($confirmedScope) || !hash_equals($scope, $confirmedScope)) {
             http_response_code(403);
-            throw new StorageManagerRequestException('Security check failed. Reload Storage & Cleanup and try again. Nothing was changed.');
+            throw new StorageManagerRequestException('Security check failed. Reload Playthrough Management and try again. Nothing was changed.');
         }
         if ($kind === 'shared' && ($_GET['server'] ?? '') === 'dialectic'
             && in_array($_POST['action'] ?? null, ['repair_oghma_table', 'repair_core_constraints'], true)) {

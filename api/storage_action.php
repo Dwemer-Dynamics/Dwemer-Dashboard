@@ -21,7 +21,7 @@ $bufferLevel = ob_get_level();
 try {
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
         http_response_code(405);
-        throw new InvalidArgumentException('Use an action button in Storage & Cleanup.');
+        throw new InvalidArgumentException('Use an action button in Playthrough Management.');
     }
     $input = $_POST;
     $mod = $input['mod'] ?? ''; $operation = $input['operation'] ?? '';
