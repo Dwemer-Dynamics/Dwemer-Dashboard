@@ -151,7 +151,7 @@ function dm_fragment_for(string $mod, string $view, string $server = 'herika'): 
         return null;
     }
     $headings = [
-        'manage' => $products[$mod]['label'] . ' snapshot tools',
+        'manage' => $products[$mod]['label'] . ' playthrough tools',
         'databases' => $products[$mod]['label'] . ' database tools',
     ];
     return [

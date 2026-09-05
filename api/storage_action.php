@@ -122,10 +122,10 @@ try {
         $_POST['csrf_token'] = $_SESSION['ptm_csrf'] ?? '';
         if ($operation === 'create_snapshot') {
             $_POST['name'] = $scalar('name', 128); $_POST['notes'] = $scalar('notes', 4000);
-            if ($_POST['name'] === '') throw new InvalidArgumentException('Give the snapshot a name.');
+            if ($_POST['name'] === '') throw new InvalidArgumentException('Give the playthrough a name.');
         } elseif (in_array($operation, ['restore_snapshot','delete_snapshot'], true)) {
             $id = filter_var($input['profile_id'] ?? null, FILTER_VALIDATE_INT);
-            if (!$id || $id < 1) throw new InvalidArgumentException('Choose a snapshot.');
+            if (!$id || $id < 1) throw new InvalidArgumentException('Choose a playthrough.');
             $_POST['profile_id'] = (string)$id;
         }
     } else {

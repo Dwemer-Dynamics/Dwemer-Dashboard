@@ -93,7 +93,7 @@ function dm_overview($conn, string $mod, int $offset, string $search): array
             elseif ($categories[$category]['rows_estimate'] !== null) $categories[$category]['rows_estimate'] += (int)round((float)$table['reltuples']);
         }
         $liveBytes = array_sum(array_column($categories, 'bytes'));
-        $categories['stored'] = ['key' => 'stored', 'label' => 'Snapshots & other database storage',
+        $categories['stored'] = ['key' => 'stored', 'label' => 'Playthroughs & other database storage',
             'bytes' => max(0, (int)$database['bytes'] - $liveBytes), 'rows_estimate' => null];
         $meta = $product['meta'];
         $exists = pg_fetch_assoc(dm_query($conn, 'SELECT to_regclass($1) IS NOT NULL AS present', [$meta . '.playthrough_profiles']));

@@ -25,7 +25,7 @@ $config = ['csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_cs
 <a class="sm-skip" href="#sm-content">Skip to storage tools</a>
 <main class="sm-shell">
     <header class="sm-header">
-        <div><h1>Playthrough Management</h1><p class="sm-muted">Manage snapshots, stored data and database backups.</p></div>
+        <div><h1>Playthrough Management</h1><p class="sm-muted">Manage playthroughs, stored data and database backups.</p></div>
         <nav class="sm-actions" aria-label="Related pages"><button id="sm-refresh" type="button">Refresh</button><a class="sm-button" href="distro_debugger.php">Server Logs</a><a class="sm-button" href="index.php">Dashboard</a></nav>
     </header>
     <nav class="sm-brand-tabs" aria-label="Choose a mod">
@@ -38,7 +38,7 @@ $config = ['csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_cs
     <div id="sm-status" class="sm-status" role="status" aria-live="polite"></div>
     <section id="sm-content" tabindex="-1" aria-busy="true"><p class="sm-empty">Loading storage tools…</p></section>
     <noscript><p class="sm-error">Enable JavaScript to use these tools. No data is changed by opening this page.</p></noscript>
-    <footer class="sm-footer">Each mod keeps its own database. A snapshot is stored inside it; a database backup is a separate file.</footer>
+    <footer class="sm-footer">Each mod keeps its own database. A playthrough is stored inside it; a database backup is a separate file.</footer>
 </main>
 <dialog class="sm-dialog" id="sm-dialog" aria-labelledby="sm-dialog-title">
     <div class="sm-dialog-head"><h2 id="sm-dialog-title"></h2><button type="button" id="sm-dialog-close" aria-label="Close dialog">×</button></div>

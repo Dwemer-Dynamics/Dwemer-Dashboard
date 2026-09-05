@@ -16,7 +16,7 @@ try {
     $offset = filter_var($_GET['offset'] ?? 0, FILTER_VALIDATE_INT);
     if (!is_string($mod) || !isset(dm_products()[$mod]) || !is_string($search) || strlen($search) > 480 || $offset === false || $offset < 0 || $offset > 1000000) {
         http_response_code(400);
-        throw new InvalidArgumentException('Choose a valid mod and snapshot page.');
+        throw new InvalidArgumentException('Choose a valid mod and playthrough page.');
     }
     $product = dm_products()[$mod];
     $root = dm_server_root($product['dir']);

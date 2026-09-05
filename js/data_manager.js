@@ -18,7 +18,7 @@
     const backupScope = query.get('scope') === 'stobe' || (view === 'backups' && mod === 'stobe') ? 'stobe' : 'all';
     if (view === 'backups') mod = 'all';
     const views = mod === 'all' ? {overview:'Overview',backups:'Backups',advanced:'Advanced'}
-        : {snapshots:'Snapshots',cleanup:'Cleanup',advanced:'Advanced'};
+        : {snapshots:'Playthroughs',cleanup:'Cleanup',advanced:'Advanced'};
     if (!views[view]) view = Object.keys(views)[0];
     let search = (query.get('q') || '').slice(0,120);
     let offset = Math.max(0, Math.min(1000000, Number(query.get('offset')) || 0));
@@ -191,14 +191,14 @@
 
     async function overview(ticket) {
         const grid = el('div',null,'sm-grid');
-        content.replaceChildren(toolbar('Your mod databases','Choose a mod to manage its snapshots and cleanup settings.'),grid);
+        content.replaceChildren(toolbar('Your mod databases','Choose a mod to manage its playthroughs and cleanup settings.'),grid);
         await Promise.all(['chim','stobe','dialectic'].map(async key => {
             const card = panel(labels[key]); grid.append(card); card.append(note('Loading…'));
             try {
                 const data = await request('api/data_manager.php?mod=' + key);
                 if (ticket !== generation) return;
-                card.replaceChildren(el('h3',labels[key]),note(data.game),metrics([['Database',bytes(data.live.database_bytes)],['Snapshots',number(data.snapshots.all_total)]]),
-                    note('Loaded snapshot: ' + (data.live.loaded_snapshot || 'None recorded')),el('br'),link('Manage ' + labels[key],key,'snapshots'));
+                card.replaceChildren(el('h3',labels[key]),note(data.game),metrics([['Database',bytes(data.live.database_bytes)],['Playthroughs',number(data.snapshots.all_total)]]),
+                    note('Active playthrough: ' + (data.live.loaded_snapshot || 'None recorded')),el('br'),link('Manage ' + labels[key],key,'snapshots'));
             } catch (error) { card.replaceChildren(el('h3',labels[key]),note(error.message,'sm-error'),link('Open tools',key,'snapshots')); }
         }));
         if (ticket !== generation) return;
@@ -219,55 +219,55 @@
         entries.forEach(([label,value]) => list.append(el('dt',label),el('dd',value))); details.append(list);
         const actions = [];
         if (mod === 'chim' && !snapshot.loaded && snapshot.name.toLowerCase() !== 'default') {
-            actions.push(button(snapshot.pinned ? 'Remove protection' : 'Protect snapshot', () => confirmAction(snapshot.pinned ? 'Remove protection' : 'Protect snapshot',
-                snapshot.pinned ? 'This snapshot can then be deleted manually or by eligible automatic cleanup.' : 'Keep this snapshot out of manual and automatic cleanup.',
-                () => retention('pin',{profile_id:snapshot.id,pinned:snapshot.pinned ? '0':'1'}).then(() => ({ok:true,message:'Snapshot protection updated.'})), snapshot.pinned)));
+            actions.push(button(snapshot.pinned ? 'Remove protection' : 'Protect playthrough', () => confirmAction(snapshot.pinned ? 'Remove protection' : 'Protect playthrough',
+                snapshot.pinned ? 'This playthrough can then be deleted manually or by eligible automatic cleanup.' : 'Keep this playthrough out of manual and automatic cleanup.',
+                () => retention('pin',{profile_id:snapshot.id,pinned:snapshot.pinned ? '0':'1'}).then(() => ({ok:true,message:'Playthrough protection updated.'})), snapshot.pinned)));
         }
         openDialog(snapshot.name,[details],actions);
         dialogActions.firstChild.textContent = 'Close';
     }
     function newSnapshot(setup = false) {
         if (setup) {
-            confirmAction('Set up snapshots','Save the current database as the protected default recovery snapshot. This does not create a game save.',
+            confirmAction('Set up playthroughs','Save the current database as the protected default recovery playthrough. This does not create a game save.',
                 () => action('setup'),false); return;
         }
-        const form = el('form',null,'sm-form'), name = field('Snapshot name','name'), notes = field('Notes (optional)','notes','textarea');
+        const form = el('form',null,'sm-form'), name = field('Playthrough name','name'), notes = field('Notes (optional)','notes','textarea');
         name.input.required = true; name.input.maxLength = 128; notes.input.maxLength = 4000;
         form.append(name.wrap,notes.wrap,note('Saves the current mod database. Your game save is separate.'));
         form.addEventListener('submit',event=>{event.preventDefault();if(form.reportValidity())perform(()=>action('create_snapshot',{name:name.input.value,notes:notes.input.value}));});
-        openDialog('Save a snapshot',[form],[button('Save snapshot',()=>form.requestSubmit(),'sm-primary')]); name.input.focus();
+        openDialog('Save a playthrough',[form],[button('Save playthrough',()=>form.requestSubmit(),'sm-primary')]); name.input.focus();
     }
     function snapshots(data) {
-        const list = data.snapshots, top = toolbar('Snapshots','Saved copies of this mod’s database. Use a matching game save when restoring.',true);
-        const create = button('Save snapshot',()=>newSnapshot(),'sm-primary'); top.append(create);
+        const list = data.snapshots, top = toolbar('Playthroughs','Saved copies of this mod’s database. Use a matching game save when restoring.',true);
+        const create = button('Save playthrough',()=>newSnapshot(),'sm-primary'); top.append(create);
         content.replaceChildren(top);
         if (!list.metadata_available && mod !== 'stobe') {
-            content.append(note('Snapshots have not been set up for this database yet.','sm-warning'),button('Set up snapshots',()=>newSnapshot(true),'sm-primary')); return;
+            content.append(note('Playthroughs have not been set up for this database yet.','sm-warning'),button('Set up playthroughs',()=>newSnapshot(true),'sm-primary')); return;
         }
         const summary = panel(); summary.classList.add('sm-summary');
-        summary.append(metrics([['Loaded snapshot',data.live.loaded_snapshot || 'None recorded',true],['Saved snapshots',number(list.all_total)],['Database',bytes(data.live.database_bytes)]]));
+        summary.append(metrics([['Active playthrough',data.live.loaded_snapshot || 'None recorded',true],['Saved playthroughs',number(list.all_total)],['Database',bytes(data.live.database_bytes)]]));
         content.append(summary);
-        if (!list.items.length) { content.append(note(search ? 'No snapshots match your search.' : 'No snapshots saved yet. Save one before making major changes.','sm-empty')); return; }
+        if (!list.items.length) { content.append(note(search ? 'No playthroughs match your search.' : 'No playthroughs saved yet. Save one before making major changes.','sm-empty')); return; }
         const rows = list.items.map(snapshot => {
             const name = el('div'); name.append(el('div',snapshot.name,'sm-name'),note(snapshot.player || 'Player not recorded'));
-            if (snapshot.loaded) name.append(el('span','Loaded','sm-badge sm-loaded'));
+            if (snapshot.loaded) name.append(el('span','Active','sm-badge sm-loaded'));
             else if (snapshot.protected) name.append(el('span','Protected','sm-badge'));
             const when = el('div'); when.append(note(date(snapshot.created_at),''));
             when.append(note(snapshot.game_date || 'In-game date not recorded'));
             const actions = el('div',null,'sm-actions');
             actions.append(button('Details',()=>snapshotDetails(snapshot)));
-            const restore = button('Restore',()=>confirmAction('Restore snapshot',
+            const restore = button('Restore',()=>confirmAction('Restore playthrough',
                 'Restore “' + snapshot.name + '” in ' + labels[mod] + '. Stop the game first, then load the matching game save after restoring.',
                 ()=>action('restore_snapshot',{profile_id:snapshot.id}),true,
-                [note(mod === 'stobe' ? 'STOBE saves your current database as a new automatic snapshot before switching.' : 'The currently loaded snapshot is updated from your live database before switching.','sm-warning')]));
+                [note(mod === 'stobe' ? 'STOBE saves your current database as a new automatic playthrough before switching.' : 'The active playthrough is updated from your live database before switching.','sm-warning')]));
             restore.disabled = snapshot.loaded;
-            const remove = button('Delete',()=>confirmAction('Delete snapshot','Permanently delete “' + snapshot.name + '” from ' + labels[mod] + '. The live database and your game saves are not deleted.',
+            const remove = button('Delete',()=>confirmAction('Delete playthrough','Permanently delete “' + snapshot.name + '” from ' + labels[mod] + '. The live database and your game saves are not deleted.',
                 ()=>action('delete_snapshot',{profile_id:snapshot.id})), 'sm-danger');
-            remove.disabled = snapshot.protected; remove.title = snapshot.protected ? 'Loaded, default and protected snapshots cannot be deleted.' : '';
+            remove.disabled = snapshot.protected; remove.title = snapshot.protected ? 'Active, default and protected playthroughs cannot be deleted.' : '';
             actions.append(restore,remove);
             return [name,when,bytes(snapshot.size_bytes),actions];
         });
-        content.append(table(['Snapshot','Saved / in-game date','Size at save','Actions'],rows),pager(list));
+        content.append(table(['Playthrough','Saved / in-game date','Size at save','Actions'],rows),pager(list));
     }
     function storageBreakdown(data) {
         const box = panel('Where space is used');
@@ -278,7 +278,7 @@
             row.append(note(item.label,''),bar,el('strong',bytes(item.bytes))); box.append(row);
         });
         const details = el('details',null,'sm-details'); details.append(el('summary','How these numbers work'),
-            note('Sizes include table indexes and overhead. “Snapshots & other database storage” is the remaining database size, not an exact snapshot total. Deleting rows makes space reusable; it may not shrink database files.'));
+            note('Sizes include table indexes and overhead. “Playthroughs & other database storage” is the remaining database size, not an exact playthrough total. Deleting rows makes space reusable; it may not shrink database files.'));
         box.append(details); return box;
     }
     async function cleanup(data,ticket) {
@@ -287,8 +287,8 @@
             const box = panel('Manual cleanup');
             const backupsLink = link('Review backups','all','backups');
             if (mod === 'stobe') backupsLink.href += '&scope=stobe';
-            box.append(note('Automatic data-retention rules are not available for ' + labels[mod] + '. Remove unwanted snapshots from the Snapshots tab; database backups are managed under Distro.'),el('br'),
-                link('Review snapshots',mod,'snapshots'),document.createTextNode(' '),backupsLink);
+            box.append(note('Automatic data-retention rules are not available for ' + labels[mod] + '. Remove unwanted playthroughs from the Playthroughs tab; database backups are managed under Distro.'),el('br'),
+                link('Review playthroughs',mod,'snapshots'),document.createTextNode(' '),backupsLink);
             content.append(box); return;
         }
         const host = panel('Cleanup settings'); host.append(note('Loading saved settings…')); content.append(host);
@@ -304,19 +304,19 @@
             if (min !== undefined) { f.input.min=min;f.input.max=max;f.input.step=1;f.input.required=true; }
             parent.append(f.wrap);
         };
-        const diagnostic = panel('Debug logs'), snapshotsPanel = panel('Snapshots & event preview');
+        const diagnostic = panel('Debug logs'), snapshotsPanel = panel('Playthroughs & event preview');
         diagnostic.classList.add('sm-settings-group'); snapshotsPanel.classList.add('sm-settings-group');
         add(diagnostic,'Clean up debug logs','diagnostics_enabled','checkbox','Off by default. Only database debug logs are eligible; events, memories and diaries are kept.');
         add(diagnostic,'Delete debug logs older than','diagnostic_days','number','Real-world days, not in-game days.',1,3650);
         add(diagnostic,'Also target this size per log table (MB)','diagnostic_max_mb','number','0 turns off the size target. Cleanup runs in small batches, so a large table may need several rounds.',0,102400);
-        add(snapshotsPanel,'Clean up automatic snapshots','snapshots_enabled','checkbox','Only CHIM Dragon Break snapshots are eligible. Manual, default, loaded and protected snapshots are kept.');
-        add(snapshotsPanel,'Automatic snapshots to keep','snapshot_keep','number','Keep this many recent eligible snapshots.',1,100);
+        add(snapshotsPanel,'Clean up automatic playthroughs','snapshots_enabled','checkbox','Only CHIM Dragon Break playthroughs are eligible. Manual, default, active and protected playthroughs are kept.');
+        add(snapshotsPanel,'Automatic playthroughs to keep','snapshot_keep','number','Keep this many recent eligible playthroughs.',1,100);
         add(snapshotsPanel,'Preview events older than','event_days','number','In-game days back from the latest recorded game time. 0 turns off this preview.',0,3650);
         snapshotsPanel.append(note('Preview only — events are never deleted. CHIM may still need them to build NPC memories.','sm-warning'));
         grid.append(diagnostic,snapshotsPanel); form.append(grid);
-        add(form,'Run cleanup automatically','automatic','checkbox','Off by default. When enabled, CHIM periodically applies the saved debug-log and automatic-snapshot rules.');
+        add(form,'Run cleanup automatically','automatic','checkbox','Off by default. When enabled, CHIM periodically applies the saved debug-log and automatic-playthrough rules.');
         const last = state.last_run;
-        form.append(note(last ? 'Last cleanup: ' + date(last.at) + ' · ' + number(last.rows || 0) + ' log rows and ' + number(last.snapshots || 0) + ' snapshots deleted' : 'No cleanup has run yet.'));
+        form.append(note(last ? 'Last cleanup: ' + date(last.at) + ' · ' + number(last.rows || 0) + ' log rows and ' + number(last.snapshots || 0) + ' playthroughs deleted' : 'No cleanup has run yet.'));
         const actions = el('div',null,'sm-actions'), previewArea = el('div');
         const save = button('Save settings',()=>form.requestSubmit(),'sm-primary');
         const preview = button('Preview cleanup',async()=>{
@@ -342,9 +342,9 @@
         if(plan.message)box.append(note(plan.message));
         if (diagnostics.length) box.append(table(['Debug log table','Rows to delete','Estimated size'],diagnostics.map(item=>[item.table,number(item.rows),bytes(item.bytes_estimate)])));
         else box.append(note('No debug-log rows to delete with the saved settings.'));
-        box.append(note(snapshots.length ? 'Automatic snapshots to delete: '+snapshots.map(item=>item.name).join(', ') : 'No automatic snapshots to delete.'));
+        box.append(note(snapshots.length ? 'Automatic playthroughs to delete: '+snapshots.map(item=>item.name).join(', ') : 'No automatic playthroughs to delete.'));
         box.append(note(plan.events?.cutoff_gamets ? number(plan.events.older_rows)+' events are older than the cutoff. None will be deleted.' : 'Event preview is off. No events will be deleted.','sm-warning'));
-        const run = button('Run cleanup now',()=>confirmAction('Run cleanup now','Permanently remove the debug-log rows and automatic snapshots listed in this preview. Events and memories are kept.',
+        const run = button('Run cleanup now',()=>confirmAction('Run cleanup now','Permanently remove the debug-log rows and automatic playthroughs listed in this preview. Events and memories are kept.',
             ()=>retention('run',{preview_token:plan.token}).then(result=>({ok:true,message:result.result?.message || 'Cleanup finished.'}))), 'sm-danger');
         run.disabled=!(snapshots.length || diagnostics.some(item=>Number(item.rows)>0));
         box.append(el('br'),run,note('Sizes are estimates. Freed space becomes reusable inside the database; files may not shrink.'));
