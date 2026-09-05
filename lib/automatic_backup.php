@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/backup_settings.php';
 /**
  * Dashboard-owned automatic backup management.
  * This is the source of truth for automatic database backups.
@@ -64,7 +65,10 @@ if (!function_exists('dashboardEnsureSettingsTable')) {
 if (!function_exists('dashboardReadSettingValue')) {
     function dashboardReadSettingValue($db, string $key): ?string
     {
-        dashboardEnsureSettingsTable($db);
+        if (!$db instanceof DashboardBackupSettings) $db = DashboardBackupSettings::shared();
+        // Viewing backup settings must not create tables or deduplicate user settings.
+        $exists = $db->fetchOne("SELECT to_regclass('chim_meta.settings') AS relation");
+        if (empty($exists['relation'])) return null;
         $quotedKey = method_exists($db, 'quote') ? $db->quote($key) : ("'" . str_replace("'", "''", $key) . "'");
         $row = $db->fetchOne("SELECT value FROM chim_meta.settings WHERE key = {$quotedKey}");
         if (is_array($row) && array_key_exists('value', $row)) {
@@ -77,6 +81,7 @@ if (!function_exists('dashboardReadSettingValue')) {
 if (!function_exists('dashboardWriteSettingValue')) {
     function dashboardWriteSettingValue($db, string $key, string $value): void
     {
+        if (!$db instanceof DashboardBackupSettings) $db = DashboardBackupSettings::shared();
         dashboardEnsureSettingsTable($db);
         $db->upsertRowOnConflict('chim_meta.settings', ['key' => $key, 'value' => $value], 'key');
     }
@@ -91,11 +96,6 @@ class DashboardAutomaticBackup {
 
     public function __construct() {
         $this->backupDir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'databasebackups' . DIRECTORY_SEPARATOR;
-
-        if (!file_exists($this->backupDir)) {
-            mkdir($this->backupDir, 0755, true);
-            dashboardAutomaticBackupLogInfo("Created automatic backup directory: " . $this->backupDir);
-        }
 
         try {
             $db = $this->getDatabaseConnection();
@@ -250,6 +250,9 @@ class DashboardAutomaticBackup {
     public function createBackup() {
         if (!$this->isEnabled()) {
             dashboardAutomaticBackupLogInfo("Automatic backup skipped - feature is disabled");
+            return false;
+        }
+        if (!is_dir($this->backupDir) && !mkdir($this->backupDir, 0755, true) && !is_dir($this->backupDir)) {
             return false;
         }
 
