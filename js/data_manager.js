@@ -14,8 +14,11 @@
     if (!labels[mod]) mod = 'all';
     view = ({manage:'snapshots', playthroughs:'snapshots', storage:'cleanup', databases:'backups'})[view] || view;
     if (location.hash === '#retention-section' && mod === 'chim') view = 'cleanup';
+    // Backups live under Distro only; legacy per-mod backup URLs land there with the matching list.
+    const backupScope = query.get('scope') === 'stobe' || (view === 'backups' && mod === 'stobe') ? 'stobe' : 'all';
+    if (view === 'backups') mod = 'all';
     const views = mod === 'all' ? {overview:'Overview',backups:'Backups',advanced:'Advanced'}
-        : {snapshots:'Snapshots',cleanup:'Cleanup',backups:'Backups',advanced:'Advanced'};
+        : {snapshots:'Snapshots',cleanup:'Cleanup',advanced:'Advanced'};
     if (!views[view]) view = Object.keys(views)[0];
     let search = (query.get('q') || '').slice(0,120);
     let offset = Math.max(0, Math.min(1000000, Number(query.get('offset')) || 0));
@@ -201,7 +204,7 @@
         if (ticket !== generation) return;
         const shared = panel('Backups for the whole setup');
         shared.style.marginTop = '16px';
-        shared.append(note('Automatic archives can contain all three mod databases. Inspect a backup before restoring it; scope is checked from the file.'),el('br'),link('Manage database backups','all','backups'));
+        shared.append(note('Automatic archives can contain all three mod databases, and STOBE’s own backup files are managed here too. Inspect a backup before restoring it; scope is checked from the file.'),el('br'),link('Manage database backups','all','backups'));
         content.append(shared);
     }
     function snapshotDetails(snapshot) {
@@ -282,8 +285,10 @@
         content.replaceChildren(toolbar('Cleanup','Choose what to keep. Preview eligible data before deleting anything.'),storageBreakdown(data));
         if (mod !== 'chim') {
             const box = panel('Manual cleanup');
-            box.append(note('Automatic data-retention rules are not available for ' + labels[mod] + '. Remove unwanted snapshots from the Snapshots tab; database backups have their own controls.'),el('br'),
-                link('Review snapshots',mod,'snapshots'),document.createTextNode(' '),link('Review backups',mod,'backups'));
+            const backupsLink = link('Review backups','all','backups');
+            if (mod === 'stobe') backupsLink.href += '&scope=stobe';
+            box.append(note('Automatic data-retention rules are not available for ' + labels[mod] + '. Remove unwanted snapshots from the Snapshots tab; database backups are managed under Distro.'),el('br'),
+                link('Review snapshots',mod,'snapshots'),document.createTextNode(' '),backupsLink);
             content.append(box); return;
         }
         const host = panel('Cleanup settings'); host.append(note('Loading saved settings…')); content.append(host);
@@ -347,42 +352,46 @@
         if(previewTimer)clearTimeout(previewTimer);
         previewTimer=setTimeout(()=>{run.disabled=true;box.append(note('Preview expired. Run a new preview before cleanup.','sm-warning'));},Math.max(0,Date.parse(plan.expires_at)-Date.now()));
     }
-    async function previewRestore(fields) {
-        if (mod === 'all' && !fields.destination) {
+    async function previewRestore(fields, scope = mod) {
+        if (scope === 'all' && !fields.destination) {
             const select = el('select'); select.id = 'sm-restore-destination';
             [['chim','CHIM'],['dialectic','DIALECTIC']].forEach(([value,text]) => { const option=el('option',text);option.value=value;select.append(option); });
             const label=el('label','Destination if the file does not identify a database');label.htmlFor=select.id;
-            const field=el('div',null,'sm-field');field.append(label,select,note('Connection markers and recognized filenames take precedence. Use STOBE’s Backups tab for an unlabeled STOBE-only dump.'));
-            openDialog('Inspect backup',[note(fields.filename || fields.backup?.name),field],[button('Inspect backup',()=>previewRestore({...fields,destination:select.value}),'sm-primary')]);
+            const field=el('div',null,'sm-field');field.append(label,select,note('Connection markers and recognized filenames take precedence. Use the STOBE backups list for an unlabeled STOBE-only dump.'));
+            openDialog('Inspect backup',[note(fields.filename || fields.backup?.name),field],[button('Inspect backup',()=>previewRestore({...fields,destination:select.value},scope),'sm-primary')]);
             return;
         }
-        const result = await perform(()=>action('preview_restore',fields),false);
+        const result = await perform(()=>action('preview_restore',fields,scope),false);
         if(!result?.preview)return;
         const preview=result.preview;
         confirmAction('Restore database backup','Replace '+preview.scope+' using “'+preview.filename+'” ('+bytes(preview.bytes)+'). Stop all affected games and servers first.',
-            ()=>action('restore_backup',{...fields,preview_token:preview.token}),true,
+            ()=>action('restore_backup',{...fields,preview_token:preview.token},scope),true,
             [note('Use only backups you trust. SQL backups contain commands that run on your database. This is not a game save.','sm-warning'),
              note(preview.combined ? 'Shared restore is not all-or-nothing. If it fails, some databases may already have changed. Keep a current backup of every affected mod.' : 'A supported STOBE pg_dump backup is restored in one transaction. Load the matching Kenshi save afterward.','sm-warning')]);
     }
-    function uploadBackup() {
-        const form=el('form',null,'sm-form'), file=field('Backup file','backup','file','',mod==='stobe'?'STOBE .sql or .sql.gz only. Combined archives belong under Distro.':'Plain .sql only. The next step inspects which databases it contains.');
-        file.input.accept=mod==='stobe'?'.sql,.gz':'.sql';file.input.required=true;form.append(file.wrap);
-        form.addEventListener('submit',event=>{event.preventDefault();if(form.reportValidity())previewRestore({source:'upload',backup:file.input.files[0]});});
+    function uploadBackup(scope = mod) {
+        const form=el('form',null,'sm-form'), file=field('Backup file','backup','file','',scope==='stobe'?'STOBE .sql or .sql.gz only. Combined archives belong in the Distro archives list.':'Plain .sql only. The next step inspects which databases it contains.');
+        file.input.accept=scope==='stobe'?'.sql,.gz':'.sql';file.input.required=true;form.append(file.wrap);
+        form.addEventListener('submit',event=>{event.preventDefault();if(form.reportValidity())previewRestore({source:'upload',backup:file.input.files[0]},scope);});
         openDialog('Restore from a file',[form],[button('Inspect backup',()=>form.requestSubmit(),'sm-primary')]);
     }
     async function backups(ticket) {
-        content.replaceChildren(toolbar('Database backups','Separate SQL files for recovering database data. Game saves and server files are not included.',true));
-        if(!['all','stobe'].includes(mod)) {
-            const box=panel('Shared backups live under Distro');
-            box.append(note('The shared archive list can include multiple mods. Open Distro to inspect the exact scope before restoring. Selecting '+labels[mod]+' here does not filter a shared restore.'),el('br'),link('Open Distro backups','all','backups'));
-            content.append(box);return;
-        }
+        const scope = backupScope;
+        const top = toolbar('Database backups','Separate SQL files for recovering database data. Game saves and server files are not included.',true);
         const actions=el('div',null,'sm-actions');
-        actions.append(button(mod==='all'?'Export CHIM + STOBE':'Create STOBE backup',()=>confirmAction(mod==='all'?'Export CHIM + STOBE':'Create STOBE backup',
-            mod==='all'?'Download a backup containing CHIM and STOBE. This existing manual export does not include DIALECTIC.':'Save a STOBE database backup on the server.',
-            ()=>action(mod==='all'?'export_backup':'create_backup'),false),'sm-primary'),button('Restore from file',uploadBackup));
-        content.firstChild.append(actions);
-        const data=await request('api/storage_tools.php?'+new URLSearchParams({mod,view:'backups',q:search,offset}));
+        actions.append(button(scope==='all'?'Export CHIM + STOBE':'Create STOBE backup',()=>confirmAction(scope==='all'?'Export CHIM + STOBE':'Create STOBE backup',
+            scope==='all'?'Download a backup containing CHIM and STOBE. This existing manual export does not include DIALECTIC.':'Save a STOBE database backup on the server.',
+            ()=>action(scope==='all'?'export_backup':'create_backup',{},scope),false),'sm-primary'),button('Restore from file',()=>uploadBackup(scope)));
+        top.append(actions);
+        const picker=el('nav',null,'sm-task-tabs'); picker.setAttribute('aria-label','Backup location');
+        [['all','Distro archives'],['stobe','STOBE backups']].forEach(([key,label])=>{
+            const tab=el('a',label,'sm-task'+(key===scope?' is-active':''));
+            tab.href='?mod=all&view=backups'+(key==='stobe'?'&scope=stobe':'');
+            if(key===scope)tab.setAttribute('aria-current','page');
+            picker.append(tab);
+        });
+        content.replaceChildren(top,picker);
+        const data=await request('api/storage_tools.php?'+new URLSearchParams({mod:scope,view:'backups',q:search,offset}));
         if(ticket!==generation)return;
         if(data.automatic) {
             const box=panel('Automatic database backups'), form=el('form',null,'sm-form');
@@ -401,10 +410,10 @@
         content.append(table(['Backup file','Saved on','Size','Scope hint','Actions'],list.items.map(item=>{
             const name=el('div');name.append(el('div',item.filename,'sm-name'),note(item.source==='automatic'?'Automatic archive':item.source==='manual'?'Server import folder':'STOBE backup folder'));
             const fields={filename:item.filename,source:item.source}, actions=el('div',null,'sm-actions');
-            actions.append(button('Restore',()=>previewRestore(fields)));
-            if(item.can_download)actions.append(button('Download',()=>perform(()=>action('download_backup',fields),false)));
+            actions.append(button('Restore',()=>previewRestore(fields,scope)));
+            if(item.can_download)actions.append(button('Download',()=>perform(()=>action('download_backup',fields,scope),false)));
             if(item.can_delete)actions.append(button('Delete',()=>confirmAction('Delete backup file','Permanently delete “'+item.filename+'”. This does not change the live database.',
-                ()=>action('delete_backup',fields)),'sm-danger'));
+                ()=>action('delete_backup',fields,scope)),'sm-danger'));
             return[name,date(item.modified*1000),bytes(item.size),item.scope,actions];
         })),note('Scope hints come from filenames. Restore inspects the file contents before asking you to confirm.'),pager(list));
     }
@@ -473,7 +482,7 @@
     document.querySelectorAll('[data-mod]').forEach(anchor=>{
         const key=anchor.dataset.mod;anchor.classList.toggle('is-active',key===mod);
         if(key===mod)anchor.setAttribute('aria-current','page');
-        anchor.href='?mod='+key+'&view='+(key==='all'?(view==='backups'||view==='advanced'?view:'overview'):(view==='overview'?'snapshots':view));
+        anchor.href='?mod='+key+'&view='+(key==='all'?(view==='backups'||view==='advanced'?view:'overview'):(view==='overview'||view==='backups'?'snapshots':view));
     });
     const tasks=document.getElementById('sm-tasks');
     Object.entries(views).forEach(([key,label])=>{
