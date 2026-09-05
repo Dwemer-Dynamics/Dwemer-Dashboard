@@ -26,13 +26,13 @@ $config = ['csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_cs
 <main class="sm-shell">
     <header class="sm-header">
         <div><h1>Storage &amp; Cleanup</h1><p class="sm-muted">Manage snapshots, stored data and database backups.</p></div>
-        <nav class="sm-actions" aria-label="Related pages"><button id="sm-refresh" type="button">Refresh</button><a href="distro_debugger.php">Server Logs</a><a href="index.php">Dashboard</a></nav>
+        <nav class="sm-actions" aria-label="Related pages"><button id="sm-refresh" type="button">Refresh</button><a class="sm-button" href="distro_debugger.php">Server Logs</a><a class="sm-button" href="index.php">Dashboard</a></nav>
     </header>
     <nav class="sm-brand-tabs" aria-label="Choose a mod">
-        <a class="sm-brand" data-mod="all" href="?mod=all">Distro</a>
-        <a class="sm-brand" data-mod="chim" href="?mod=chim">CHIM</a>
-        <a class="sm-brand" data-mod="stobe" href="?mod=stobe">STOBE</a>
-        <a class="sm-brand" data-mod="dialectic" href="?mod=dialectic">DIALECTIC</a>
+        <a class="sm-brand" data-mod="all" href="?mod=all"><img class="sm-brand-icon" src="images/kagrenac-icon.png" alt=""><span>Distro</span></a>
+        <a class="sm-brand" data-mod="chim" href="?mod=chim"><img class="sm-brand-icon" src="images/chim-icon.png" alt=""><img class="sm-brand-logo" src="images/chim-logo.png" alt="CHIM"></a>
+        <a class="sm-brand" data-mod="stobe" href="?mod=stobe"><img class="sm-brand-icon" src="images/stobe-icon.png" alt=""><img class="sm-brand-logo" src="images/stobe-logo.png" alt="STOBE"></a>
+        <a class="sm-brand" data-mod="dialectic" href="?mod=dialectic"><img class="sm-brand-icon" src="images/dialectic-icon.png" alt=""><img class="sm-brand-logo" src="images/dialectic-logo.png" alt="DIALECTIC"></a>
     </nav>
     <nav class="sm-task-tabs" id="sm-tasks" aria-label="Storage task"></nav>
     <div id="sm-status" class="sm-status" role="status" aria-live="polite"></div>

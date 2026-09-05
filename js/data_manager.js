@@ -56,7 +56,7 @@
     function announce(text, kind = '') { status.textContent = text; status.className = 'sm-status ' + kind; }
     function toolbar(title, description, searchable = false) {
         const row = el('div', null, 'sm-toolbar');
-        const heading = el('div'); heading.append(el('h2', title), note(description)); row.append(heading);
+        const heading = el('div', null, 'sm-toolbar-heading'); heading.append(el('h2', title), note(description)); row.append(heading);
         if (searchable) {
             const form = el('form'); const input = el('input');
             input.type = 'search'; input.value = search; input.maxLength = 120;
@@ -241,7 +241,7 @@
         if (!list.metadata_available && mod !== 'stobe') {
             content.append(note('Snapshots have not been set up for this database yet.','sm-warning'),button('Set up snapshots',()=>newSnapshot(true),'sm-primary')); return;
         }
-        const summary = panel();
+        const summary = panel(); summary.classList.add('sm-summary');
         summary.append(metrics([['Loaded snapshot',data.live.loaded_snapshot || 'None recorded',true],['Saved snapshots',number(list.all_total)],['Database',bytes(data.live.database_bytes)]]));
         content.append(summary);
         if (!list.items.length) { content.append(note(search ? 'No snapshots match your search.' : 'No snapshots saved yet. Save one before making major changes.','sm-empty')); return; }
@@ -299,7 +299,8 @@
             if (min !== undefined) { f.input.min=min;f.input.max=max;f.input.step=1;f.input.required=true; }
             parent.append(f.wrap);
         };
-        const diagnostic = panel(), snapshotsPanel = panel();
+        const diagnostic = panel('Debug logs'), snapshotsPanel = panel('Snapshots & event preview');
+        diagnostic.classList.add('sm-settings-group'); snapshotsPanel.classList.add('sm-settings-group');
         add(diagnostic,'Clean up debug logs','diagnostics_enabled','checkbox','Off by default. Only database debug logs are eligible; events, memories and diaries are kept.');
         add(diagnostic,'Delete debug logs older than','diagnostic_days','number','Real-world days, not in-game days.',1,3650);
         add(diagnostic,'Also target this size per log table (MB)','diagnostic_max_mb','number','0 turns off the size target. Cleanup runs in small batches, so a large table may need several rounds.',0,102400);
