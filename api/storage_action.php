@@ -113,17 +113,18 @@ try {
             $settings->execQuery('COMMIT');
         } catch (Throwable $e) { $settings->execQuery('ROLLBACK'); throw $e; }
         sm_action_finish(true, 'Automatic backup settings saved.');
-    } elseif (in_array($operation, ['setup','create_snapshot','restore_snapshot','delete_snapshot'], true) && $mod !== 'all') {
+    } elseif (in_array($operation, ['setup','create_playthrough','restore_playthrough','delete_playthrough'], true) && $mod !== 'all') {
         $controller = $root . '/ui/playthrough_manager.php';
-        $actions = $mod === 'stobe' ? ['create_snapshot'=>'create_snapshot','restore_snapshot'=>'switch_profile','delete_snapshot'=>'delete_profile']
-            : ['setup'=>'setup','create_snapshot'=>'create','restore_snapshot'=>'switch','delete_snapshot'=>'delete'];
+        // The right-hand values are each server's established playthrough manager actions.
+        $actions = $mod === 'stobe' ? ['create_playthrough'=>'create_playthrough','restore_playthrough'=>'switch_profile','delete_playthrough'=>'delete_profile']
+            : ['setup'=>'setup','create_playthrough'=>'create','restore_playthrough'=>'switch','delete_playthrough'=>'delete'];
         if (!isset($actions[$operation])) throw new InvalidArgumentException('This action is not supported by this mod.');
         $_POST['action'] = $actions[$operation];
         $_POST['csrf_token'] = $_SESSION['ptm_csrf'] ?? '';
-        if ($operation === 'create_snapshot') {
+        if ($operation === 'create_playthrough') {
             $_POST['name'] = $scalar('name', 128); $_POST['notes'] = $scalar('notes', 4000);
             if ($_POST['name'] === '') throw new InvalidArgumentException('Give the playthrough a name.');
-        } elseif (in_array($operation, ['restore_snapshot','delete_snapshot'], true)) {
+        } elseif (in_array($operation, ['restore_playthrough','delete_playthrough'], true)) {
             $id = filter_var($input['profile_id'] ?? null, FILTER_VALIDATE_INT);
             if (!$id || $id < 1) throw new InvalidArgumentException('Choose a playthrough.');
             $_POST['profile_id'] = (string)$id;

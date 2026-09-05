@@ -64,7 +64,7 @@ function dm_query($conn, string $sql, array $params = [])
     return $result;
 }
 
-// Only catalog metadata and a bounded page of saved snapshot metadata are read.
+// Only catalog metadata and a bounded page of saved playthrough metadata are read.
 function dm_overview($conn, string $mod, int $offset, string $search): array
 {
     $product = dm_products()[$mod];
@@ -102,15 +102,15 @@ function dm_overview($conn, string $mod, int $offset, string $search): array
             $meta = 'chim_meta';
             $exists = pg_fetch_assoc(dm_query($conn, 'SELECT to_regclass($1) IS NOT NULL AS present', [$meta . '.playthrough_profiles']));
         }
-        $snapshots = ['metadata_available' => $exists['present'] === 't', 'total' => 0, 'all_total' => 0, 'offset' => $offset, 'limit' => 50, 'items' => []];
+        $playthroughs = ['metadata_available' => $exists['present'] === 't', 'total' => 0, 'all_total' => 0, 'offset' => $offset, 'limit' => 50, 'items' => []];
         $loaded = null;
-        if ($snapshots['metadata_available']) {
+        if ($playthroughs['metadata_available']) {
             $table = pg_escape_identifier($conn, $meta) . '.playthrough_profiles';
             // JSON access tolerates optional columns on older server versions; never read saved schemas.
             $filter = "strpos(lower(coalesce(to_jsonb(p)->>'name','') || ' ' || coalesce(to_jsonb(p)->>'player_name','')), lower($1)) > 0";
             $count = pg_fetch_assoc(dm_query($conn, "SELECT count(*) AS all_total, count(*) FILTER (WHERE $filter) AS total FROM $table p", [$search]));
-            $snapshots['total'] = (int)$count['total'];
-            $snapshots['all_total'] = (int)$count['all_total'];
+            $playthroughs['total'] = (int)$count['total'];
+            $playthroughs['all_total'] = (int)$count['all_total'];
             $active = pg_fetch_assoc(dm_query($conn, "SELECT to_jsonb(p)->>'name' AS name FROM $table p
                 WHERE to_jsonb(p)->>'is_active'='true' ORDER BY p.id DESC LIMIT 1"));
             $loaded = $active ? $active['name'] : null;
@@ -122,7 +122,7 @@ function dm_overview($conn, string $mod, int $offset, string $search): array
                 if (in_array($p['retention_kind'] ?? '', ['manual', 'dragon_break'], true)) {
                     $kind = ['manual' => 'Manual', 'dragon_break' => 'Automatic rollback'][$p['retention_kind']];
                 } elseif ((int)($p['rollback_delta_days'] ?? 0) > 0) $kind = 'Rollback';
-                $snapshots['items'][] = [
+                $playthroughs['items'][] = [
                     'id' => (int)$p['id'], 'name' => (string)($p['name'] ?? ''),
                     'player' => $p['player_name'] ?? null, 'created_at' => $p['created_at'] ?? null,
                     'game_date' => null, 'gamets' => $p['last_gamets'] ?? null,
@@ -139,7 +139,7 @@ function dm_overview($conn, string $mod, int $offset, string $search): array
             }
         }
         dm_query($conn, 'COMMIT');
-        return ['live' => ['database_bytes' => (int)$database['bytes'], 'categories' => array_values($categories), 'loaded_snapshot' => $loaded], 'snapshots' => $snapshots];
+        return ['live' => ['database_bytes' => (int)$database['bytes'], 'categories' => array_values($categories), 'loaded_playthrough' => $loaded], 'playthroughs' => $playthroughs];
     } catch (Throwable $e) {
         @pg_query($conn, 'ROLLBACK');
         throw $e;
@@ -165,7 +165,7 @@ function dm_tools(string $mod, string $root): array
         $scope = 'A safely scoped DIALECTIC backup workflow is not available on this page yet. The legacy Dashboard tools contain cross-mod actions.';
     }
     return [
-        'snapshots' => is_file($root . '/ui/playthrough_manager.php') ? $serverUrl . '/ui/playthrough_manager.php' : null,
+        'playthroughs' => is_file($root . '/ui/playthrough_manager.php') ? $serverUrl . '/ui/playthrough_manager.php' : null,
         'cleanup' => $mod === 'chim' && is_file($root . '/ui/api/playthrough_retention.php') ? $serverUrl . '/ui/playthrough_manager.php#retention-section' : null,
         'backup' => $backup, 'advanced' => $backup, 'backup_scope' => $scope,
     ];

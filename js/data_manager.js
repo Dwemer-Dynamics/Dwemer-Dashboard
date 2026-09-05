@@ -12,13 +12,13 @@
     let view = query.get('view') || '';
     if (mod === 'shared') { mod = 'all'; view = 'backups'; }
     if (!labels[mod]) mod = 'all';
-    view = ({manage:'snapshots', playthroughs:'snapshots', storage:'cleanup', databases:'backups'})[view] || view;
+    view = ({manage:'playthroughs', storage:'cleanup', databases:'backups'})[view] || view;
     if (location.hash === '#retention-section' && mod === 'chim') view = 'cleanup';
     // Backups live under Distro only; legacy per-mod backup URLs land there with the matching list.
     const backupScope = query.get('scope') === 'stobe' || (view === 'backups' && mod === 'stobe') ? 'stobe' : 'all';
     if (view === 'backups') mod = 'all';
     const views = mod === 'all' ? {overview:'Overview',backups:'Backups',advanced:'Advanced'}
-        : {snapshots:'Playthroughs',cleanup:'Cleanup',advanced:'Advanced'};
+        : {playthroughs:'Playthroughs',cleanup:'Cleanup',advanced:'Advanced'};
     if (!views[view]) view = Object.keys(views)[0];
     let search = (query.get('q') || '').slice(0,120);
     let offset = Math.max(0, Math.min(1000000, Number(query.get('offset')) || 0));
@@ -197,9 +197,9 @@
             try {
                 const data = await request('api/data_manager.php?mod=' + key);
                 if (ticket !== generation) return;
-                card.replaceChildren(el('h3',labels[key]),note(data.game),metrics([['Database',bytes(data.live.database_bytes)],['Playthroughs',number(data.snapshots.all_total)]]),
-                    note('Active playthrough: ' + (data.live.loaded_snapshot || 'None recorded')),el('br'),link('Manage ' + labels[key],key,'snapshots'));
-            } catch (error) { card.replaceChildren(el('h3',labels[key]),note(error.message,'sm-error'),link('Open tools',key,'snapshots')); }
+                card.replaceChildren(el('h3',labels[key]),note(data.game),metrics([['Database',bytes(data.live.database_bytes)],['Playthroughs',number(data.playthroughs.all_total)]]),
+                    note('Active playthrough: ' + (data.live.loaded_playthrough || 'None recorded')),el('br'),link('Manage ' + labels[key],key,'playthroughs'));
+            } catch (error) { card.replaceChildren(el('h3',labels[key]),note(error.message,'sm-error'),link('Open tools',key,'playthroughs')); }
         }));
         if (ticket !== generation) return;
         const shared = panel('Backups for the whole setup');
@@ -207,26 +207,26 @@
         shared.append(note('Automatic archives can contain all three mod databases, and STOBE’s own backup files are managed here too. Inspect a backup before restoring it; scope is checked from the file.'),el('br'),link('Manage database backups','all','backups'));
         content.append(shared);
     }
-    function snapshotDetails(snapshot) {
+    function playthroughDetails(playthrough) {
         const details = el('div',null,'sm-details'), list = el('dl');
-        const entries = [['Name',snapshot.name],['Player',snapshot.player || 'Not recorded'],['Saved on',date(snapshot.created_at)],['In-game date',snapshot.game_date || 'Not recorded'],
-            ['Events at save',number(snapshot.event_count)],['Size at save',bytes(snapshot.size_bytes)],['Type',snapshot.kind],['Notes',snapshot.notes || 'No notes']];
+        const entries = [['Name',playthrough.name],['Player',playthrough.player || 'Not recorded'],['Saved on',date(playthrough.created_at)],['In-game date',playthrough.game_date || 'Not recorded'],
+            ['Events at save',number(playthrough.event_count)],['Size at save',bytes(playthrough.size_bytes)],['Type',playthrough.kind],['Notes',playthrough.notes || 'No notes']];
         if (mod === 'stobe') {
-            let members = snapshot.members;
+            let members = playthrough.members;
             if (typeof members === 'string') { try { members = JSON.parse(members); } catch { members = []; } }
             if (Array.isArray(members)) entries.push(['Faction members',members.map(member => typeof member === 'string' ? member : member.name || member.actor_name || 'Unnamed').join(', ') || 'Not recorded']);
         }
         entries.forEach(([label,value]) => list.append(el('dt',label),el('dd',value))); details.append(list);
         const actions = [];
-        if (mod === 'chim' && !snapshot.loaded && snapshot.name.toLowerCase() !== 'default') {
-            actions.push(button(snapshot.pinned ? 'Remove protection' : 'Protect playthrough', () => confirmAction(snapshot.pinned ? 'Remove protection' : 'Protect playthrough',
-                snapshot.pinned ? 'This playthrough can then be deleted manually or by eligible automatic cleanup.' : 'Keep this playthrough out of manual and automatic cleanup.',
-                () => retention('pin',{profile_id:snapshot.id,pinned:snapshot.pinned ? '0':'1'}).then(() => ({ok:true,message:'Playthrough protection updated.'})), snapshot.pinned)));
+        if (mod === 'chim' && !playthrough.loaded && playthrough.name.toLowerCase() !== 'default') {
+            actions.push(button(playthrough.pinned ? 'Remove protection' : 'Protect playthrough', () => confirmAction(playthrough.pinned ? 'Remove protection' : 'Protect playthrough',
+                playthrough.pinned ? 'This playthrough can then be deleted manually or by eligible automatic cleanup.' : 'Keep this playthrough out of manual and automatic cleanup.',
+                () => retention('pin',{profile_id:playthrough.id,pinned:playthrough.pinned ? '0':'1'}).then(() => ({ok:true,message:'Playthrough protection updated.'})), playthrough.pinned)));
         }
-        openDialog(snapshot.name,[details],actions);
+        openDialog(playthrough.name,[details],actions);
         dialogActions.firstChild.textContent = 'Close';
     }
-    function newSnapshot(setup = false) {
+    function newPlaythrough(setup = false) {
         if (setup) {
             confirmAction('Set up playthroughs','Save the current database as the protected default recovery playthrough. This does not create a game save.',
                 () => action('setup'),false); return;
@@ -234,38 +234,38 @@
         const form = el('form',null,'sm-form'), name = field('Playthrough name','name'), notes = field('Notes (optional)','notes','textarea');
         name.input.required = true; name.input.maxLength = 128; notes.input.maxLength = 4000;
         form.append(name.wrap,notes.wrap,note('Saves the current mod database. Your game save is separate.'));
-        form.addEventListener('submit',event=>{event.preventDefault();if(form.reportValidity())perform(()=>action('create_snapshot',{name:name.input.value,notes:notes.input.value}));});
+        form.addEventListener('submit',event=>{event.preventDefault();if(form.reportValidity())perform(()=>action('create_playthrough',{name:name.input.value,notes:notes.input.value}));});
         openDialog('Save a playthrough',[form],[button('Save playthrough',()=>form.requestSubmit(),'sm-primary')]); name.input.focus();
     }
-    function snapshots(data) {
-        const list = data.snapshots, top = toolbar('Playthroughs','Saved copies of this mod’s database. Use a matching game save when restoring.',true);
-        const create = button('Save playthrough',()=>newSnapshot(),'sm-primary'); top.append(create);
+    function playthroughs(data) {
+        const list = data.playthroughs, top = toolbar('Playthroughs','Saved copies of this mod’s database. Use a matching game save when restoring.',true);
+        const create = button('Save playthrough',()=>newPlaythrough(),'sm-primary'); top.append(create);
         content.replaceChildren(top);
         if (!list.metadata_available && mod !== 'stobe') {
-            content.append(note('Playthroughs have not been set up for this database yet.','sm-warning'),button('Set up playthroughs',()=>newSnapshot(true),'sm-primary')); return;
+            content.append(note('Playthroughs have not been set up for this database yet.','sm-warning'),button('Set up playthroughs',()=>newPlaythrough(true),'sm-primary')); return;
         }
         const summary = panel(); summary.classList.add('sm-summary');
-        summary.append(metrics([['Active playthrough',data.live.loaded_snapshot || 'None recorded',true],['Saved playthroughs',number(list.all_total)],['Database',bytes(data.live.database_bytes)]]));
+        summary.append(metrics([['Active playthrough',data.live.loaded_playthrough || 'None recorded',true],['Saved playthroughs',number(list.all_total)],['Database',bytes(data.live.database_bytes)]]));
         content.append(summary);
         if (!list.items.length) { content.append(note(search ? 'No playthroughs match your search.' : 'No playthroughs saved yet. Save one before making major changes.','sm-empty')); return; }
-        const rows = list.items.map(snapshot => {
-            const name = el('div'); name.append(el('div',snapshot.name,'sm-name'),note(snapshot.player || 'Player not recorded'));
-            if (snapshot.loaded) name.append(el('span','Active','sm-badge sm-loaded'));
-            else if (snapshot.protected) name.append(el('span','Protected','sm-badge'));
-            const when = el('div'); when.append(note(date(snapshot.created_at),''));
-            when.append(note(snapshot.game_date || 'In-game date not recorded'));
+        const rows = list.items.map(playthrough => {
+            const name = el('div'); name.append(el('div',playthrough.name,'sm-name'),note(playthrough.player || 'Player not recorded'));
+            if (playthrough.loaded) name.append(el('span','Active','sm-badge sm-loaded'));
+            else if (playthrough.protected) name.append(el('span','Protected','sm-badge'));
+            const when = el('div'); when.append(note(date(playthrough.created_at),''));
+            when.append(note(playthrough.game_date || 'In-game date not recorded'));
             const actions = el('div',null,'sm-actions');
-            actions.append(button('Details',()=>snapshotDetails(snapshot)));
+            actions.append(button('Details',()=>playthroughDetails(playthrough)));
             const restore = button('Restore',()=>confirmAction('Restore playthrough',
-                'Restore “' + snapshot.name + '” in ' + labels[mod] + '. Stop the game first, then load the matching game save after restoring.',
-                ()=>action('restore_snapshot',{profile_id:snapshot.id}),true,
+                'Restore “' + playthrough.name + '” in ' + labels[mod] + '. Stop the game first, then load the matching game save after restoring.',
+                ()=>action('restore_playthrough',{profile_id:playthrough.id}),true,
                 [note(mod === 'stobe' ? 'STOBE saves your current database as a new automatic playthrough before switching.' : 'The active playthrough is updated from your live database before switching.','sm-warning')]));
-            restore.disabled = snapshot.loaded;
-            const remove = button('Delete',()=>confirmAction('Delete playthrough','Permanently delete “' + snapshot.name + '” from ' + labels[mod] + '. The live database and your game saves are not deleted.',
-                ()=>action('delete_snapshot',{profile_id:snapshot.id})), 'sm-danger');
-            remove.disabled = snapshot.protected; remove.title = snapshot.protected ? 'Active, default and protected playthroughs cannot be deleted.' : '';
+            restore.disabled = playthrough.loaded;
+            const remove = button('Delete',()=>confirmAction('Delete playthrough','Permanently delete “' + playthrough.name + '” from ' + labels[mod] + '. The live database and your game saves are not deleted.',
+                ()=>action('delete_playthrough',{profile_id:playthrough.id})), 'sm-danger');
+            remove.disabled = playthrough.protected; remove.title = playthrough.protected ? 'Active, default and protected playthroughs cannot be deleted.' : '';
             actions.append(restore,remove);
-            return [name,when,bytes(snapshot.size_bytes),actions];
+            return [name,when,bytes(playthrough.size_bytes),actions];
         });
         content.append(table(['Playthrough','Saved / in-game date','Size at save','Actions'],rows),pager(list));
     }
@@ -288,7 +288,7 @@
             const backupsLink = link('Review backups','all','backups');
             if (mod === 'stobe') backupsLink.href += '&scope=stobe';
             box.append(note('Automatic data-retention rules are not available for ' + labels[mod] + '. Remove unwanted playthroughs from the Playthroughs tab; database backups are managed under Distro.'),el('br'),
-                link('Review playthroughs',mod,'snapshots'),document.createTextNode(' '),backupsLink);
+                link('Review playthroughs',mod,'playthroughs'),document.createTextNode(' '),backupsLink);
             content.append(box); return;
         }
         const host = panel('Cleanup settings'); host.append(note('Loading saved settings…')); content.append(host);
@@ -304,19 +304,19 @@
             if (min !== undefined) { f.input.min=min;f.input.max=max;f.input.step=1;f.input.required=true; }
             parent.append(f.wrap);
         };
-        const diagnostic = panel('Debug logs'), snapshotsPanel = panel('Playthroughs & event preview');
-        diagnostic.classList.add('sm-settings-group'); snapshotsPanel.classList.add('sm-settings-group');
+        const diagnostic = panel('Debug logs'), playthroughsPanel = panel('Playthroughs & event preview');
+        diagnostic.classList.add('sm-settings-group'); playthroughsPanel.classList.add('sm-settings-group');
         add(diagnostic,'Clean up debug logs','diagnostics_enabled','checkbox','Off by default. Only database debug logs are eligible; events, memories and diaries are kept.');
         add(diagnostic,'Delete debug logs older than','diagnostic_days','number','Real-world days, not in-game days.',1,3650);
         add(diagnostic,'Also target this size per log table (MB)','diagnostic_max_mb','number','0 turns off the size target. Cleanup runs in small batches, so a large table may need several rounds.',0,102400);
-        add(snapshotsPanel,'Clean up automatic playthroughs','snapshots_enabled','checkbox','Only CHIM Dragon Break playthroughs are eligible. Manual, default, active and protected playthroughs are kept.');
-        add(snapshotsPanel,'Automatic playthroughs to keep','snapshot_keep','number','Keep this many recent eligible playthroughs.',1,100);
-        add(snapshotsPanel,'Preview events older than','event_days','number','In-game days back from the latest recorded game time. 0 turns off this preview.',0,3650);
-        snapshotsPanel.append(note('Preview only — events are never deleted. CHIM may still need them to build NPC memories.','sm-warning'));
-        grid.append(diagnostic,snapshotsPanel); form.append(grid);
+        add(playthroughsPanel,'Clean up automatic playthroughs','playthroughs_enabled','checkbox','Only CHIM Dragon Break playthroughs are eligible. Manual, default, active and protected playthroughs are kept.');
+        add(playthroughsPanel,'Automatic playthroughs to keep','playthrough_keep','number','Keep this many recent eligible playthroughs.',1,100);
+        add(playthroughsPanel,'Preview events older than','event_days','number','In-game days back from the latest recorded game time. 0 turns off this preview.',0,3650);
+        playthroughsPanel.append(note('Preview only — events are never deleted. CHIM may still need them to build NPC memories.','sm-warning'));
+        grid.append(diagnostic,playthroughsPanel); form.append(grid);
         add(form,'Run cleanup automatically','automatic','checkbox','Off by default. When enabled, CHIM periodically applies the saved debug-log and automatic-playthrough rules.');
         const last = state.last_run;
-        form.append(note(last ? 'Last cleanup: ' + date(last.at) + ' · ' + number(last.rows || 0) + ' log rows and ' + number(last.snapshots || 0) + ' playthroughs deleted' : 'No cleanup has run yet.'));
+        form.append(note(last ? 'Last cleanup: ' + date(last.at) + ' · ' + number(last.rows || 0) + ' log rows and ' + number(last.playthroughs || 0) + ' playthroughs deleted' : 'No cleanup has run yet.'));
         const actions = el('div',null,'sm-actions'), previewArea = el('div');
         const save = button('Save settings',()=>form.requestSubmit(),'sm-primary');
         const preview = button('Preview cleanup',async()=>{
@@ -336,17 +336,17 @@
         });
     }
     function renderPreview(plan,area) {
-        const box = panel('Cleanup preview'), diagnostics = plan.diagnostics || [], snapshots = plan.snapshots || [];
+        const box = panel('Cleanup preview'), diagnostics = plan.diagnostics || [], playthroughs = plan.playthroughs || [];
         box.style.marginTop='16px';
         box.append(note('This preview expires in five minutes. Only the listed data can be removed in this round.'));
         if(plan.message)box.append(note(plan.message));
         if (diagnostics.length) box.append(table(['Debug log table','Rows to delete','Estimated size'],diagnostics.map(item=>[item.table,number(item.rows),bytes(item.bytes_estimate)])));
         else box.append(note('No debug-log rows to delete with the saved settings.'));
-        box.append(note(snapshots.length ? 'Automatic playthroughs to delete: '+snapshots.map(item=>item.name).join(', ') : 'No automatic playthroughs to delete.'));
+        box.append(note(playthroughs.length ? 'Automatic playthroughs to delete: '+playthroughs.map(item=>item.name).join(', ') : 'No automatic playthroughs to delete.'));
         box.append(note(plan.events?.cutoff_gamets ? number(plan.events.older_rows)+' events are older than the cutoff. None will be deleted.' : 'Event preview is off. No events will be deleted.','sm-warning'));
         const run = button('Run cleanup now',()=>confirmAction('Run cleanup now','Permanently remove the debug-log rows and automatic playthroughs listed in this preview. Events and memories are kept.',
             ()=>retention('run',{preview_token:plan.token}).then(result=>({ok:true,message:result.result?.message || 'Cleanup finished.'}))), 'sm-danger');
-        run.disabled=!(snapshots.length || diagnostics.some(item=>Number(item.rows)>0));
+        run.disabled=!(playthroughs.length || diagnostics.some(item=>Number(item.rows)>0));
         box.append(el('br'),run,note('Sizes are estimates. Freed space becomes reusable inside the database; files may not shrink.'));
         area.replaceChildren(box);
         if(previewTimer)clearTimeout(previewTimer);
@@ -472,7 +472,7 @@
             else {
                 const data=await request('api/data_manager.php?'+new URLSearchParams({mod,q:search,offset}));
                 if(ticket!==generation)return;
-                if(view==='snapshots')snapshots(data);else await cleanup(data,ticket);
+                if(view==='playthroughs')playthroughs(data);else await cleanup(data,ticket);
                 if(data.warnings?.length)content.append(note(data.warnings.join(' '),'sm-warning'));
             }
         } catch(error) {
@@ -482,7 +482,7 @@
     document.querySelectorAll('[data-mod]').forEach(anchor=>{
         const key=anchor.dataset.mod;anchor.classList.toggle('is-active',key===mod);
         if(key===mod)anchor.setAttribute('aria-current','page');
-        anchor.href='?mod='+key+'&view='+(key==='all'?(view==='backups'||view==='advanced'?view:'overview'):(view==='overview'||view==='backups'?'snapshots':view));
+        anchor.href='?mod='+key+'&view='+(key==='all'?(view==='backups'||view==='advanced'?view:'overview'):(view==='overview'||view==='backups'?'playthroughs':view));
     });
     const tasks=document.getElementById('sm-tasks');
     Object.entries(views).forEach(([key,label])=>{

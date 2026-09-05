@@ -28,16 +28,16 @@ try {
     $data = dm_overview($conn, $mod, $offset, trim($search));
     $calendar = $root . '/lib/utils_game_timestamp.php';
     if (is_file($calendar)) require_once $calendar;
-    foreach ($data['snapshots']['items'] as &$snapshot) {
-        $gamets = $snapshot['gamets'];
+    foreach ($data['playthroughs']['items'] as &$playthrough) {
+        $gamets = $playthrough['gamets'];
         if (is_numeric($gamets) && (float)$gamets > 0) {
-            if ($mod === 'chim' && function_exists('convert_gamets2skyrim_long_date')) $snapshot['game_date'] = convert_gamets2skyrim_long_date($gamets);
-            elseif ($mod === 'dialectic' && function_exists('convert_gamets2fallout_long_date')) $snapshot['game_date'] = convert_gamets2fallout_long_date($gamets);
-            elseif ($mod === 'stobe' && function_exists('stobeGametsDateLabel')) $snapshot['game_date'] = stobeGametsDateLabel($gamets);
+            if ($mod === 'chim' && function_exists('convert_gamets2skyrim_long_date')) $playthrough['game_date'] = convert_gamets2skyrim_long_date($gamets);
+            elseif ($mod === 'dialectic' && function_exists('convert_gamets2fallout_long_date')) $playthrough['game_date'] = convert_gamets2fallout_long_date($gamets);
+            elseif ($mod === 'stobe' && function_exists('stobeGametsDateLabel')) $playthrough['game_date'] = stobeGametsDateLabel($gamets);
         }
-        unset($snapshot['gamets']);
+        unset($playthrough['gamets']);
     }
-    unset($snapshot);
+    unset($playthrough);
     echo json_encode(['ok' => true, 'mod' => $mod, 'label' => $product['label'], 'game' => $product['game'], 'available' => true]
         + $data + ['tools' => dm_tools($mod, $root), 'warnings' => []], JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
 } catch (Throwable $e) {

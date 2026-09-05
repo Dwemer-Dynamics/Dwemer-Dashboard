@@ -1,6 +1,6 @@
 <?php
 class StorageManagerRequestException extends RuntimeException {}
-// Shared UI boundary only. Each server still owns its snapshot and database operations.
+// Shared UI boundary only. Each server still owns its playthrough and database operations.
 function sm_guard(string $kind, string $mod): array
 {
     if (session_status() === PHP_SESSION_NONE) session_start();
