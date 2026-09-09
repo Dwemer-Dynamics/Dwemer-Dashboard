@@ -80,7 +80,7 @@ function dm_overview($conn, string $mod, int $offset, string $search): array
         $categories = [
             'events' => ['key' => 'events', 'label' => 'Events', 'bytes' => 0, 'rows_estimate' => 0],
             'memory' => ['key' => 'memory', 'label' => 'Memories & knowledge', 'bytes' => 0, 'rows_estimate' => 0],
-            'diagnostics' => ['key' => 'diagnostics', 'label' => 'Diagnostic logs in the database', 'bytes' => 0, 'rows_estimate' => 0],
+            'diagnostics' => ['key' => 'diagnostics', 'label' => 'Troubleshooting logs', 'bytes' => 0, 'rows_estimate' => 0],
             'other' => ['key' => 'other', 'label' => 'Other live data', 'bytes' => 0, 'rows_estimate' => 0],
         ];
         foreach ($tables as $table) {
@@ -94,7 +94,7 @@ function dm_overview($conn, string $mod, int $offset, string $search): array
             elseif ($categories[$category]['rows_estimate'] !== null) $categories[$category]['rows_estimate'] += (int)round((float)$table['reltuples']);
         }
         $liveBytes = array_sum(array_column($categories, 'bytes'));
-        $categories['stored'] = ['key' => 'stored', 'label' => 'Playthrough Saves & other database storage',
+        $categories['stored'] = ['key' => 'stored', 'label' => 'Playthrough Saves & other storage',
             'bytes' => max(0, (int)$database['bytes'] - $liveBytes), 'rows_estimate' => null];
         $meta = $product['meta'];
         $exists = pg_fetch_assoc(dm_query($conn, 'SELECT to_regclass($1) IS NOT NULL AS present', [$meta . '.playthrough_profiles']));
