@@ -18,6 +18,7 @@ function sm_action_finish(bool $ok, string $message, array $details = []): never
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
 $bufferLevel = ob_get_level();
+$nativeDownload = false;
 try {
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
         http_response_code(405);
@@ -26,6 +27,7 @@ try {
     $input = $_POST;
     $mod = $input['mod'] ?? ''; $operation = $input['operation'] ?? '';
     if (!is_string($mod) || !in_array($mod, ['all','chim','stobe','dialectic'], true) || !is_string($operation)) throw new InvalidArgumentException('Invalid action scope.');
+    $nativeDownload = ($input['native_download'] ?? '') === '1' && in_array($operation, ['download_backup','export_backup'], true);
     // Never pass arbitrary GET/POST actions through to a server controller.
     $_GET = [];
     $_POST = ['_sm_csrf' => $input['_sm_csrf'] ?? '', '_sm_scope' => $input['_sm_scope'] ?? ''];
@@ -169,5 +171,14 @@ try {
 }
 while (ob_get_level() > $bufferLevel) ob_end_clean();
 header_remove('Location');
+if ($nativeDownload) {
+    // Native form submissions let the browser stream large files directly. If
+    // preparation fails, show an escaped error in the download tab instead.
+    header('Content-Type: text/html; charset=utf-8');
+    $message = htmlspecialchars($response['error'] ?? $response['message'] ?? 'The download could not start.', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    echo '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+        . '<title>Backup download</title><h1>Backup download</h1><p>' . $message . '</p><p>Return to Playthrough Management to try again.</p></html>';
+    exit;
+}
 header('Content-Type: application/json');
 echo json_encode($response, JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);

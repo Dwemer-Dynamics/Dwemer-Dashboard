@@ -124,13 +124,8 @@
     async function request(url, options = {}) {
         const response = await fetch(url, {credentials:'same-origin', ...options});
         if (response.headers.get('Content-Disposition')?.includes('attachment')) {
-            const blob = await response.blob(), target = URL.createObjectURL(blob), anchor = el('a');
-            const disposition = response.headers.get('Content-Disposition');
-            const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-            const plain = disposition.match(/filename="?([^";]+)"?/i);
-            anchor.download = encoded ? decodeURIComponent(encoded[1]) : plain ? plain[1] : 'database-backup.sql';
-            anchor.href = target; anchor.click(); setTimeout(() => URL.revokeObjectURL(target), 60000);
-            return {ok:true,message:'Backup download prepared.'};
+            await response.body?.cancel();
+            throw new Error('Use the Download button to save this backup through your browser.');
         }
         let data;
         try { data = await response.json(); } catch { throw new Error('The server response could not be read (HTTP ' + response.status + '). Check Server Logs before repeating an operation.'); }
@@ -141,6 +136,20 @@
         return data;
     }
     function action(operation, fields = {}, targetMod = mod) {
+        if (operation === 'download_backup' || operation === 'export_backup') {
+            // A native POST streams the attachment through the browser download
+            // manager while keeping the same CSRF token and selected mod scope.
+            const form = el('form'); form.method = 'POST'; form.action = 'api/storage_action.php'; form.target = '_blank';
+            form.hidden = true;
+            const values = {mod:targetMod,operation,_sm_csrf:config.csrf,
+                _sm_scope:targetMod === 'all' ? 'CHIM, STOBE and DIALECTIC databases' : labels[targetMod] + ' database',
+                ...fields,native_download:'1'};
+            Object.entries(values).forEach(([key,value]) => {
+                const input = el('input'); input.type = 'hidden'; input.name = key; input.value = value; form.append(input);
+            });
+            document.body.append(form); form.submit(); form.remove();
+            return Promise.resolve({ok:true,download_requested:true,message:'Download requested. Your browser will show progress. If it cannot start, the download tab will explain why.'});
+        }
         const body = new FormData();
         body.set('mod',targetMod); body.set('operation',operation); body.set('_sm_csrf',config.csrf);
         body.set('_sm_scope',targetMod === 'all' ? 'CHIM, STOBE and DIALECTIC databases' : labels[targetMod] + ' database');
@@ -162,7 +171,7 @@
             dialog.close(); dirty = false;
             announce(data.message || 'Done.', 'sm-success');
             if (data.details?.length) showResult(data);
-            if (refresh) await load();
+            if (refresh && !data.download_requested) await load();
             return data;
         } catch (error) {
             dialog.close(); announce(error.message, 'sm-error');
@@ -219,7 +228,7 @@
         entries.forEach(([label,value]) => list.append(el('dt',label),el('dd',value))); details.append(list);
         const actions = [];
         if (mod === 'chim' && !playthrough.loaded && playthrough.name.toLowerCase() !== 'default') {
-            actions.push(button(playthrough.pinned ? 'Remove protection' : 'Protect playthrough', () => confirmAction(playthrough.pinned ? 'Remove protection' : 'Protect playthrough',
+            actions.push(button(playthrough.pinned ? 'Remove protection' : 'Protect from deletion', () => confirmAction(playthrough.pinned ? 'Remove protection' : 'Protect from deletion',
                 playthrough.pinned ? 'This playthrough can then be deleted manually or by eligible automatic cleanup.' : 'Keep this playthrough out of manual and automatic cleanup.',
                 () => retention('pin',{profile_id:playthrough.id,pinned:playthrough.pinned ? '0':'1'}).then(() => ({ok:true,message:'Playthrough protection updated.'})), playthrough.pinned)));
         }
@@ -233,13 +242,13 @@
         }
         const form = el('form',null,'sm-form'), name = field('Playthrough name','name'), notes = field('Notes (optional)','notes','textarea');
         name.input.required = true; name.input.maxLength = 128; notes.input.maxLength = 4000;
-        form.append(name.wrap,notes.wrap,note('Saves the current mod database. Your game save is separate.'));
+        form.append(name.wrap,notes.wrap,note('Save a copy of your current mod data. Use a name that helps you find the matching game save.'));
         form.addEventListener('submit',event=>{event.preventDefault();if(form.reportValidity())perform(()=>action('create_playthrough',{name:name.input.value,notes:notes.input.value}));});
-        openDialog('Save a playthrough',[form],[button('Save playthrough',()=>form.requestSubmit(),'sm-primary')]); name.input.focus();
+        openDialog('Save current playthrough',[form],[button('Save current playthrough',()=>form.requestSubmit(),'sm-primary')]); name.input.focus();
     }
     function playthroughs(data) {
-        const list = data.playthroughs, top = toolbar('Playthroughs','Saved copies of this mod’s database. Use a matching game save when restoring.',true);
-        const create = button('Save playthrough',()=>newPlaythrough(),'sm-primary'); top.append(create);
+        const list = data.playthroughs, top = toolbar('Playthroughs','A playthrough is a saved copy of your mod’s data. Restore it alongside the matching game save.',true);
+        const create = button('Save current playthrough',()=>newPlaythrough(),'sm-primary'); top.append(create);
         content.replaceChildren(top);
         if (!list.metadata_available && mod !== 'stobe') {
             content.append(note('Playthroughs have not been set up for this database yet.','sm-warning'),button('Set up playthroughs',()=>newPlaythrough(true),'sm-primary')); return;
@@ -256,8 +265,8 @@
             when.append(note(playthrough.game_date || 'In-game date not recorded'));
             const actions = el('div',null,'sm-actions');
             actions.append(button('Details',()=>playthroughDetails(playthrough)));
-            const restore = button('Restore',()=>confirmAction('Restore playthrough',
-                'Restore “' + playthrough.name + '” in ' + labels[mod] + '. Stop the game first, then load the matching game save after restoring.',
+            const restore = button('Restore',()=>confirmAction('Restore this playthrough',
+                'Replace your current ' + labels[mod] + ' data with “' + playthrough.name + '”. Stop the game first. After restoring, load the matching game save.',
                 ()=>action('restore_playthrough',{profile_id:playthrough.id}),true,
                 [note(mod === 'stobe' ? 'STOBE saves your current database as a new automatic playthrough before switching.' : 'The active playthrough is updated from your live database before switching.','sm-warning')]));
             restore.disabled = playthrough.loaded;
@@ -304,19 +313,27 @@
             if (min !== undefined) { f.input.min=min;f.input.max=max;f.input.step=1;f.input.required=true; }
             parent.append(f.wrap);
         };
-        const diagnostic = panel('Debug logs'), playthroughsPanel = panel('Playthroughs & event preview');
+        const diagnostic = panel('Old debug logs'), playthroughsPanel = panel('Recovery copies & event preview');
         diagnostic.classList.add('sm-settings-group'); playthroughsPanel.classList.add('sm-settings-group');
-        add(diagnostic,'Clean up debug logs','diagnostics_enabled','checkbox','Off by default. Only database debug logs are eligible; events, memories and diaries are kept.');
+        add(diagnostic,'Clean up old debug logs','diagnostics_enabled','checkbox','Off by default. Events, NPC memories and diaries are kept.');
         add(diagnostic,'Delete debug logs older than','diagnostic_days','number','Real-world days, not in-game days.',1,3650);
         add(diagnostic,'Also target this size per log table (MB)','diagnostic_max_mb','number','0 turns off the size target. Cleanup runs in small batches, so a large table may need several rounds.',0,102400);
-        add(playthroughsPanel,'Clean up automatic playthroughs','playthroughs_enabled','checkbox','Only CHIM Dragon Break playthroughs are eligible. Manual, default, active and protected playthroughs are kept.');
-        add(playthroughsPanel,'Automatic playthroughs to keep','playthrough_keep','number','Keep this many recent eligible playthroughs.',1,100);
+        add(playthroughsPanel,'Clean up automatic recovery copies','playthroughs_enabled','checkbox','CHIM calls these Dragon Break copies. Manually saved, default, active and protected copies are kept.');
+        add(playthroughsPanel,'Automatic recovery copies to keep','playthrough_keep','number','Keep the newest automatic copies. Protected copies are always kept.',1,100);
         add(playthroughsPanel,'Preview events older than','event_days','number','In-game days back from the latest recorded game time. 0 turns off this preview.',0,3650);
         playthroughsPanel.append(note('Preview only — events are never deleted. CHIM may still need them to build NPC memories.','sm-warning'));
         grid.append(diagnostic,playthroughsPanel); form.append(grid);
-        add(form,'Run cleanup automatically','automatic','checkbox','Off by default. When enabled, CHIM periodically applies the saved debug-log and automatic-playthrough rules.');
+        add(form,'Run cleanup automatically','automatic','checkbox','Off by default. When enabled, CHIM checks the saved rules once an hour and removes one small batch at a time.');
         const last = state.last_run;
-        form.append(note(last ? 'Last cleanup: ' + date(last.at) + ' · ' + number(last.rows || 0) + ' log rows and ' + number(last.playthroughs || 0) + ' playthroughs deleted' : 'No cleanup has run yet.'));
+        if (last) {
+            const outcome = {succeeded:'Cleanup finished',failed:'Cleanup failed',no_work:'Nothing eligible to remove'}[last.status] || 'Previous cleanup result';
+            form.append(note(outcome + ' · ' + date(last.at),last.status === 'failed' ? 'sm-error' : 'sm-help'));
+            if (last.message) form.append(note(last.message,last.status === 'failed' ? 'sm-error' : 'sm-help'));
+            if (last.status === 'succeeded' || Number(last.rows) > 0 || Number(last.playthroughs) > 0) {
+                form.append(note(number(last.rows || 0) + ' debug-log rows and ' + number(last.playthroughs || 0) + ' saved copies removed.'));
+            }
+            if (last.more_possible) form.append(note('Another round may be needed. Preview again to check.'));
+        } else form.append(note('No cleanup has run yet.'));
         const actions = el('div',null,'sm-actions'), previewArea = el('div');
         const save = button('Save settings',()=>form.requestSubmit(),'sm-primary');
         const preview = button('Preview cleanup',async()=>{
@@ -339,12 +356,13 @@
         const box = panel('Cleanup preview'), diagnostics = plan.diagnostics || [], playthroughs = plan.playthroughs || [];
         box.style.marginTop='16px';
         box.append(note('This preview expires in five minutes. Only the listed data can be removed in this round.'));
+        if (plan.more_possible) box.append(note('This round reached a batch limit. Another round may be needed. Automatic cleanup checks once an hour.','sm-warning'));
         if(plan.message)box.append(note(plan.message));
         if (diagnostics.length) box.append(table(['Debug log table','Rows to delete','Estimated size'],diagnostics.map(item=>[item.table,number(item.rows),bytes(item.bytes_estimate)])));
         else box.append(note('No debug-log rows to delete with the saved settings.'));
         box.append(note(playthroughs.length ? 'Automatic playthroughs to delete: '+playthroughs.map(item=>item.name).join(', ') : 'No automatic playthroughs to delete.'));
         box.append(note(plan.events?.cutoff_gamets ? number(plan.events.older_rows)+' events are older than the cutoff. None will be deleted.' : 'Event preview is off. No events will be deleted.','sm-warning'));
-        const run = button('Run cleanup now',()=>confirmAction('Run cleanup now','Permanently remove the debug-log rows and automatic playthroughs listed in this preview. Events and memories are kept.',
+        const run = button('Run cleanup now',()=>confirmAction('Run cleanup now','Permanently remove the CHIM debug logs and automatic recovery copies listed in this preview. Events, NPC memories and the active playthrough are kept.',
             ()=>retention('run',{preview_token:plan.token}).then(result=>({ok:true,message:result.result?.message || 'Cleanup finished.'}))), 'sm-danger');
         run.disabled=!(playthroughs.length || diagnostics.some(item=>Number(item.rows)>0));
         box.append(el('br'),run,note('Sizes are estimates. Freed space becomes reusable inside the database; files may not shrink.'));
