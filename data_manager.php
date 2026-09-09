@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/storage_fragment.php';
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
     http_response_code(409);
-    exit('These controls have been updated. Reload Playthrough Management. Nothing was changed.');
+    exit('These controls have been updated. Reload Playthrough Saves. Nothing was changed.');
 }
 if (session_status() === PHP_SESSION_NONE) session_start();
 foreach (['storage_csrf','ptm_csrf'] as $key) {
@@ -16,7 +16,7 @@ $config = ['csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_cs
 <html lang="en">
 <head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Playthrough Management · Dwemer Dashboard</title>
+    <title>Playthrough Saves · Dwemer Dashboard</title>
     <link rel="icon" href="images/favicon.ico"><link rel="stylesheet" href="css/data_manager.css?v=<?= filemtime(__DIR__ . '/css/data_manager.css') ?>">
     <script id="sm-config" type="application/json"><?= json_encode($config, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
     <script src="js/data_manager.js?v=<?= filemtime(__DIR__ . '/js/data_manager.js') ?>" defer></script>
@@ -25,7 +25,7 @@ $config = ['csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_cs
 <a class="sm-skip" href="#sm-content">Skip to storage tools</a>
 <main class="sm-shell">
     <header class="sm-header">
-        <div><h1>Playthrough Management</h1><p class="sm-muted">Manage playthroughs, stored data and database backups.</p></div>
+        <div><h1>Playthrough Saves</h1><p class="sm-muted">Manage Playthrough Saves, stored data and database backups.</p></div>
         <nav class="sm-actions" aria-label="Related pages"><button id="sm-refresh" type="button">Refresh</button><a class="sm-button" href="distro_debugger.php">Server Logs</a><a class="sm-button" href="index.php">Dashboard</a></nav>
     </header>
     <nav class="sm-brand-tabs" aria-label="Choose a mod">
@@ -38,7 +38,7 @@ $config = ['csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_cs
     <div id="sm-status" class="sm-status" role="status" aria-live="polite"></div>
     <section id="sm-content" tabindex="-1" aria-busy="true"><p class="sm-empty">Loading storage tools…</p></section>
     <noscript><p class="sm-error">Enable JavaScript to use these tools. No data is changed by opening this page.</p></noscript>
-    <footer class="sm-footer">Each mod keeps its own database. A playthrough is stored inside it; a database backup is a separate file.</footer>
+    <footer class="sm-footer">Each mod keeps its own database. A Playthrough Save is stored inside it; a database backup is a separate file.</footer>
 </main>
 <dialog class="sm-dialog" id="sm-dialog" aria-labelledby="sm-dialog-title">
     <div class="sm-dialog-head"><h2 id="sm-dialog-title"></h2><button type="button" id="sm-dialog-close" aria-label="Close dialog">×</button></div>

@@ -758,6 +758,139 @@ textarea {
     margin-top: 16px;
 }
 
+/* Grouping wrapper for the diagnostic-category cards; no card chrome of its own. */
+.sm-section {
+    background: transparent;
+    border-color: #333a45;
+}
+
+.sm-section>p {
+    margin-bottom: 14px;
+}
+
+.sm-section .sm-grid {
+    margin-top: 4px;
+}
+
+.sm-history {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+}
+
+.sm-history p+p {
+    margin-top: 6px;
+}
+
+/* Status summary line for automatic Playthrough Saves. */
+.sm-status-line {
+    margin: 4px 0 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-left-width: 4px;
+    border-radius: 5px;
+    background: var(--panel);
+    overflow-wrap: anywhere;
+}
+
+.sm-status-line.sm-on {
+    border-left-color: #4b8164;
+    color: #cfe9db;
+}
+
+.sm-status-line.sm-off {
+    border-left-color: #6c7684;
+    color: var(--muted);
+}
+
+.sm-auto-saves .sm-field {
+    margin-bottom: 12px;
+}
+
+.sm-auto-saves .sm-form>.sm-grid {
+    margin-bottom: 12px;
+}
+
+/* Two numeric/short controls side by side inside one settings card. */
+.sm-inline-fields {
+    display: grid;
+    grid-template-columns: repeat(2,minmax(0,1fr));
+    gap: 12px 16px;
+}
+
+.sm-inline-fields .sm-field {
+    margin-bottom: 0;
+    min-width: 0;
+}
+
+/* Bulk selection bar above the Playthrough Saves table. */
+.sm-bulk {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    margin-bottom: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+}
+
+.sm-bulk .sm-check {
+    font-weight: 600;
+}
+
+.sm-bulk-count {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+}
+
+/* Checkbox sits inside the name cell so the mobile card layout is preserved. */
+.sm-pick {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+}
+
+.sm-pick-box {
+    flex: 0 0 auto;
+    margin-top: 4px;
+}
+
+.sm-pick-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.sm-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.sm-badges .sm-badge {
+    margin-top: 0;
+}
+
+.sm-name-list {
+    margin: 10px 0 0;
+    padding-left: 20px;
+    max-height: 220px;
+    overflow: auto;
+    overflow-wrap: anywhere;
+}
+
+.sm-name-list li {
+    margin-bottom: 4px;
+}
+
+.sm-name-list .sm-help {
+    display: inline;
+}
+
 @media(max-width:850px) {
     .sm-header {
         align-items: flex-start;
@@ -770,6 +903,9 @@ textarea {
     }
     .sm-category {
         grid-template-columns: 140px 1fr 90px;
+    }
+    .sm-inline-fields {
+        grid-template-columns: 1fr;
     }
     .sm-brand {
         flex: 1 1 40%;
@@ -892,6 +1028,18 @@ textarea {
     }
     .sm-table td:first-child {
         display: block;
+    }
+    .sm-bulk {
+        gap: 10px;
+    }
+    .sm-bulk button {
+        width: 100%;
+    }
+    .sm-bulk-count {
+        flex-basis: 100%;
+    }
+    .sm-name-list {
+        max-height: 40vh;
     }
     .sm-table td:first-child:before,.sm-table td:last-child:before {
         display: none;

@@ -64,7 +64,8 @@ function dm_query($conn, string $sql, array $params = [])
     return $result;
 }
 
-// Only catalog metadata and a bounded page of saved playthrough metadata are read.
+// Only catalog metadata and a bounded page of saved Playthrough Save metadata are read.
+// Reading is strictly read-only: missing metadata is reported, never initialized here.
 function dm_overview($conn, string $mod, int $offset, string $search): array
 {
     $product = dm_products()[$mod];
@@ -79,7 +80,7 @@ function dm_overview($conn, string $mod, int $offset, string $search): array
         $categories = [
             'events' => ['key' => 'events', 'label' => 'Events', 'bytes' => 0, 'rows_estimate' => 0],
             'memory' => ['key' => 'memory', 'label' => 'Memories & knowledge', 'bytes' => 0, 'rows_estimate' => 0],
-            'diagnostics' => ['key' => 'diagnostics', 'label' => 'Debug logs in the database', 'bytes' => 0, 'rows_estimate' => 0],
+            'diagnostics' => ['key' => 'diagnostics', 'label' => 'Diagnostic logs in the database', 'bytes' => 0, 'rows_estimate' => 0],
             'other' => ['key' => 'other', 'label' => 'Other live data', 'bytes' => 0, 'rows_estimate' => 0],
         ];
         foreach ($tables as $table) {
@@ -93,7 +94,7 @@ function dm_overview($conn, string $mod, int $offset, string $search): array
             elseif ($categories[$category]['rows_estimate'] !== null) $categories[$category]['rows_estimate'] += (int)round((float)$table['reltuples']);
         }
         $liveBytes = array_sum(array_column($categories, 'bytes'));
-        $categories['stored'] = ['key' => 'stored', 'label' => 'Playthroughs & other database storage',
+        $categories['stored'] = ['key' => 'stored', 'label' => 'Playthrough Saves & other database storage',
             'bytes' => max(0, (int)$database['bytes'] - $liveBytes), 'rows_estimate' => null];
         $meta = $product['meta'];
         $exists = pg_fetch_assoc(dm_query($conn, 'SELECT to_regclass($1) IS NOT NULL AS present', [$meta . '.playthrough_profiles']));
@@ -118,17 +119,23 @@ function dm_overview($conn, string $mod, int $offset, string $search): array
                 WHERE $filter ORDER BY p.id DESC LIMIT 50 OFFSET $2", [$search, $offset])) ?: [];
             foreach ($rows as $row) {
                 $p = json_decode($row['metadata'], true, 512, JSON_THROW_ON_ERROR);
-                $kind = 'Unclassified';
-                if (in_array($p['retention_kind'] ?? '', ['manual', 'dragon_break'], true)) {
-                    $kind = ['manual' => 'Manual', 'dragon_break' => 'Automatic rollback'][$p['retention_kind']];
-                } elseif ((int)($p['rollback_delta_days'] ?? 0) > 0) $kind = 'Rollback';
+                // Identifier enum values are unchanged; only the displayed wording is fixed here.
+                $kindKey = (string)($p['retention_kind'] ?? '');
+                $kindLabels = ['manual' => 'Manual Save', 'dragon_break' => 'Automatic Rollback Save',
+                    'before_switch' => 'Before-Switch Save', 'unclassified' => 'Unclassified'];
+                $kind = $kindLabels[$kindKey] ?? null;
+                // Older rows predate retention_kind; a recorded rollback distance is the same evidence.
+                if ($kind === null) {
+                    $kindKey = (int)($p['rollback_delta_days'] ?? 0) > 0 ? 'dragon_break' : 'unclassified';
+                    $kind = $kindLabels[$kindKey];
+                }
                 $playthroughs['items'][] = [
                     'id' => (int)$p['id'], 'name' => (string)($p['name'] ?? ''),
                     'player' => $p['player_name'] ?? null, 'created_at' => $p['created_at'] ?? null,
                     'game_date' => null, 'gamets' => $p['last_gamets'] ?? null,
                     'size_bytes' => isset($p['size_bytes']) ? (int)$p['size_bytes'] : null,
                     'event_count' => isset($p['eventlog_count']) ? (int)$p['eventlog_count'] : null,
-                    'loaded' => ($p['is_active'] ?? false) === true, 'kind' => $kind,
+                    'loaded' => ($p['is_active'] ?? false) === true, 'kind' => $kind, 'kind_key' => $kindKey,
                     'pinned' => $p['retention_pinned'] ?? null,
                     'notes' => (string)($p['notes'] ?? ''),
                     'members' => $p['player_faction_members'] ?? [],
@@ -164,9 +171,12 @@ function dm_tools(string $mod, string $root): array
         $backup = null;
         $scope = 'A safely scoped DIALECTIC backup workflow is not available on this page yet. The legacy Dashboard tools contain cross-mod actions.';
     }
+    // Cleanup and automatic Playthrough Save settings come from each mod's own retention endpoint.
+    $retention = is_file($root . '/ui/api/playthrough_retention.php');
     return [
         'playthroughs' => is_file($root . '/ui/playthrough_manager.php') ? $serverUrl . '/ui/playthrough_manager.php' : null,
-        'cleanup' => $mod === 'chim' && is_file($root . '/ui/api/playthrough_retention.php') ? $serverUrl . '/ui/playthrough_manager.php#retention-section' : null,
+        'cleanup' => $retention && is_file($root . '/ui/playthrough_manager.php') ? $serverUrl . '/ui/playthrough_manager.php#retention-section' : null,
+        'cleanup_api' => $retention,
         'backup' => $backup, 'advanced' => $backup, 'backup_scope' => $scope,
     ];
 }

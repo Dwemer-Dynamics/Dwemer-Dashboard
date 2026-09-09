@@ -324,7 +324,7 @@ $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/index.php', $requestScheme, $st
 $dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/index.php', $requestScheme, $stobeHostForUrl);
 $distroDebuggerUrl = 'distro_debugger.php';
 $databaseManagerUrl = 'data_manager.php?mod=all&view=playthroughs';
-$databaseManagerLabel = 'Playthrough Management';
+$databaseManagerLabel = 'Playthrough Saves';
 
 $normalizePatronName = static function (string $name): string {
     $normalized = trim(preg_replace('/\s+/', ' ', $name) ?? '');
@@ -1374,7 +1374,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 </a>
                 <a class="dashboard-button database-manager" href="<?= htmlspecialchars($databaseManagerUrl, ENT_QUOTES, 'UTF-8') ?>">
                     <span class="chim-brand">
-                        <img class="kagrenac-brand-icon" src="images/puzzlebox.png" alt="Playthrough Management icon">
+                        <img class="kagrenac-brand-icon" src="images/puzzlebox.png" alt="Playthrough Saves icon">
                         <span class="database-manager-label"><?= htmlspecialchars($databaseManagerLabel, ENT_QUOTES, 'UTF-8') ?></span>
                     </span>
                 </a>

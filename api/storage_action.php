@@ -22,7 +22,7 @@ $nativeDownload = false;
 try {
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
         http_response_code(405);
-        throw new InvalidArgumentException('Use an action button in Playthrough Management.');
+        throw new InvalidArgumentException('Use an action button in Playthrough Saves.');
     }
     $input = $_POST;
     $mod = $input['mod'] ?? ''; $operation = $input['operation'] ?? '';
@@ -177,7 +177,7 @@ if ($nativeDownload) {
     header('Content-Type: text/html; charset=utf-8');
     $message = htmlspecialchars($response['error'] ?? $response['message'] ?? 'The download could not start.', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     echo '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-        . '<title>Backup download</title><h1>Backup download</h1><p>' . $message . '</p><p>Return to Playthrough Management to try again.</p></html>';
+        . '<title>Backup download</title><h1>Backup download</h1><p>' . $message . '</p><p>Return to Playthrough Saves to try again.</p></html>';
     exit;
 }
 header('Content-Type: application/json');
