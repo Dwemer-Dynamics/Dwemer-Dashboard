@@ -503,12 +503,10 @@
             const key=category.key, entry=rowFor(key,category.label,category.description || 'Troubleshooting logs.');
             const on=field('Clean up automatically',key+'_enabled','checkbox',flag(key+'_enabled'));
             const days=integerField('Older than (days)',key+'_days',num(key+'_days',7),1,3650,'Real-world days.');
-            const size=integerField('Size limit (MB)',key+'_max_mb',num(key+'_max_mb',0),0,102400,'0 = Unlimited. Applies to log data, not total disk space.');
-            const pair=el('div',null,'sm-inline-fields');pair.append(keepInput(days,key+'_days'),keepInput(size,key+'_max_mb'));
-            entry.body.append(keepInput(on,key+'_enabled'),pair);
+            entry.body.append(keepInput(on,key+'_enabled'),keepInput(days,key+'_days'));
             if(key==='requests')entry.body.append(keepInput(choiceField('Request logs to include','requests_filter',
                 [['all','All request logs'],['relationship','Relationship requests only']],settings.requests_filter || 'all'),'requests_filter'));
-            entry.body.append(note('Deletes older logs first when either the age or size limit is exceeded. Logs from the last 24 hours are kept.'));
+            entry.body.append(note('Logs from the last 24 hours are kept.'));
             categoryPreview(entry,key,category.label);
         }
         if(caps.event_cleanup) {
@@ -535,7 +533,7 @@
             kept.append(row);
         }
         const sizes=el('details',null,'sm-size-help');sizes.append(el('summary','About these sizes'),
-            note('Percentages show each category\'s share of this mod\'s total database storage. Category sizes include indexes and unused database space. Size limits apply to log data. A preview estimates only the entries selected for deletion; cleanup may not reduce files on disk.'));
+            note('Percentages show each category\'s share of this mod\'s total database storage. Category sizes include indexes and unused database space. A preview estimates only the entries selected for deletion; cleanup may not reduce files on disk.'));
         form.append(kept,sizes);
         form.append(note('Automatic cleanup runs at most once an hour while the '+labels[mod]+' background service is running.'));
         const last=state.last_run;
