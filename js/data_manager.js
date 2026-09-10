@@ -403,37 +403,27 @@
         host.replaceChildren(el('h3','Automatic Playthrough Saves'));
         if (state.error) { host.append(note(state.error,'sm-error'),button('Try again',()=>load())); return; }
         const saved = state.backup_settings && typeof state.backup_settings === 'object' ? state.backup_settings : {};
-        const isOn = saved.enabled !== false && saved.enabled !== 0 && saved.enabled !== '0';
         const days = Number(saved.min_days) > 0 ? Number(saved.min_days) : defaultMinDays[mod];
-        const line = el('p',null,'sm-status-line ' + (isOn ? 'sm-on' : 'sm-off'));
-        line.textContent = isOn
-            ? 'On \u00b7 loading a game save at least ' + number(days) + ' in-game ' + (days === 1 ? 'day' : 'days') + ' behind your current progress makes a Playthrough Save first.'
-            : 'Off \u00b7 loading an older game save will not make a Playthrough Save first.';
-        host.append(line);
-        const last = state.last_backup;
-        if (last && last.at) {
-            const failed = last.status === 'failed';
-            host.append(note((failed ? 'Last automatic save failed \u00b7 ' : 'Last automatic save \u00b7 ') + date(last.at),failed ? 'sm-error' : 'sm-help'));
-            if (last.message) host.append(note(last.message,failed ? 'sm-error' : 'sm-help'));
-        } else host.append(note('No automatic saves recorded yet.'));
-        const form = el('form',null,'sm-form'), row = el('div',null,'sm-grid sm-two');
-        const enabled = field('Save when loading an older game save','backup_enabled','checkbox',isOn,
-            'Saves ' + labels[mod] + ' data only. These settings stay the same after a restore.');
-        const minDays = integerField('Game days behind','backup_min_days',days,1,3650,
-            'Save first if the game save you load is at least this many game days behind. This does not run on a timer.');
-        row.append(enabled.wrap,minDays.wrap);
+        if (state.last_backup?.status === 'failed') host.append(note(state.last_backup.message || 'Automatic Playthrough Save failed. Check the server log.','sm-error'));
+        const form = el('form',null,'sm-form');
+        const minDays = integerField('Game days behind','backup_min_days',days,1,3650);
+        const slider = el('input'); slider.type='range'; slider.min='1'; slider.max='3650'; slider.step='1';
+        slider.value=minDays.input.value; slider.setAttribute('aria-label','Game days behind slider');
+        slider.style.maxWidth='24rem'; slider.style.width='100%';
+        minDays.input.before(slider);
+        slider.addEventListener('input',()=>{minDays.input.value=slider.value;});
+        minDays.input.addEventListener('input',()=>{if(minDays.input.checkValidity())slider.value=minDays.input.value;});
         const save = button('Save settings',()=>form.requestSubmit(),'sm-primary');
-        form.append(row,save);
+        form.append(minDays.wrap,save);
         form.addEventListener('input',()=>{ dirty = true; });
         form.addEventListener('submit',event=>{
             event.preventDefault();
             if (!form.reportValidity()) return;
-            // Enabling this only creates saves, so it needs no deletion confirmation.
-            perform(()=>retention('save_backup',{enabled:enabled.input.checked ? '1' : '0',min_days:minDays.input.value})
+            perform(()=>retention('save_backup',{enabled:'1',min_days:minDays.input.value})
                 .then(result=>{
                     const fresh = (result && (result.state || result)) || {};
                     const next = Object.assign({},state,fresh);
-                    if (!fresh.backup_settings) next.backup_settings = {enabled:enabled.input.checked,min_days:Number(minDays.input.value)};
+                    if (!fresh.backup_settings) next.backup_settings = {enabled:true,min_days:Number(minDays.input.value)};
                     delete next.error;
                     return {ok:true,message:'Automatic save settings saved.',nextState:next};
                 }),false).then(result=>{ if (result?.nextState && ticket === generation) autoSaves(host,result.nextState,ticket); });
