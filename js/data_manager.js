@@ -457,6 +457,14 @@
         const settings = state.settings || {}, caps = state.capabilities || {};
         const categories = (caps.categories || []).filter(item=>item && item.key);
         const measured = new Map((storage.categories || []).map(item=>[item.key,item]));
+        // Show each category's share of this mod's total database storage.
+        const categorySize = value => {
+            const amount = Number(value), total = Number(storage?.database_bytes);
+            if (value == null || storage?.database_bytes == null || !Number.isFinite(amount) || !Number.isFinite(total) || amount < 0 || total < 0 || (total === 0 && amount > 0)) return bytes(value);
+            const percent = total > 0 ? amount / total * 100 : 0;
+            const share = percent > 0 && percent < 0.1 ? '<0.1' : percent.toLocaleString(undefined, {maximumFractionDigits:1});
+            return bytes(value) + ' (' + share + '%)';
+        };
         const form = el('form',null,'sm-form'), inputs = {}, previewArea = el('div');
         const num = (key,fallback) => Number.isFinite(Number(settings[key])) ? Number(settings[key]) : fallback;
         const flag = key => settings[key] === true || settings[key] === 1 || settings[key] === '1';
@@ -476,7 +484,7 @@
         const rowFor = (key,label,description) => {
             const row = el('details',null,'sm-cleanup-row'), summary = el('summary');
             row.id='sm-cleanup-'+key; row.setAttribute('aria-label',label);
-            summary.append(el('strong',label),el('span',bytes(measured.get(key)?.bytes),'sm-category-size'),el('span','Cleanup settings','sm-expand-hint'));
+            summary.append(el('strong',label),el('span',categorySize(measured.get(key)?.bytes),'sm-category-size'),el('span','Cleanup settings','sm-expand-hint'));
             const body = el('div',null,'sm-cleanup-body'); body.append(note(description));
             row.append(summary,body); form.append(row); return {row,body};
         };
@@ -524,11 +532,11 @@
         const kept=el('section',null,'sm-kept-data');kept.append(el('h3','Data kept by cleanup'));
         for(const category of (storage.categories || []).filter(item=>!item.cleanup)) {
             const row=el('div',null,'sm-kept-row');
-            row.append(el('strong',category.label),el('span',bytes(category.bytes)),note(category.description || 'Not included in cleanup.'));
+            row.append(el('strong',category.label),el('span',categorySize(category.bytes)),note(category.description || 'Not included in cleanup.'));
             kept.append(row);
         }
         const sizes=el('details',null,'sm-size-help');sizes.append(el('summary','About these sizes'),
-            note('Category sizes include indexes and unused database space. Size limits apply to log data. A preview estimates only the entries selected for deletion; cleanup may not reduce files on disk.'));
+            note('Percentages show each category\'s share of this mod\'s total database storage. Category sizes include indexes and unused database space. Size limits apply to log data. A preview estimates only the entries selected for deletion; cleanup may not reduce files on disk.'));
         form.append(kept,sizes);
         form.append(note('Automatic cleanup runs at most once an hour while the '+labels[mod]+' background service is running.'));
         const last=state.last_run;
