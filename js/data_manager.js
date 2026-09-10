@@ -567,7 +567,7 @@
         const actions=el('div',null,'sm-actions');
         actions.append(button('Export entire database',()=>confirmAction('Export entire database',
             'Download one SQL file containing every PostgreSQL database, all schemas, tables, Playthrough Saves and server roles. This includes databases for other mods and tests. Game saves and server files are not included.',
-            ()=>action('export_backup',{},scope),false),'sm-primary'),button('Restore older mod backup',()=>uploadBackup(scope)));
+            ()=>action('export_backup',{},scope),false),'sm-primary'),button('Restore database backup',()=>uploadBackup(scope)));
         top.append(actions);
         content.replaceChildren(top,note('Full PostgreSQL backups are restored with psql to a clean PostgreSQL instance. The restore tool below is for older mod-only SQL backups.'));
         const data=await request('api/storage_tools.php?'+new URLSearchParams({mod:scope,view:'backups',q:search,offset}));
