@@ -1276,24 +1276,25 @@ if (defined('DWEMER_STORAGE_RESTORE_FILE') && ($_POST['action'] ?? '') === 'rest
 
 if (isset($_GET['action']) && $_GET['action'] === 'maintenance') {
     $maintenanceResults = [];
-    foreach (
-        [
-            ['db' => 'dwemer', 'label' => 'HerikaServer'],
-            ['db' => 'stobe', 'label' => 'StobeServer'],
-        ] as $target
-    ) {
+    foreach (dm_products() as $mod => $product) {
         $maintenanceOutput = '';
-        $ok = runDatabaseMaintenanceCommand(
-            strval($target['db']),
-            $host,
-            $port,
-            $username,
-            $password,
-            $maintenanceOutput
-        );
+        $databaseName = '';
+        $ok = false;
+        try {
+            $targetRoot = dm_server_root($product['dir']);
+            if (!$targetRoot) throw new RuntimeException('Server not installed.');
+            $settings = dm_connection_settings($mod, $targetRoot);
+            $databaseName = $settings['dbname'];
+            $ok = runDatabaseMaintenanceCommand(
+                $databaseName, $settings['host'], $settings['port'],
+                $settings['user'], $settings['password'], $maintenanceOutput
+            );
+        } catch (Throwable $e) {
+            $maintenanceOutput = 'Could not read this mod\'s database settings. Check that its server is installed and configured.';
+        }
         $maintenanceResults[] = [
-            'db' => $target['db'],
-            'label' => $target['label'],
+            'db' => $databaseName,
+            'label' => $product['label'],
             'ok' => $ok,
             'output' => $maintenanceOutput,
         ];
@@ -2790,13 +2791,13 @@ if ($isStorageFragment) {
         <div class="card-tile">
             <div class="card-content">
                 <h3>🔧 Database Maintenance</h3>
-                <p>Optimize and clean both HerikaServer and StobeServer databases. This will compact the databases and reclaim unused space.</p>
-                <p><strong>⚠️ Important:</strong> Make sure Skyrim is stopped before running maintenance.</p>
+                <p>Compact the CHIM, STOBE and DIALECTIC databases to reclaim unused space.</p>
+                <p><strong>⚠️ Important:</strong> Stop Skyrim, Kenshi, Fallout: New Vegas and their servers first. Compaction locks tables and can take a long time.</p>
             </div>
             <div class="card-actions">
                 <button type="button" data-sm-action="maintenance"
                         class="button" style="background-color: #fd7e14; color: white; width: 100%;">
-                    Run Database Maintenance
+                    Compact mods
                 </button>
             </div>
         </div>

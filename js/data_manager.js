@@ -664,7 +664,7 @@
         content.replaceChildren(toolbar('Advanced','Maintenance and repair tools. Stop the affected game before making database changes.'));
         const box=panel('Database tools'), actions=el('div',null,'sm-actions');
         if(mod==='all') {
-            actions.append(button('Compact CHIM + STOBE',()=>confirmAction('Compact CHIM + STOBE','Run VACUUM FULL ANALYZE for CHIM and STOBE only. This locks tables and can take a long time. Stop Skyrim, Kenshi and their servers first.',
+            actions.append(button('Compact mods',()=>confirmAction('Compact mods','Reclaim unused database space for CHIM, STOBE and DIALECTIC. This locks tables and can take a long time. Stop Skyrim, Kenshi, Fallout: New Vegas and their servers first.',
                 ()=>action('maintenance')),'sm-danger'));
             box.append(note('Shared maintenance can reclaim unused disk space. It does not choose or delete old events.'),el('br'),actions);
             content.append(box);
