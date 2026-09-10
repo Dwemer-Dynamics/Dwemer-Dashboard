@@ -668,11 +668,6 @@
                 ()=>action('maintenance')),'sm-danger'));
             box.append(note('Shared maintenance can reclaim unused disk space. It does not choose or delete old events.'),el('br'),actions);
             content.append(box);
-            const legacy=el('details',null,'sm-panel sm-details');legacy.append(el('summary','STOBE rebuild tools — destructive'));
-            legacy.append(note('These shared tools preserve the old Dashboard rebuild operations. The STOBE tab also has its own database reset and version-reset controls.'),el('br'),
-                button('Reset STOBE from base schema',()=>confirmAction('Reset STOBE from base schema','Replace STOBE’s live tables with its base schema and replay updates. Stop Kenshi and STOBE, and make a backup first.',()=>action('stobe_factory_reset')),'sm-danger'),document.createTextNode(' '),
-                button('Replay STOBE updates',()=>confirmAction('Replay STOBE updates','Clear all STOBE version entries and immediately run its database updates. Back up STOBE first.',()=>action('stobe_replay_versions')),'sm-danger'));
-            content.append(legacy);
             const grid=el('div',null,'sm-grid');['chim','stobe','dialectic'].forEach(key=>{const p=panel(labels[key]);p.append(note('Version entries and supported repairs for this mod.'),el('br'),link('Open '+labels[key]+' tools',key,'advanced'));grid.append(p);});content.append(grid);return;
         }
         if(mod==='stobe') {
