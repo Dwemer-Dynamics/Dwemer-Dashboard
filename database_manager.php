@@ -775,188 +775,14 @@ function repairHerikaBootstrapTablesIfNeeded($db, string $herikaRoot, string &$o
     return $allOk;
 }
 
-function getDashboardBackupMarker(): string
-{
-    return '-- DWEMER_DASHBOARD_MULTI_DB_BACKUP_V1';
-}
-
-function getDashboardBackupDatabaseConfigs(bool $excludeDwemerSettings = false): array
-{
-    return [
-        [
-            'name' => 'dwemer',
-            'exclude_tables' => $excludeDwemerSettings ? ['chim_meta.settings'] : [],
-        ],
-        [
-            'name' => 'stobe',
-            'exclude_tables' => [],
-        ],
-        [
-            'name' => 'dialectic',
-            'exclude_tables' => [],
-        ],
-    ];
-}
-
-function getBackupScopeSlugFromFlags(bool $includesDwemer, bool $includesStobe, bool $includesDialectic = false): string
-{
-    $parts = [];
-    if ($includesDwemer) $parts[] = 'herikaserver';
-    if ($includesStobe) $parts[] = 'stobeserver';
-    if ($includesDialectic) $parts[] = 'dialecticserver';
-    return implode('_', $parts) ?: 'herikaserver';
-}
-
-function backupFileContainsDatabaseSection(string $backupPath, string $databaseName): bool
-{
-    $needleDatabase = '-- database: ' . strtolower($databaseName);
-    $needleConnect = '\\connect ' . strtolower($databaseName);
-    $handle = @fopen($backupPath, 'rb');
-    if ($handle === false) {
-        return false;
-    }
-
-    $carry = '';
-    while (!feof($handle)) {
-        $chunk = fread($handle, 65536);
-        if ($chunk === false || $chunk === '') {
-            continue;
-        }
-        $haystack = strtolower($carry . $chunk);
-        if (strpos($haystack, $needleDatabase) !== false || strpos($haystack, $needleConnect) !== false) {
-            fclose($handle);
-            return true;
-        }
-        $carry = substr($haystack, -128);
-    }
-
-    fclose($handle);
-    return false;
-}
-
 function inspectBackupScope(string $backupPath, ?string $filename = null, bool $inspect = false): array
 {
     return sm_backup_scope($backupPath, $filename, $inspect, $GLOBALS['selectedServerKey'] ?? 'herika');
 }
 
-function getBackupScopeSlugFromConfigs(array $databaseConfigs): string
-{
-    $includesDwemer = false;
-    $includesStobe = false;
-    $includesDialectic = false;
-    foreach ($databaseConfigs as $config) {
-        $dbName = strtolower(trim(strval($config['name'] ?? '')));
-        if ($dbName === 'dwemer') {
-            $includesDwemer = true;
-        }
-        if ($dbName === 'stobe') {
-            $includesStobe = true;
-        }
-        if ($dbName === 'dialectic') {
-            $includesDialectic = true;
-        }
-    }
-    return getBackupScopeSlugFromFlags($includesDwemer, $includesStobe, $includesDialectic);
-}
-
 function getBackupRestoreSuccessMessage(array $scope): string
 {
     return ($scope['scope_short_label'] ?? 'Selected') . ' database restore completed. Restart the affected servers and games.';
-}
-
-function appendFileToExistingFile(string $sourcePath, string $destPath): bool
-{
-    $readHandle = @fopen($sourcePath, 'rb');
-    if ($readHandle === false) {
-        return false;
-    }
-
-    $writeHandle = @fopen($destPath, 'ab');
-    if ($writeHandle === false) {
-        fclose($readHandle);
-        return false;
-    }
-
-    $copied = stream_copy_to_stream($readHandle, $writeHandle);
-    fclose($readHandle);
-    fclose($writeHandle);
-
-    return $copied !== false;
-}
-
-function createCombinedDatabaseBackupFile(
-    string $backupFile,
-    string $host,
-    string $port,
-    string $username,
-    array $databaseConfigs,
-    string &$errorMessage = ''
-): bool {
-    $header = getDashboardBackupMarker() . PHP_EOL . "\\set ON_ERROR_STOP on" . PHP_EOL;
-    if (@file_put_contents($backupFile, $header) === false) {
-        $errorMessage = 'Failed to initialize combined backup file.';
-        return false;
-    }
-
-    foreach ($databaseConfigs as $config) {
-        $dbName = trim(strval($config['name'] ?? ''));
-        if ($dbName === '') {
-            continue;
-        }
-
-        $sectionHeader = PHP_EOL . "-- DATABASE: {$dbName}" . PHP_EOL . "\\connect {$dbName}" . PHP_EOL;
-        if (@file_put_contents($backupFile, $sectionHeader, FILE_APPEND) === false) {
-            @unlink($backupFile);
-            $errorMessage = "Failed to write {$dbName} section header.";
-            return false;
-        }
-
-        $tmpFile = $backupFile . '.' . $dbName . '.tmp';
-        $excludeArgs = '';
-        $excludeTables = is_array($config['exclude_tables'] ?? null) ? $config['exclude_tables'] : [];
-        foreach ($excludeTables as $tableName) {
-            $tableName = trim(strval($tableName));
-            if ($tableName !== '') {
-                $excludeArgs .= ' -T ' . escapeshellarg($tableName);
-            }
-        }
-
-        $command = "HOME=/tmp pg_dump -h " . escapeshellarg($host)
-            . " -p " . escapeshellarg($port)
-            . " -U " . escapeshellarg($username)
-            . " -d " . escapeshellarg($dbName)
-            . $excludeArgs
-            . " > " . escapeshellarg($tmpFile) . " 2>&1";
-        $commandOutput = [];
-        $exitCode = 0;
-        exec($command, $commandOutput, $exitCode);
-
-        if ($exitCode !== 0 || !file_exists($tmpFile) || filesize($tmpFile) <= 0) {
-            @unlink($tmpFile);
-            @unlink($backupFile);
-            $errorMessage = "Backup creation failed for {$dbName}.";
-            return false;
-        }
-
-        $firstChunk = strval(@file_get_contents($tmpFile, false, null, 0, 256));
-        if (strpos($firstChunk, 'pg_dump: error:') !== false || strpos($firstChunk, 'FATAL:') !== false) {
-            @unlink($tmpFile);
-            @unlink($backupFile);
-            $errorMessage = "Backup creation failed for {$dbName}: " . trim(substr($firstChunk, 0, 500));
-            return false;
-        }
-
-        if (!appendFileToExistingFile($tmpFile, $backupFile)) {
-            @unlink($tmpFile);
-            @unlink($backupFile);
-            $errorMessage = "Failed to append {$dbName} dump into combined backup.";
-            return false;
-        }
-
-        @unlink($tmpFile);
-    }
-
-    return true;
 }
 
 function quotePgIdentifierForRestore(string $identifier): string
@@ -1030,6 +856,7 @@ function restoreDatabaseBackupFile(
     string &$errorMessage = ''
 ): bool {
     $scope = inspectBackupScope($backupPath, null, true);
+    if (!empty($scope['cluster'])) throw new StorageBackupException('Full PostgreSQL backups must be restored with psql to a clean PostgreSQL instance.');
     $restoreTargets = [];
     if (!empty($scope['includes_dwemer'])) {
         $restoreTargets[] = 'dwemer';
@@ -1768,86 +1595,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'import_from_server' && isse
         }
     } else {
         $message = "<p><strong>Error:</strong> Invalid file selected or file does not exist.</p>";
-    }
-}
-
-// Handle backup database request
-if (isset($_GET['action']) && $_GET['action'] === 'backup') {
-    try {
-        // Create authentication setup (same as AutomaticBackup class)
-        $pgpassResult = shell_exec('echo "localhost:5432:*:dwemer:dwemer" > /tmp/.pgpass; echo $?');
-        $chmodResult = shell_exec('chmod 600 /tmp/.pgpass; echo $?');
-        
-        $generatedScopeSlug = getBackupScopeSlugFromConfigs(getDashboardBackupDatabaseConfigs(false));
-        $filename = "manual_backup_" . $generatedScopeSlug . "_" . date("Y-m-d_H-i-s") . ".sql";
-        if (!is_dir($dashboardDataPath)) {
-            mkdir($dashboardDataPath, 0755, true);
-        }
-        $backupFile = $dashboardDataPath . 'export_' . $filename;
-
-        $backupError = '';
-        $backupCreated = createCombinedDatabaseBackupFile(
-            $backupFile,
-            $host,
-            $port,
-            $username,
-            getDashboardBackupDatabaseConfigs(false),
-            $backupError
-        );
-
-        if ($backupCreated && file_exists($backupFile) && filesize($backupFile) > 0) {
-            clearstatcache(true, $backupFile);
-            $fileSize = filesize($backupFile);
-            $generatedScope = inspectBackupScope($backupFile, $filename, true);
-            
-            // Check if the file contains error messages instead of actual backup data
-            $firstLine = file_get_contents($backupFile, false, null, 0, 100);
-            if (strpos($firstLine, 'pg_dump: error:') !== false || strpos($firstLine, 'FATAL:') !== false) {
-                $message = "<p><strong>Error:</strong> Database backup failed.</p>";
-                $message .= "<pre>" . htmlspecialchars(substr($firstLine, 0, 500)) . "</pre>";
-                if (file_exists($backupFile)) {
-                    unlink($backupFile);
-                }
-            } elseif (empty($generatedScope['includes_dwemer']) || empty($generatedScope['includes_stobe']) || empty($generatedScope['includes_dialectic'])) {
-                $message = "<p><strong>Error:</strong> Manual backup validation failed.</p>";
-                $message .= "<p>Expected a whole-setup CHIM + STOBE + DIALECTIC backup, but detected: <strong>" . htmlspecialchars(strval($generatedScope['scope_label'] ?? 'unknown')) . "</strong>.</p>";
-                $message .= "<p>The generated SQL file was not downloaded.</p>";
-            } else {
-                // Successful backup - force download (streamed)
-                header('Content-Type: application/octet-stream');
-                header('Content-Disposition: attachment; filename="' . $filename . '"');
-                header('Content-Length: ' . $fileSize);
-                header('Cache-Control: must-revalidate');
-                header('Pragma: public');
-
-                // Fully clear output buffers before streaming large files
-                while (ob_get_level() > 0) { ob_end_clean(); }
-
-                // Stream the file in chunks to avoid memory exhaustion
-                $fh = fopen($backupFile, 'rb');
-                if ($fh !== false) {
-                    set_time_limit(0);
-                    while (!feof($fh)) {
-                        echo fread($fh, 8192);
-                        flush();
-                    }
-                    fclose($fh);
-                }
-
-                // Clean up - delete the temporary file
-                unlink($backupFile);
-
-                exit();
-            }
-        } else {
-            $message = "<p><strong>Error:</strong> Backup creation failed or file is empty.</p>";
-            if ($backupError !== '') {
-                $message .= "<pre>" . htmlspecialchars(substr($backupError, 0, 1000)) . "</pre>";
-            }
-        }
-        
-    } catch (Exception $e) {
-        $message = "<p><strong>Error:</strong> Exception during backup creation: " . htmlspecialchars($e->getMessage()) . "</p>";
     }
 }
 
@@ -2782,7 +2529,7 @@ if ($isStorageFragment) {
         <div class="card-tile">
             <div class="card-content">
                 <h3>📦 Manual Backup</h3>
-                <p>Create one SQL file containing all tables and Playthrough Saves from CHIM, STOBE and DIALECTIC.</p>
+                <p>Export every PostgreSQL database, including all tables, Playthrough Saves and server roles.</p>
                 <p style="color: #ccc; font-size: 14px;">Creates a one-time downloadable combined backup file.</p>
             </div>
             <div class="card-actions">

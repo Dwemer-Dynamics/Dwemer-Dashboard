@@ -44,6 +44,20 @@ try {
     $controller = null;
     $upload = $_FILES['backup'] ?? null;
     $_FILES = [];
+    if ($operation === 'export_backup' && $mod === 'all') {
+        $path = tempnam(sys_get_temp_dir(), 'distro-cluster-');
+        if ($path === false) throw new StorageBackupException('Could not prepare the export file.');
+        register_shutdown_function(static function () use ($path): void { if (is_file($path)) unlink($path); });
+        $error = '';
+        if (!dashboardCreateClusterBackup($path, 'localhost', '5432', 'dwemer', 'dwemer', $error)) throw new StorageBackupException($error);
+        $filename = 'manual_backup_cluster_' . date('Y-m-d_H-i-s') . '.sql';
+        while (ob_get_level() > 0) ob_end_clean();
+        header('Content-Type: application/sql');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Length: ' . filesize($path));
+        readfile($path);
+        exit;
+    }
     if (in_array($operation, ['preview_restore','restore_backup','download_backup','delete_backup'], true)) {
         if (!in_array($mod, ['all','stobe'], true)) throw new InvalidArgumentException('Use Distro for shared backups.');
         $source = $scalar('source'); $filename = $scalar('filename');
@@ -59,7 +73,11 @@ try {
                 try { stobeValidateScopedBackup($path); }
                 catch (RuntimeException $e) { throw new InvalidArgumentException($e->getMessage()); }
                 $scope = 'STOBE';
-            } else $scope = sm_backup_scope($path, $filename, true, $destination)['scope_label'];
+            } else {
+                $backupScope = sm_backup_scope($path, $filename, true, $destination);
+                if (!empty($backupScope['cluster'])) throw new InvalidArgumentException('This is a full PostgreSQL backup. Restore it with psql to a clean PostgreSQL instance; the mod restore tool cannot restore the entire server.');
+                $scope = $backupScope['scope_label'];
+            }
             $identity = hash_file('sha256', $path);
             if ($identity === false || filesize($path) === 0) throw new InvalidArgumentException('The backup is empty or unreadable.');
             if ($operation === 'preview_restore') {
@@ -133,7 +151,7 @@ try {
         }
     } else {
         $allowed = match ($mod) {
-            'all' => ['export_backup','maintenance','stobe_factory_reset','stobe_replay_versions'],
+            'all' => ['maintenance','stobe_factory_reset','stobe_replay_versions'],
             'stobe' => ['create_backup','vacuum_analyze','reindex_database','factory_reset_database','reset_db_version','reset_all_db_versions'],
             'chim' => ['repair_oghma_table','repair_core_constraints','factory_reset_database','reset_db_version','reset_all_db_versions'],
             'dialectic' => ['reset_db_version','reset_all_db_versions'],
@@ -141,7 +159,6 @@ try {
         if (!in_array($operation, $allowed, true)) throw new InvalidArgumentException('That operation is not available for this mod.');
         $controller = $mod === 'stobe' ? $root . '/ui/database_manager.php' : dirname(__DIR__) . '/database_manager.php';
         $_POST['action'] = $operation;
-        if ($operation === 'export_backup') $_GET['action'] = 'backup';
         if ($operation === 'maintenance') $_GET['action'] = 'maintenance';
         if ($operation === 'stobe_factory_reset') $_GET += ['action'=>'factory_reset','target'=>'stobe'];
         if ($operation === 'stobe_replay_versions') $_POST['action'] = 'reset_all_db_versions';

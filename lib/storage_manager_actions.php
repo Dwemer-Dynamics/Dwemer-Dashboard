@@ -1,10 +1,18 @@
 <?php
+require_once __DIR__ . '/cluster_backup.php';
 class StorageBackupException extends RuntimeException {}
 
 // Listings use filenames only. Inspect a potentially large SQL file only after an explicit restore.
 function sm_backup_scope(string $path, ?string $filename = null, bool $inspect = false, string $fallback = 'chim'): array
 {
     $name = strtolower($filename ?? basename($path));
+    $cluster = $inspect ? dashboardIsClusterBackup($path) : preg_match('/^(?:auto|manual)_backup_cluster_/', $name) === 1;
+    if ($cluster) {
+        return ['cluster' => true, 'includes_dwemer' => false, 'includes_stobe' => false, 'includes_dialectic' => false,
+            'scope_slug' => 'cluster', 'scope_label' => 'Entire PostgreSQL server' . ($inspect ? '' : ' (from filename)'),
+            'scope_short_label' => 'Entire PostgreSQL server', 'badge_class' => 'backup-scope-both',
+            'explicit' => $inspect, 'verified' => $inspect];
+    }
     $flags = ['dwemer' => false, 'stobe' => false, 'dialectic' => false];
     $explicit = false;
     if ($inspect) {

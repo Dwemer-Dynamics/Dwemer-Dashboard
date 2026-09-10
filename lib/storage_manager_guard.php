@@ -7,7 +7,7 @@ function sm_guard(string $kind, string $mod): array
     header('Cache-Control: no-store');
     header('X-Content-Type-Options: nosniff');
     if (empty($_SESSION['storage_csrf'])) $_SESSION['storage_csrf'] = bin2hex(random_bytes(32));
-    $scope = $kind === 'shared' ? 'CHIM, STOBE and DIALECTIC databases' : strtoupper($mod) . ' database';
+    $scope = $kind === 'shared' ? 'Distro PostgreSQL server' : strtoupper($mod) . ' database';
     $legacyActions = $kind === 'shared'
         ? ['maintenance', 'factory_reset', 'delete_auto', 'restore_auto', 'backup']
         : ($kind === 'database' ? ['delete_backup'] : []);

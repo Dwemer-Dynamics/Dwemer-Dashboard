@@ -150,7 +150,7 @@
             const form = el('form'); form.method = 'POST'; form.action = 'api/storage_action.php'; form.target = '_blank';
             form.hidden = true;
             const values = {mod:targetMod,operation,_sm_csrf:config.csrf,
-                _sm_scope:targetMod === 'all' ? 'CHIM, STOBE and DIALECTIC databases' : labels[targetMod] + ' database',
+                _sm_scope:targetMod === 'all' ? 'Distro PostgreSQL server' : labels[targetMod] + ' database',
                 ...fields,native_download:'1'};
             Object.entries(values).forEach(([key,value]) => {
                 const input = el('input'); input.type = 'hidden'; input.name = key; input.value = value; form.append(input);
@@ -160,7 +160,7 @@
         }
         const body = new FormData();
         body.set('mod',targetMod); body.set('operation',operation); body.set('_sm_csrf',config.csrf);
-        body.set('_sm_scope',targetMod === 'all' ? 'CHIM, STOBE and DIALECTIC databases' : labels[targetMod] + ' database');
+        body.set('_sm_scope',targetMod === 'all' ? 'Distro PostgreSQL server' : labels[targetMod] + ' database');
         Object.entries(fields).forEach(([key,value]) => body.set(key,value));
         return request('api/storage_action.php', {method:'POST',body});
     }
@@ -240,7 +240,7 @@
         if (ticket !== generation) return;
         const shared = panel('Backups for the whole setup');
         shared.style.marginTop = '16px';
-        shared.append(note('Automatic archives can contain all three mod databases. Inspect a backup before restoring it; scope is checked from the file.'),el('br'),link('Manage database backups','all','backups'));
+        shared.append(note('New automatic archives include every PostgreSQL database and server role. Inspect a backup before restoring it; scope is checked from the file.'),el('br'),link('Manage database backups','all','backups'));
         content.append(shared);
     }
     function playthroughDetails(playthrough) {
@@ -627,18 +627,18 @@
     }
     async function backups(ticket) {
         const scope = 'all';
-        const top = toolbar('Database backups','Back up database data for the whole setup: CHIM, STOBE and DIALECTIC. Game saves and server files are not included.',true);
+        const top = toolbar('Database backups','Back up the entire PostgreSQL server, including every database and server role. Game saves and server files are not included.',true);
         const actions=el('div',null,'sm-actions');
         actions.append(button('Export entire database',()=>confirmAction('Export entire database',
-            'Download one SQL file containing all tables and Playthrough Saves from CHIM, STOBE and DIALECTIC. Game saves and server files are not included.',
-            ()=>action('export_backup',{},scope),false),'sm-primary'),button('Restore from file',()=>uploadBackup(scope)));
+            'Download one SQL file containing every PostgreSQL database, all schemas, tables, Playthrough Saves and server roles. This includes databases for other mods and tests. Game saves and server files are not included.',
+            ()=>action('export_backup',{},scope),false),'sm-primary'),button('Restore older mod backup',()=>uploadBackup(scope)));
         top.append(actions);
-        content.replaceChildren(top);
+        content.replaceChildren(top,note('Full PostgreSQL backups are restored with psql to a clean PostgreSQL instance. The restore tool below is for older mod-only SQL backups.'));
         const data=await request('api/storage_tools.php?'+new URLSearchParams({mod:scope,view:'backups',q:search,offset}));
         if(ticket!==generation)return;
         if(data.automatic) {
             const box=panel('Automatic database backups'), form=el('form',null,'sm-form');
-            const enabled=field('Create automatic backups','enabled','checkbox',data.automatic.enabled,'Off by default. Archives can contain CHIM, STOBE and DIALECTIC.');
+            const enabled=field('Create automatic backups','enabled','checkbox',data.automatic.enabled,'Off by default. New archives include every PostgreSQL database and server role, including other mods and test databases.');
             const keep=field('Backups to keep','keep','number',data.automatic.keep,'Old automatic backup files are removed as new backups are created.');
             keep.input.min=1;keep.input.max=10;keep.input.step=1;keep.input.required=true;
             const row=el('div',null,'sm-grid sm-two');row.append(enabled.wrap,keep.wrap);form.append(row,button('Save backup settings',()=>form.requestSubmit()));
@@ -653,7 +653,8 @@
         content.append(table(['Backup file','Saved on','Size','Scope hint','Actions'],list.items.map(item=>{
             const name=el('div');name.append(el('div',item.filename,'sm-name'),note(item.source==='automatic'?'Automatic archive':'Server import folder'));
             const fields={filename:item.filename,source:item.source}, actions=el('div',null,'sm-actions');
-            actions.append(button('Restore',()=>previewRestore(fields,scope)));
+            if(item.can_restore !== false)actions.append(button('Restore',()=>previewRestore(fields,scope)));
+            else actions.append(note('Restore with PostgreSQL.'));
             if(item.can_download)actions.append(button('Download',()=>perform(()=>action('download_backup',fields,scope),false)));
             if(item.can_delete)actions.append(button('Delete',()=>confirmAction('Delete backup file','Permanently delete “'+item.filename+'”. This does not change the live database.',
                 ()=>action('delete_backup',fields,scope)),'sm-danger'));

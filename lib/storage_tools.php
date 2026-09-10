@@ -48,8 +48,10 @@ function sm_backup_list(string $mod, int $offset, string $search): array
             if (!preg_match($mod === 'stobe' ? '/\.sql(?:\.gz)?$/i' : '/\.sql$/', $name)
                 || ($mod === 'all' && $source === 'automatic' && !str_starts_with($name, 'auto_backup_'))
                 || ($search !== '' && stripos($name, $search) === false)) continue;
+            $scope = $mod === 'stobe' ? null : sm_backup_scope('', $name);
             $files[] = ['filename' => $name, 'source' => $source, 'size' => $entry->getSize(), 'modified' => $entry->getMTime(),
-                'scope' => $mod === 'stobe' ? 'STOBE' : sm_backup_scope('', $name)['scope_short_label'],
+                'scope' => $mod === 'stobe' ? 'STOBE' : $scope['scope_short_label'],
+                'can_restore' => empty($scope['cluster']),
                 'can_download' => $mod === 'stobe' || $source === 'automatic',
                 'can_delete' => $mod === 'stobe' || $source === 'automatic'];
         }
