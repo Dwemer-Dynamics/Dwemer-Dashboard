@@ -494,7 +494,7 @@
         if(caps.category_preview!==true)form.append(note('Update the server to preview one category at a time.','sm-warning'));
         for(const category of categories) {
             const key=category.key, entry=rowFor(key,category.label,category.description || 'Troubleshooting logs.');
-            const on=field('Include in saved cleanup rules',key+'_enabled','checkbox',flag(key+'_enabled'));
+            const on=field('Enable cleanup',key+'_enabled','checkbox',flag(key+'_enabled'));
             const days=integerField('Older than (days)',key+'_days',num(key+'_days',7),1,3650,'Real-world days.');
             const size=integerField('Size limit (MB)',key+'_max_mb',num(key+'_max_mb',0),0,102400,'0 = No limit. Applies to log data, not total disk space.');
             const pair=el('div',null,'sm-inline-fields');pair.append(keepInput(days,key+'_days'),keepInput(size,key+'_max_mb'));
@@ -506,7 +506,7 @@
         }
         if(caps.event_cleanup) {
             const events=rowFor('events','Events',measured.get('events')?.description || 'Raw gameplay and conversation history.');
-            events.body.append(keepInput(field('Include in saved cleanup rules (off by default)','events_enabled','checkbox',flag('events_enabled')),'events_enabled'));
+            events.body.append(keepInput(field('Enable cleanup (off by default)','events_enabled','checkbox',flag('events_enabled')),'events_enabled'));
             events.body.append(keepInput(integerField('Older than (in-game days)','events_days',num('events_days',30),1,3650,
                 'Measured from the latest recorded game time.'),'events_days'));
             events.body.append(note('Events recorded in the last 24 real-world hours, unfinished replies and the newest event of each type are kept.'));
@@ -531,10 +531,7 @@
         const sizes=el('details',null,'sm-size-help');sizes.append(el('summary','About these sizes'),
             note('Category sizes include indexes and unused database space. Size limits apply to log data. A preview estimates only the entries selected for deletion; cleanup may not reduce files on disk.'));
         form.append(kept,sizes);
-        const automatic=panel('Automatic cleanup');automatic.classList.add('sm-settings-group');
-        automatic.append(keepInput(field('Run cleanup automatically','automatic','checkbox',flag('automatic'),
-            'Off by default. Runs the saved rules at most once an hour while the '+labels[mod]+' background service is running.'),'automatic'));
-        form.append(automatic);
+        form.append(note('Enabled categories are cleaned up at most once an hour while the '+labels[mod]+' background service is running. Save settings to apply your changes.'));
         const last=state.last_run;
         if(last)form.append(note('Last cleanup · '+date(last.at)+' · '+(last.message || last.status),last.status==='failed'?'sm-error':'sm-help'));
         else form.append(note('No cleanup has run yet.'));
@@ -555,15 +552,15 @@
             event.preventDefault();if(!valid(form))return;
             const chosen=values();
             const run=()=>retention('save',chosen).then(()=>({ok:true,message:'Cleanup settings saved.'}));
-            if(chosen.automatic==='1'&&(!flag('automatic')||chosen.events_enabled==='1'))confirmAction('Turn on automatic cleanup',
-                'Run the selected cleanup rules without asking each time. Your active Playthrough Save is kept.' + (chosen.events_enabled==='1' ? ' Deleting events removes raw history used for conversations, recall and future diaries. Saved memories and diaries are kept, but they may not contain every detail. Create a Playthrough Save first if you may need this history.' : ''),run,true);
+            if(chosen.events_enabled==='1'&&(!flag('events_enabled')||Number(chosen.events_days)<num('events_days',30)))confirmAction('Save Events cleanup rules',
+                'Matching older events will be deleted during background cleanup. Your active Playthrough Save is kept.' + ' Deleting events removes raw history used for conversations, recall and future diaries. Saved memories and diaries are kept, but they may not contain every detail. Create a Playthrough Save first if you may need this history.',run,true);
             else perform(run,false);
         });
     }
     function renderPreview(plan,area) {
         const box = panel(plan.scope ? plan.scope.label + ': cleanup preview' : 'Cleanup preview'), diagnostics = plan.diagnostics || [], saves = plan.playthroughs || [];
         box.style.marginTop = '16px';
-        box.append(note('Preview only. Your settings were not saved and automatic cleanup was not turned on.'));
+        box.append(note('Preview only. Your saved cleanup rules were not changed.'));
         if (plan.message) box.append(note(plan.message));
         if (plan.more_possible) box.append(note('More items may remain after this cleanup. Preview again afterwards.','sm-warning'));
         if (diagnostics.length) box.append(table(['Log','Entries to delete','Estimated size'],
