@@ -73,29 +73,37 @@ function dm_overview($conn, string $mod, int $offset, string $search): array
     try {
         dm_query($conn, "SET LOCAL statement_timeout='2500ms'");
         dm_query($conn, "SET LOCAL lock_timeout='250ms'");
-        $database = pg_fetch_assoc(dm_query($conn, 'SELECT pg_database_size(current_database()) AS bytes'));
-        $tables = pg_fetch_all(dm_query($conn, "SELECT c.relname, pg_total_relation_size(c.oid) AS bytes, c.reltuples
-            FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-            WHERE n.nspname='public' AND c.relkind IN ('r','m')")) ?: [];
-        $categories = [
-            'events' => ['key' => 'events', 'label' => 'Events', 'bytes' => 0, 'rows_estimate' => 0],
-            'memory' => ['key' => 'memory', 'label' => 'Memories & knowledge', 'bytes' => 0, 'rows_estimate' => 0],
-            'diagnostics' => ['key' => 'diagnostics', 'label' => 'Troubleshooting logs', 'bytes' => 0, 'rows_estimate' => 0],
-            'other' => ['key' => 'other', 'label' => 'Other live data', 'bytes' => 0, 'rows_estimate' => 0],
-        ];
-        foreach ($tables as $table) {
-            $name = $table['relname'];
-            $category = 'other';
-            if ($name === 'eventlog') $category = 'events';
-            elseif (in_array($name, ['log', 'audit_request', 'deliveredresponselog'], true)) $category = 'diagnostics';
-            elseif (preg_match('/^(memory|memories|oghma|worldknowledge|diary|diaries)(_|$)/', $name)) $category = 'memory';
-            $categories[$category]['bytes'] += (int)$table['bytes'];
-            if ((float)$table['reltuples'] < 0) $categories[$category]['rows_estimate'] = null;
-            elseif ($categories[$category]['rows_estimate'] !== null) $categories[$category]['rows_estimate'] += (int)round((float)$table['reltuples']);
+        $categoryFile = dm_server_root($product['dir']) . '/lib/playthrough_categories.php';
+        if (is_file($categoryFile)) {
+            require_once $categoryFile;
+            $storage = ptr_storage_overview($conn, $product['meta']);
+            $database = ['bytes'=>$storage['database_bytes']];
+            $categories = $storage['categories'];
+        } else {
+            $database = pg_fetch_assoc(dm_query($conn, 'SELECT pg_database_size(current_database()) AS bytes'));
+            $tables = pg_fetch_all(dm_query($conn, "SELECT c.relname, pg_total_relation_size(c.oid) AS bytes, c.reltuples
+                FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                WHERE n.nspname='public' AND c.relkind IN ('r','m')")) ?: [];
+            $categories = [
+                'events' => ['key' => 'events', 'label' => 'Events', 'bytes' => 0, 'rows_estimate' => 0],
+                'memory' => ['key' => 'memory', 'label' => 'Memories & knowledge', 'bytes' => 0, 'rows_estimate' => 0],
+                'diagnostics' => ['key' => 'diagnostics', 'label' => 'Troubleshooting logs', 'bytes' => 0, 'rows_estimate' => 0],
+                'other' => ['key' => 'other', 'label' => 'Other live data', 'bytes' => 0, 'rows_estimate' => 0],
+            ];
+            foreach ($tables as $table) {
+                $name = $table['relname'];
+                $category = 'other';
+                if ($name === 'eventlog') $category = 'events';
+                elseif (in_array($name, ['log', 'audit_request', 'deliveredresponselog'], true)) $category = 'diagnostics';
+                elseif (preg_match('/^(memory|memories|oghma|worldknowledge|diary|diaries)(_|$)/', $name)) $category = 'memory';
+                $categories[$category]['bytes'] += (int)$table['bytes'];
+                if ((float)$table['reltuples'] < 0) $categories[$category]['rows_estimate'] = null;
+                elseif ($categories[$category]['rows_estimate'] !== null) $categories[$category]['rows_estimate'] += (int)round((float)$table['reltuples']);
+            }
+            $liveBytes = array_sum(array_column($categories, 'bytes'));
+            $categories['stored'] = ['key' => 'stored', 'label' => 'Playthrough Saves & other storage',
+                'bytes' => max(0, (int)$database['bytes'] - $liveBytes), 'rows_estimate' => null];
         }
-        $liveBytes = array_sum(array_column($categories, 'bytes'));
-        $categories['stored'] = ['key' => 'stored', 'label' => 'Playthrough Saves & other storage',
-            'bytes' => max(0, (int)$database['bytes'] - $liveBytes), 'rows_estimate' => null];
         $meta = $product['meta'];
         $exists = pg_fetch_assoc(dm_query($conn, 'SELECT to_regclass($1) IS NOT NULL AS present', [$meta . '.playthrough_profiles']));
         // Old Stobe installations used chim_meta. Reading it must not trigger the rename migration.

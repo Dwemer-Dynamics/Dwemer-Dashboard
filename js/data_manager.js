@@ -12,9 +12,6 @@
     const serverDirs = {chim:'HerikaServer', stobe:'StobeServer', dialectic:'DialecticServer'};
     // Minimum in-game days behind before loading an older game save makes a Playthrough Save.
     const defaultMinDays = {chim:3, stobe:1, dialectic:3};
-    // Backend category keys are fixed; these labels stay stable whatever the server calls them.
-    const categoryLabels = {log:'Prompt and response logs', requests:'Request logs',
-        recall:'Memory search logs', responses:'Delivered response logs'};
     const query = new URLSearchParams(location.search);
     let mod = query.get('mod') || 'all';
     let view = query.get('view') || '';
@@ -183,7 +180,7 @@
         announce('Working… Keep this page open. Large databases can take several minutes.');
         try {
             const data = await run();
-            dialog.close(); dirty = false;
+            dialog.close(); if (!previewOf(data)) dirty = false;
             announce(data.message || 'Done.', 'sm-success');
             if (data.details?.length) showResult(data);
             if (refresh && !data.download_requested) await load();
@@ -444,148 +441,124 @@
         });
         host.append(form);
     }
-    function storageBreakdown(data) {
-        const box = panel('Where space is used');
-        box.append(note(bytes(data.live.database_bytes) + ' of database space. Game saves and server files are separate.'));
-        data.live.categories.forEach(item => {
-            const row = el('div',null,'sm-category'), bar = el('div',null,'sm-bar'), fill = el('span');
-            fill.style.width = Math.min(100,100*item.bytes/Math.max(1,data.live.database_bytes)) + '%'; bar.append(fill);
-            row.append(note(item.label,''),bar,el('strong',bytes(item.bytes))); box.append(row);
-        });
-        const details = el('details',null,'sm-details'); details.append(el('summary','About these sizes'),
-            note('“Playthrough Saves & other storage” includes saves and shared database space. It is not an exact total for saves alone. Cleanup frees space for reuse but may not reduce the files on disk.'));
-        box.append(details); return box;
-    }
     async function cleanup(data,ticket) {
-        content.replaceChildren(toolbar('Cleanup','Choose what to delete, then preview before removing anything.'),storageBreakdown(data));
+        content.replaceChildren(toolbar('Cleanup','Expand a category to see its rules and preview what can be removed.'));
         if (!capabilities?.cleanup_api) {
-            const box = panel('Manual cleanup');
-            const backupsLink = link('Review backups','all','backups');
-            if (mod === 'stobe') backupsLink.href += '&scope=stobe';
-            box.append(note('Cleanup rules are not available for ' + labels[mod] + ' on this server yet. Remove unwanted Playthrough Saves from the Playthrough Saves tab; database backups are managed under Distro.'),el('br'),
-                link('Review Playthrough Saves',mod,'playthroughs'),document.createTextNode(' '),backupsLink);
-            content.append(box); return;
+            content.append(note('Update this mod server to use cleanup settings.','sm-warning'),link('Manage Playthrough Saves',mod,'playthroughs'));
+            return;
         }
-        const host = panel('Cleanup settings'); host.append(note('Loading saved settings\u2026')); content.append(host);
+        const host = panel(); host.append(note('Loading sizes and settings…')); content.append(host);
         const state = await request(retentionUrl);
         if (ticket !== generation) return;
-        retentionForm(host,state);
+        retentionForm(host,state,data.live);
     }
-    function retentionForm(host,state) {
+    function retentionForm(host,state,storage) {
         host.replaceChildren();
-        const settings = state.settings && typeof state.settings === 'object' ? state.settings : {};
-        const caps = state.capabilities && typeof state.capabilities === 'object' ? state.capabilities : {};
-        const categories = (Array.isArray(caps.categories) ? caps.categories : []).filter(item => item && item.key);
-        const form = el('form',null,'sm-form'), inputs = {};
-        const num = (key,fallback) => { const value = Number(settings[key]); return Number.isFinite(value) ? value : fallback; };
+        const settings = state.settings || {}, caps = state.capabilities || {};
+        const categories = (caps.categories || []).filter(item=>item && item.key);
+        const measured = new Map((storage.categories || []).map(item=>[item.key,item]));
+        const form = el('form',null,'sm-form'), inputs = {}, previewArea = el('div');
+        const num = (key,fallback) => Number.isFinite(Number(settings[key])) ? Number(settings[key]) : fallback;
         const flag = key => settings[key] === true || settings[key] === 1 || settings[key] === '1';
         const keepInput = (entry,key) => { inputs[key] = entry.input; return entry.wrap; };
         const values = () => Object.fromEntries(Object.entries(inputs)
-            .map(([key,input]) => [key,input.type === 'checkbox' ? (input.checked ? '1' : '0') : input.value]));
-
-        // Playthrough Saves have exactly one automatic limit: how many automatic saves to keep.
-        const savesGroup = panel('Automatic Playthrough Saves');
-        savesGroup.classList.add('sm-settings-group');
-        const savesOn = field('Delete extra automatic saves','playthroughs_enabled','checkbox',flag('playthroughs_enabled'),
-            'Off by default. Manual, unclassified, active, default and protected saves are kept.');
-        const keep = integerField('Maximum automatic saves','playthrough_keep',num('playthrough_keep',0),0,10000,
-            '0 = Unlimited. Above the limit, the oldest automatic saves are deleted first.');
-        const keepState = note('');
-        keepState.setAttribute('aria-live','polite');
-        const describeKeep = () => {
-            const value = Number(keep.input.value);
-            keepState.textContent = Number.isFinite(value) && value > 0
-                ? 'Keep the newest ' + number(value) + ' automatic saves.'
-                : 'Unlimited \u00b7 no automatic saves will be deleted.';
-        };
-        keep.input.addEventListener('input',describeKeep); describeKeep();
-        savesGroup.append(keepInput(savesOn,'playthroughs_enabled'),keepInput(keep,'playthrough_keep'),keepState,
-            note('The limit includes Automatic Rollback Saves and Before-Switch Saves.'));
-
-        const diagSection = panel('Troubleshooting logs');
-        diagSection.classList.add('sm-section');
-        diagSection.append(note('Only logs are cleaned up. NPC memories, diaries, relationships and unfinished work are kept. Logs from the last 24 hours are always kept.'));
-        if (!categories.length) diagSection.append(note('No troubleshooting logs are available.','sm-empty'));
-        else {
-            const grid = el('div',null,'sm-grid sm-two');
-            categories.forEach(item => {
-                const key = String(item.key);
-                const group = panel(categoryLabels[key] || item.label || key);
-                group.classList.add('sm-settings-group');
-                const on = field('Delete old entries',key + '_enabled','checkbox',flag(key + '_enabled'),'Off by default.');
-                const days = integerField('Older than (days)',key + '_days',num(key + '_days',7),1,3650,'Real-world days, not in-game days.');
-                const size = integerField('Size limit (MB)',key + '_max_mb',num(key + '_max_mb',0),0,102400,'0 = No size limit. Older entries are removed first.');
-                const pair = el('div',null,'sm-inline-fields');
-                pair.append(keepInput(days,key + '_days'),keepInput(size,key + '_max_mb'));
-                group.append(keepInput(on,key + '_enabled'),pair);
-                if (key === 'requests') {
-                    group.append(keepInput(choiceField('Request logs to include','requests_filter',
-                        [['all','All request logs'],['relationship','Relationship requests only']],
-                        settings.requests_filter === 'relationship' ? 'relationship' : 'all',
-                        'Apply the limits to these logs.'),'requests_filter'));
-                }
-                grid.append(group);
-            });
-            diagSection.append(grid);
-        }
-
-        const autoGroup = panel('Automatic cleanup');
-        autoGroup.classList.add('sm-settings-group');
-        autoGroup.append(keepInput(field('Run cleanup automatically','automatic','checkbox',flag('automatic'),
-            'Off by default. Runs these rules at most once an hour while the ' + labels[mod] + ' background service is running.'),'automatic'));
-
-        const history = el('div',null,'sm-history');
-        const last = state.last_run;
-        if (last) {
-            const outcome = {succeeded:'Cleanup finished',failed:'Cleanup failed',no_work:'Nothing to delete'}[last.status] || 'Previous cleanup result';
-            history.append(note(outcome + ' \u00b7 ' + date(last.at),last.status === 'failed' ? 'sm-error' : 'sm-help'));
-            if (last.message) history.append(note(last.message,last.status === 'failed' ? 'sm-error' : 'sm-help'));
-            if (last.status === 'succeeded' || Number(last.rows) > 0 || Number(last.playthroughs) > 0) {
-                history.append(note(number(last.rows || 0) + ' log entries and ' + number(last.playthroughs || 0) + ' Playthrough Saves removed.'));
+            .map(([key,input])=>[key,input.type === 'checkbox' ? (input.checked ? '1' : '0') : input.value]));
+        // Open the row containing an invalid field before the browser focuses its message.
+        const valid = container => {
+            for (const input of container.querySelectorAll('input,select')) {
+                if (!input.checkValidity()) { const row=input.closest('details'); if(row)row.open=true; input.reportValidity(); return false; }
             }
-            if (last.more_possible) history.append(note('Another round may be needed. Preview again to check.'));
-        } else history.append(note('No cleanup has run yet.'));
-        const eventStatus = typeof state.event_status === 'string' ? state.event_status
-            : (state.event_status?.description || state.event_status?.message || '');
-        if (eventStatus) history.append(note(eventStatus));
+            return true;
+        };
+        const total = el('div',null,'sm-storage-total');
+        total.append(el('h3','Where space is used'),el('strong',bytes(storage.database_bytes)));
+        form.append(total);
+        const rowFor = (key,label,description) => {
+            const row = el('details',null,'sm-cleanup-row'), summary = el('summary');
+            row.id='sm-cleanup-'+key; row.setAttribute('aria-label',label);
+            summary.append(el('strong',label),el('span',bytes(measured.get(key)?.bytes),'sm-category-size'),el('span','Cleanup settings','sm-expand-hint'));
+            const body = el('div',null,'sm-cleanup-body'); body.append(note(description));
+            row.append(summary,body); form.append(row); return {row,body};
+        };
+        const categoryPreview = (entry,key,label) => {
+            const preview = button('Preview cleanup',async()=>{
+                if(!valid(entry.row))return;
+                const plan=previewOf(await perform(()=>retention('preview',{...values(),preview_category:key}),false));
+                if(plan) {renderPreview(plan,previewArea);previewArea.scrollIntoView({block:'nearest'});}
+            });
+            preview.setAttribute('aria-label','Preview '+label+' cleanup');
+            preview.disabled=caps.category_preview!==true;
+            if(preview.disabled)preview.title='Update the server to preview one category.';
+            entry.body.append(preview);
+        };
+        if(caps.category_preview!==true)form.append(note('Update the server to preview one category at a time.','sm-warning'));
+        for(const category of categories) {
+            const key=category.key, entry=rowFor(key,category.label,category.description || 'Troubleshooting logs.');
+            const on=field('Include in saved cleanup rules',key+'_enabled','checkbox',flag(key+'_enabled'));
+            const days=integerField('Older than (days)',key+'_days',num(key+'_days',7),1,3650,'Real-world days.');
+            const size=integerField('Size limit (MB)',key+'_max_mb',num(key+'_max_mb',0),0,102400,'0 = No limit. Applies to log data, not total disk space.');
+            const pair=el('div',null,'sm-inline-fields');pair.append(keepInput(days,key+'_days'),keepInput(size,key+'_max_mb'));
+            entry.body.append(keepInput(on,key+'_enabled'),pair);
+            if(key==='requests')entry.body.append(keepInput(choiceField('Request logs to include','requests_filter',
+                [['all','All request logs'],['relationship','Relationship requests only']],settings.requests_filter || 'all'),'requests_filter'));
+            entry.body.append(note('Logs from the last 24 hours are kept. Preview checks only this category, even when its saved rule is off.'));
+            categoryPreview(entry,key,category.label);
+        }
+        const saves=rowFor('playthroughs','Playthrough Saves',measured.get('playthroughs')?.description || 'Saved copies of your mod data.');
+        saves.body.append(keepInput(field('Delete extra automatic saves','playthroughs_enabled','checkbox',flag('playthroughs_enabled')),'playthroughs_enabled'));
+        saves.body.append(keepInput(integerField('Maximum automatic saves','playthrough_keep',num('playthrough_keep',0),0,10000,
+            '0 = Unlimited. Above the limit, the oldest automatic saves are deleted first.'),'playthrough_keep'));
+        saves.body.append(note('Manual, unclassified, active, default and protected saves are kept.'));
+        const saveActions=el('div',null,'sm-actions');saveActions.append(link('Manage saves',mod,'playthroughs'));saves.body.append(saveActions);
+        categoryPreview(saves,'playthroughs','Playthrough Saves');
 
-        const actions = el('div',null,'sm-actions'), previewArea = el('div');
-        const save = button('Save settings',()=>form.requestSubmit(),'sm-primary');
-        // Preview uses the values on screen and never saves them or turns automatic cleanup on.
-        const preview = button('Preview cleanup',async()=>{
-            if (!form.reportValidity()) return;
-            const plan = previewOf(await perform(()=>retention('preview',values()),false));
-            if (plan) renderPreview(plan,previewArea);
-        });
-        actions.append(save,preview);
-        form.append(savesGroup,diagSection,autoGroup,history,actions);
-        host.append(form,previewArea);
+        const kept=el('section',null,'sm-kept-data');kept.append(el('h3','Data kept by cleanup'));
+        for(const category of (storage.categories || []).filter(item=>!item.cleanup)) {
+            const row=el('div',null,'sm-kept-row');
+            row.append(el('strong',category.label),el('span',bytes(category.bytes)),note(category.description || 'Not included in cleanup.'));
+            kept.append(row);
+        }
+        const sizes=el('details',null,'sm-size-help');sizes.append(el('summary','About these sizes'),
+            note('Category sizes include indexes and unused database space. Size limits apply to log data. A preview estimates only the entries selected for deletion; cleanup may not reduce files on disk.'));
+        form.append(kept,sizes);
+        const automatic=panel('Automatic cleanup');automatic.classList.add('sm-settings-group');
+        automatic.append(keepInput(field('Run cleanup automatically','automatic','checkbox',flag('automatic'),
+            'Off by default. Runs the saved rules at most once an hour while the '+labels[mod]+' background service is running.'),'automatic'));
+        form.append(automatic);
+        const last=state.last_run;
+        if(last)form.append(note('Last cleanup · '+date(last.at)+' · '+(last.message || last.status),last.status==='failed'?'sm-error':'sm-help'));
+        else form.append(note('No cleanup has run yet.'));
+        const actions=el('div',null,'sm-actions');
+        actions.append(button('Save settings',()=>form.requestSubmit(),'sm-primary'),button('Preview all cleanup',async()=>{
+            if(!valid(form))return;
+            const plan=previewOf(await perform(()=>retention('preview',values()),false));
+            if(plan){renderPreview(plan,previewArea);previewArea.scrollIntoView({block:'nearest'});}
+        }));
+        form.append(actions);host.append(form,previewArea);
+        form.noValidate=true;
         form.addEventListener('input',()=>{
-            dirty = true;
-            if (previewTimer) clearTimeout(previewTimer);
-            if (previewArea.firstChild) previewArea.replaceChildren(note('Settings changed. Preview again before deleting.','sm-warning'));
+            dirty=true;
+            if(previewTimer)clearTimeout(previewTimer);
+            if(previewArea.firstChild)previewArea.replaceChildren(note('Settings changed. Preview again before deleting.','sm-warning'));
         });
         form.addEventListener('submit',event=>{
-            event.preventDefault();
-            if (!form.reportValidity()) return;
-            const chosen = values();
-            const run = ()=>retention('save',chosen).then(()=>({ok:true,message:'Cleanup settings saved.'}));
-            if (chosen.automatic === '1' && !flag('automatic')) {
-                confirmAction('Turn on automatic cleanup',
-                    'Delete matching logs and extra automatic saves using these rules, without asking each time. Current gameplay data is kept.',
-                    run,true);
-            } else perform(run,false);
+            event.preventDefault();if(!valid(form))return;
+            const chosen=values();
+            const run=()=>retention('save',chosen).then(()=>({ok:true,message:'Cleanup settings saved.'}));
+            if(chosen.automatic==='1'&&!flag('automatic'))confirmAction('Turn on automatic cleanup',
+                'Delete matching logs and extra automatic saves using these rules, without asking each time. Current gameplay data is kept.',run,true);
+            else perform(run,false);
         });
     }
     function renderPreview(plan,area) {
-        const box = panel('Cleanup preview'), diagnostics = plan.diagnostics || [], saves = plan.playthroughs || [];
+        const box = panel(plan.scope ? plan.scope.label + ': cleanup preview' : 'Cleanup preview'), diagnostics = plan.diagnostics || [], saves = plan.playthroughs || [];
         box.style.marginTop = '16px';
         box.append(note('Preview only. Your settings were not saved and automatic cleanup was not turned on.'));
         if (plan.message) box.append(note(plan.message));
         if (plan.more_possible) box.append(note('More items may remain after this cleanup. Preview again afterwards.','sm-warning'));
         if (diagnostics.length) box.append(table(['Log','Entries to delete','Estimated size'],
-            diagnostics.map(item => [categoryLabels[item.key] || item.label || item.table,number(item.rows),bytes(item.bytes_estimate)])));
-        else box.append(note('No log entries to delete.'));
+            diagnostics.map(item => [item.label || item.table,number(item.rows),bytes(item.bytes_estimate)])));
+        else if(!plan.scope || plan.scope.key!=='playthroughs')box.append(note('No log entries to delete.'));
         if (saves.length) {
             const list = el('ul',null,'sm-name-list');
             saves.forEach(item => {
@@ -594,7 +567,7 @@
                 list.append(row);
             });
             box.append(el('h3','Playthrough Saves to delete (' + saves.length + ')'),list);
-        } else box.append(note('No automatic saves to delete.'));
+        } else if(!plan.scope || plan.scope.key==='playthroughs')box.append(note('No automatic saves to delete.'));
         const events = plan.events;
         const eventText = typeof events === 'string' ? events : (events?.description || events?.message || '');
         box.append(note(eventText || 'Current gameplay data and unfinished work are kept.','sm-warning'));
