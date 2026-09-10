@@ -627,10 +627,10 @@
     }
     async function backups(ticket) {
         const scope = 'all';
-        const top = toolbar('Database backups','Separate SQL files for recovering database data. Game saves and server files are not included.',true);
+        const top = toolbar('Database backups','Back up database data for the whole setup: CHIM, STOBE and DIALECTIC. Game saves and server files are not included.',true);
         const actions=el('div',null,'sm-actions');
-        actions.append(button('Export CHIM + STOBE',()=>confirmAction('Export CHIM + STOBE',
-            'Download a backup containing CHIM and STOBE. This existing manual export does not include DIALECTIC.',
+        actions.append(button('Export entire database',()=>confirmAction('Export entire database',
+            'Download one SQL file containing all tables and Playthrough Saves from CHIM, STOBE and DIALECTIC. Game saves and server files are not included.',
             ()=>action('export_backup',{},scope),false),'sm-primary'),button('Restore from file',()=>uploadBackup(scope)));
         top.append(actions);
         content.replaceChildren(top);

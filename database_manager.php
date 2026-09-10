@@ -791,18 +791,20 @@ function getDashboardBackupDatabaseConfigs(bool $excludeDwemerSettings = false):
             'name' => 'stobe',
             'exclude_tables' => [],
         ],
+        [
+            'name' => 'dialectic',
+            'exclude_tables' => [],
+        ],
     ];
 }
 
-function getBackupScopeSlugFromFlags(bool $includesDwemer, bool $includesStobe): string
+function getBackupScopeSlugFromFlags(bool $includesDwemer, bool $includesStobe, bool $includesDialectic = false): string
 {
-    if ($includesDwemer && $includesStobe) {
-        return 'herikaserver_stobeserver';
-    }
-    if ($includesStobe) {
-        return 'stobeserver';
-    }
-    return 'herikaserver';
+    $parts = [];
+    if ($includesDwemer) $parts[] = 'herikaserver';
+    if ($includesStobe) $parts[] = 'stobeserver';
+    if ($includesDialectic) $parts[] = 'dialecticserver';
+    return implode('_', $parts) ?: 'herikaserver';
 }
 
 function backupFileContainsDatabaseSection(string $backupPath, string $databaseName): bool
@@ -841,6 +843,7 @@ function getBackupScopeSlugFromConfigs(array $databaseConfigs): string
 {
     $includesDwemer = false;
     $includesStobe = false;
+    $includesDialectic = false;
     foreach ($databaseConfigs as $config) {
         $dbName = strtolower(trim(strval($config['name'] ?? '')));
         if ($dbName === 'dwemer') {
@@ -849,8 +852,11 @@ function getBackupScopeSlugFromConfigs(array $databaseConfigs): string
         if ($dbName === 'stobe') {
             $includesStobe = true;
         }
+        if ($dbName === 'dialectic') {
+            $includesDialectic = true;
+        }
     }
-    return getBackupScopeSlugFromFlags($includesDwemer, $includesStobe);
+    return getBackupScopeSlugFromFlags($includesDwemer, $includesStobe, $includesDialectic);
 }
 
 function getBackupRestoreSuccessMessage(array $scope): string
@@ -921,15 +927,14 @@ function createCombinedDatabaseBackupFile(
             . " -d " . escapeshellarg($dbName)
             . $excludeArgs
             . " > " . escapeshellarg($tmpFile) . " 2>&1";
-        $result = shell_exec($command);
+        $commandOutput = [];
+        $exitCode = 0;
+        exec($command, $commandOutput, $exitCode);
 
-        if (!file_exists($tmpFile) || filesize($tmpFile) <= 0) {
+        if ($exitCode !== 0 || !file_exists($tmpFile) || filesize($tmpFile) <= 0) {
             @unlink($tmpFile);
             @unlink($backupFile);
             $errorMessage = "Backup creation failed for {$dbName}.";
-            if (is_string($result) && trim($result) !== '') {
-                $errorMessage .= ' ' . trim(substr($result, 0, 500));
-            }
             return false;
         }
 
@@ -1787,7 +1792,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'backup') {
             $port,
             $username,
             getDashboardBackupDatabaseConfigs(false),
-            $backupErro
+            $backupError
         );
 
         if ($backupCreated && file_exists($backupFile) && filesize($backupFile) > 0) {
@@ -1803,9 +1808,9 @@ if (isset($_GET['action']) && $_GET['action'] === 'backup') {
                 if (file_exists($backupFile)) {
                     unlink($backupFile);
                 }
-            } elseif (empty($generatedScope['includes_dwemer']) || empty($generatedScope['includes_stobe'])) {
+            } elseif (empty($generatedScope['includes_dwemer']) || empty($generatedScope['includes_stobe']) || empty($generatedScope['includes_dialectic'])) {
                 $message = "<p><strong>Error:</strong> Manual backup validation failed.</p>";
-                $message .= "<p>Expected a combined HerikaServer + StobeServer backup, but detected: <strong>" . htmlspecialchars(strval($generatedScope['scope_label'] ?? 'unknown')) . "</strong>.</p>";
+                $message .= "<p>Expected a whole-setup CHIM + STOBE + DIALECTIC backup, but detected: <strong>" . htmlspecialchars(strval($generatedScope['scope_label'] ?? 'unknown')) . "</strong>.</p>";
                 $message .= "<p>The generated SQL file was not downloaded.</p>";
             } else {
                 // Successful backup - force download (streamed)
@@ -2777,7 +2782,7 @@ if ($isStorageFragment) {
         <div class="card-tile">
             <div class="card-content">
                 <h3>📦 Manual Backup</h3>
-                <p>Create a backup of your current CHIM and STOBE databases. This will generate one SQL file you can download.</p>
+                <p>Create one SQL file containing all tables and Playthrough Saves from CHIM, STOBE and DIALECTIC.</p>
                 <p style="color: #ccc; font-size: 14px;">Creates a one-time downloadable combined backup file.</p>
             </div>
             <div class="card-actions">
