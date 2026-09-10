@@ -442,7 +442,7 @@
         host.append(form);
     }
     async function cleanup(data,ticket) {
-        content.replaceChildren(toolbar('Cleanup','Expand a category to see its rules and preview what can be removed.'));
+        content.replaceChildren(toolbar('Cleanup','Turn on cleanup for the categories you want managed automatically, then save your settings. You can also preview and delete items manually.'));
         if (!capabilities?.cleanup_api) {
             content.append(note('Update this mod server to use cleanup settings.','sm-warning'),link('Manage Playthrough Saves',mod,'playthroughs'));
             return;
@@ -472,7 +472,7 @@
         };
         const total = el('div',null,'sm-storage-total');
         total.append(el('h3','Playthrough Storage'),el('strong',bytes(storage.database_bytes)));
-        form.append(total);
+        form.append(total,note('You can preview any category without enabling it. Nothing is deleted until you confirm.'));
         const rowFor = (key,label,description) => {
             const row = el('details',null,'sm-cleanup-row'), summary = el('summary');
             row.id='sm-cleanup-'+key; row.setAttribute('aria-label',label);
@@ -481,12 +481,12 @@
             row.append(summary,body); form.append(row); return {row,body};
         };
         const categoryPreview = (entry,key,label) => {
-            const preview = button('Preview cleanup',async()=>{
+            const preview = button('Preview deletion',async()=>{
                 if(!valid(entry.row))return;
                 const plan=previewOf(await perform(()=>retention('preview',{...values(),preview_category:key}),false));
                 if(plan) {renderPreview(plan,previewArea);previewArea.scrollIntoView({block:'nearest'});}
             });
-            preview.setAttribute('aria-label','Preview '+label+' cleanup');
+            preview.setAttribute('aria-label','Preview '+label+' deletion');
             preview.disabled=caps.category_preview!==true;
             if(preview.disabled)preview.title='Update the server to preview one category.';
             entry.body.append(preview);
@@ -494,28 +494,27 @@
         if(caps.category_preview!==true)form.append(note('Update the server to preview one category at a time.','sm-warning'));
         for(const category of categories) {
             const key=category.key, entry=rowFor(key,category.label,category.description || 'Troubleshooting logs.');
-            const on=field('Enable cleanup',key+'_enabled','checkbox',flag(key+'_enabled'));
+            const on=field('Clean up automatically',key+'_enabled','checkbox',flag(key+'_enabled'));
             const days=integerField('Older than (days)',key+'_days',num(key+'_days',7),1,3650,'Real-world days.');
-            const size=integerField('Size limit (MB)',key+'_max_mb',num(key+'_max_mb',0),0,102400,'0 = No limit. Applies to log data, not total disk space.');
+            const size=integerField('Size limit (MB)',key+'_max_mb',num(key+'_max_mb',0),0,102400,'0 = Unlimited. Applies to log data, not total disk space.');
             const pair=el('div',null,'sm-inline-fields');pair.append(keepInput(days,key+'_days'),keepInput(size,key+'_max_mb'));
             entry.body.append(keepInput(on,key+'_enabled'),pair);
             if(key==='requests')entry.body.append(keepInput(choiceField('Request logs to include','requests_filter',
                 [['all','All request logs'],['relationship','Relationship requests only']],settings.requests_filter || 'all'),'requests_filter'));
-            entry.body.append(note('Logs from the last 24 hours are kept. Preview checks only this category, even when its saved rule is off.'));
+            entry.body.append(note('Deletes older logs first when either the age or size limit is exceeded. Logs from the last 24 hours are kept.'));
             categoryPreview(entry,key,category.label);
         }
         if(caps.event_cleanup) {
             const events=rowFor('events','Events',measured.get('events')?.description || 'Raw gameplay and conversation history.');
-            events.body.append(keepInput(field('Enable cleanup (off by default)','events_enabled','checkbox',flag('events_enabled')),'events_enabled'));
+            events.body.append(keepInput(field('Clean up automatically (off by default)','events_enabled','checkbox',flag('events_enabled')),'events_enabled'));
             events.body.append(keepInput(integerField('Older than (in-game days)','events_days',num('events_days',30),1,3650,
                 'Measured from the latest recorded game time.'),'events_days'));
             events.body.append(note('Events recorded in the last 24 real-world hours, unfinished replies and the newest event of each type are kept.'));
-            events.body.append(note('Deleting events removes raw history used for conversations, recall and future diaries. Saved memories and diaries are kept, but they may not contain every detail. Create a Playthrough Save first if you may need this history.','sm-warning'));
-            events.body.append(note('Preview checks only Events, even when its saved rule is off.'));
+            events.body.append(note('Deleting event history can remove details used for NPC recall and future diaries. Existing memories and diaries are kept.','sm-warning'));
             categoryPreview(events,'events','Events');
         }
         const saves=rowFor('playthroughs','Playthrough Saves',measured.get('playthroughs')?.description || 'Saved copies of your mod data.');
-        saves.body.append(keepInput(field('Delete extra automatic saves','playthroughs_enabled','checkbox',flag('playthroughs_enabled')),'playthroughs_enabled'));
+        saves.body.append(keepInput(field('Clean up automatically','playthroughs_enabled','checkbox',flag('playthroughs_enabled')),'playthroughs_enabled'));
         saves.body.append(keepInput(integerField('Maximum automatic saves','playthrough_keep',num('playthrough_keep',0),0,10000,
             '0 = Unlimited. Above the limit, the oldest automatic saves are deleted first.'),'playthrough_keep'));
         saves.body.append(note('Manual, unclassified, active, default and protected saves are kept.'));
@@ -531,12 +530,12 @@
         const sizes=el('details',null,'sm-size-help');sizes.append(el('summary','About these sizes'),
             note('Category sizes include indexes and unused database space. Size limits apply to log data. A preview estimates only the entries selected for deletion; cleanup may not reduce files on disk.'));
         form.append(kept,sizes);
-        form.append(note('Enabled categories are cleaned up at most once an hour while the '+labels[mod]+' background service is running. Save settings to apply your changes.'));
+        form.append(note('Automatic cleanup runs at most once an hour while the '+labels[mod]+' background service is running.'));
         const last=state.last_run;
         if(last)form.append(note('Last cleanup · '+date(last.at)+' · '+(last.message || last.status),last.status==='failed'?'sm-error':'sm-help'));
         else form.append(note('No cleanup has run yet.'));
         const actions=el('div',null,'sm-actions');
-        actions.append(button('Save settings',()=>form.requestSubmit(),'sm-primary'),button('Preview all cleanup',async()=>{
+        actions.append(button('Save settings',()=>form.requestSubmit(),'sm-primary'),button('Preview enabled categories',async()=>{
             if(!valid(form))return;
             const plan=previewOf(await perform(()=>retention('preview',values()),false));
             if(plan){renderPreview(plan,previewArea);previewArea.scrollIntoView({block:'nearest'});}
@@ -546,14 +545,14 @@
         form.addEventListener('input',()=>{
             dirty=true;
             if(previewTimer)clearTimeout(previewTimer);
-            if(previewArea.firstChild)previewArea.replaceChildren(note('Settings changed. Preview again before deleting.','sm-warning'));
+            if(previewArea.firstChild)previewArea.replaceChildren(note('Unsaved changes. Preview again before deleting.','sm-warning'));
         });
         form.addEventListener('submit',event=>{
             event.preventDefault();if(!valid(form))return;
             const chosen=values();
             const run=()=>retention('save',chosen).then(()=>({ok:true,message:'Cleanup settings saved.'}));
             if(chosen.events_enabled==='1'&&(!flag('events_enabled')||Number(chosen.events_days)<num('events_days',30)))confirmAction('Save Events cleanup rules',
-                'Matching older events will be deleted during background cleanup. Your active Playthrough Save is kept.' + ' Deleting events removes raw history used for conversations, recall and future diaries. Saved memories and diaries are kept, but they may not contain every detail. Create a Playthrough Save first if you may need this history.',run,true);
+                'Matching older events will be deleted during background cleanup. Your active Playthrough Save is kept.' + ' Deleting event history can remove details used for NPC recall and future diaries. Existing memories and diaries are kept.',run,true);
             else perform(run,false);
         });
     }
@@ -579,7 +578,7 @@
         const events = plan.events;
         const eventText = typeof events === 'string' ? events : (events?.description || events?.message || '');
         box.append(note(eventText || 'Events are kept unless you choose Events cleanup. Unfinished replies and your active Playthrough Save are kept.','sm-warning'));
-        const run = button('Delete listed items',()=>confirmAction('Delete listed items',
+        const run = button('Delete now',()=>confirmAction('Delete now',
             'Permanently delete the ' + labels[mod] + ' entries and saves listed in this preview? Your active Playthrough Save is kept. This cannot be undone.' + (events?.rows > 0 ? ' ' + events.message : ''),
             ()=>retention('run',{preview_token:plan.token}).then(result=>({ok:true,message:result.result?.message || 'Cleanup finished.'}))),'sm-danger');
         run.disabled = !(events?.rows > 0 || saves.length || diagnostics.some(item => Number(item.rows) > 0));
