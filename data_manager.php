@@ -26,7 +26,7 @@ $config = ['csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_cs
 <main class="sm-shell">
     <header class="sm-header">
         <div><h1>Playthrough Saves</h1><p class="sm-muted">Save mod progress, clean up old logs and manage backups.</p></div>
-        <nav class="sm-actions" aria-label="Related pages"><button id="sm-refresh" type="button">Refresh</button><a class="sm-button" href="distro_debugger.php">Server Logs</a><a class="sm-button" href="index.php">Dashboard</a></nav>
+        <div class="sm-actions"><button id="sm-refresh" type="button">Refresh</button></div>
     </header>
     <nav class="sm-brand-tabs" aria-label="Choose a mod">
         <a class="sm-brand" data-mod="all" href="?mod=all"><img class="sm-brand-icon" src="images/kagrenac-icon.png" alt=""><span>Distro</span></a>
