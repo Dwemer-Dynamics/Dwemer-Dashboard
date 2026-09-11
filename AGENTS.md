@@ -26,3 +26,5 @@
 - Automatic older-game-save protection stays enabled; users adjust its in-game-day threshold. Cleanup evaluates enabled categories without a user-facing master toggle. Older-event cleanup is off by default; saved-copy retention has no maximum by default.
 - For routing changes, check all three products and absent-server behaviour. For cleanup or restore changes, verify target scope and rejection paths in disposable databases and temporary backup directories.
 - Never run destructive backup-restore, cleanup or fresh-playthrough tests against the user's active data. Do not treat an HTTP success as proof of restored content or in-game behaviour.
+
+- The shared manager includes the selected server's `playthrough_transfer_controls.php` only when its transfer endpoint is installed. Import/Download buttons delegate to that server's session/CSRF-protected transfer API; never duplicate archive parsing, table policy or profile mapping in Dashboard code.

@@ -10,7 +10,13 @@ foreach (['storage_csrf','ptm_csrf'] as $key) {
     if (empty($_SESSION[$key])) $_SESSION[$key] = bin2hex(random_bytes(32));
 }
 header('Cache-Control: no-store');
-$config = ['csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_csrf'], 'prefix'=>dm_url_prefix()];
+// Use the selected server's transfer UI and endpoint; the Dashboard owns no archive format.
+$transferMod=is_string($_GET['mod']??null)?$_GET['mod']:'';
+$transferProduct=dm_products()[$transferMod]??null;
+$transferRoot=$transferProduct?dm_server_root($transferProduct['dir']):null;
+$transferTemplate=$transferRoot?$transferRoot.'/ui/tmpl/playthrough_transfer_controls.php':null;
+$transferAvailable=$transferTemplate && is_file($transferTemplate) && is_file($transferRoot.'/ui/api/playthrough_transfer.php');
+$config = ['transferAvailable'=>(bool)$transferAvailable,'csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_csrf'], 'prefix'=>dm_url_prefix()];
 ?>
 <!doctype html>
 <html lang="en">
@@ -45,5 +51,6 @@ $config = ['csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_cs
     <div class="sm-dialog-body" id="sm-dialog-body"></div>
     <div class="sm-dialog-actions" id="sm-dialog-actions"></div>
 </dialog>
+<?php if ($transferAvailable) { $webRoot=dm_url_prefix().'/'.$transferProduct['dir'];include $transferTemplate; } ?>
 </body>
 </html>

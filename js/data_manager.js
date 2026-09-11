@@ -326,6 +326,7 @@
     }
     async function playthroughs(data, ticket) {
         const list = data.playthroughs, top = toolbar('Playthrough Saves','Save and restore your mod data. Use each Playthrough Save with its matching game save.',true);
+        if (config.transferAvailable) top.append(button('Import save',()=>{},'ptx-import'));
         top.append(button('New Playthrough Save',()=>newPlaythrough(),'sm-primary'));
         content.replaceChildren(top);
         if (!list.metadata_available && mod !== 'stobe') {
@@ -385,6 +386,11 @@
                 const remove = button('Delete',()=>confirmAction('Delete Playthrough Save','Permanently delete \u201c' + playthrough.name + '\u201d from ' + labels[mod] + '. Your current mod data and game saves are kept.',
                     ()=>action('delete_playthrough',{profile_id:playthrough.id})), 'sm-danger');
                 remove.disabled = playthrough.protected; remove.title = playthrough.protected ? 'Active, default and protected Playthrough Saves cannot be deleted.' : '';
+                if (config.transferAvailable && playthrough.storage_type==='schema') {
+                    const download=button('Download',()=>{},'ptx-download');
+                    download.dataset.profileId=String(playthrough.id);
+                    download.setAttribute('aria-label','Download '+playthrough.name);actions.append(download);
+                }
                 actions.append(restore,remove);
                 return [name,when,bytes(playthrough.size_bytes),actions];
             });
