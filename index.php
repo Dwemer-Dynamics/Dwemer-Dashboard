@@ -1194,7 +1194,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             position: relative;
             display: flex;
             align-items: flex-end;
-            min-height: 140px;
+            min-height: 180px;
             overflow: hidden;
             border: 1px solid #68717d;
             border-radius: 10px;
