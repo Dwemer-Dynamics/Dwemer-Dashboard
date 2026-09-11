@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/backup_settings.php';
+require_once __DIR__ . '/cluster_backup.php';
 /**
  * Dashboard-owned automatic backup management.
  * This is the source of truth for automatic database backups.
@@ -64,7 +66,10 @@ if (!function_exists('dashboardEnsureSettingsTable')) {
 if (!function_exists('dashboardReadSettingValue')) {
     function dashboardReadSettingValue($db, string $key): ?string
     {
-        dashboardEnsureSettingsTable($db);
+        if (!$db instanceof DashboardBackupSettings) $db = DashboardBackupSettings::shared();
+        // Viewing backup settings must not create tables or deduplicate user settings.
+        $exists = $db->fetchOne("SELECT to_regclass('chim_meta.settings') AS relation");
+        if (empty($exists['relation'])) return null;
         $quotedKey = method_exists($db, 'quote') ? $db->quote($key) : ("'" . str_replace("'", "''", $key) . "'");
         $row = $db->fetchOne("SELECT value FROM chim_meta.settings WHERE key = {$quotedKey}");
         if (is_array($row) && array_key_exists('value', $row)) {
@@ -77,6 +82,7 @@ if (!function_exists('dashboardReadSettingValue')) {
 if (!function_exists('dashboardWriteSettingValue')) {
     function dashboardWriteSettingValue($db, string $key, string $value): void
     {
+        if (!$db instanceof DashboardBackupSettings) $db = DashboardBackupSettings::shared();
         dashboardEnsureSettingsTable($db);
         $db->upsertRowOnConflict('chim_meta.settings', ['key' => $key, 'value' => $value], 'key');
     }
@@ -84,18 +90,12 @@ if (!function_exists('dashboardWriteSettingValue')) {
 
 class DashboardAutomaticBackup {
 
-    private const MULTI_DB_BACKUP_MARKER = '-- DWEMER_DASHBOARD_MULTI_DB_BACKUP_V1';
 
     private $backupDir;
     private $maxBackups = 5;
 
     public function __construct() {
         $this->backupDir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'databasebackups' . DIRECTORY_SEPARATOR;
-
-        if (!file_exists($this->backupDir)) {
-            mkdir($this->backupDir, 0755, true);
-            dashboardAutomaticBackupLogInfo("Created automatic backup directory: " . $this->backupDir);
-        }
 
         try {
             $db = $this->getDatabaseConnection();
@@ -134,122 +134,12 @@ class DashboardAutomaticBackup {
         return false;
     }
 
-    private function getDatabaseConfigs(): array
-    {
-        return [
-            [
-                'name' => 'dwemer',
-                'exclude_tables' => ['chim_meta.settings'],
-            ],
-            [
-                'name' => 'stobe',
-                'exclude_tables' => [],
-            ],
-            [
-                'name' => 'dialectic',
-                'exclude_tables' => [],
-            ],
-        ];
-    }
-
-    private function getBackupScopeSlug(): string
-    {
-        return 'herikaserver_stobeserver_dialecticserver';
-    }
-
-    private function appendFileToBackup(string $sourcePath, string $destPath): bool
-    {
-        $readHandle = @fopen($sourcePath, 'rb');
-        if ($readHandle === false) {
-            return false;
-        }
-
-        $writeHandle = @fopen($destPath, 'ab');
-        if ($writeHandle === false) {
-            fclose($readHandle);
-            return false;
-        }
-
-        $copied = stream_copy_to_stream($readHandle, $writeHandle);
-        fclose($readHandle);
-        fclose($writeHandle);
-
-        return $copied !== false;
-    }
-
-    private function createCombinedBackupFile(string $filepath, string $host, string $port, string $username, string &$errorMessage = ''): bool
-    {
-        $header = self::MULTI_DB_BACKUP_MARKER . PHP_EOL . "\\set ON_ERROR_STOP on" . PHP_EOL;
-        if (@file_put_contents($filepath, $header) === false) {
-            $errorMessage = 'Failed to initialize automatic backup file.';
-            return false;
-        }
-
-        foreach ($this->getDatabaseConfigs() as $config) {
-            $dbName = trim(strval($config['name'] ?? ''));
-            if ($dbName === '') {
-                continue;
-            }
-
-            $sectionHeader = PHP_EOL . "-- DATABASE: {$dbName}" . PHP_EOL . "\\connect {$dbName}" . PHP_EOL;
-            if (@file_put_contents($filepath, $sectionHeader, FILE_APPEND) === false) {
-                @unlink($filepath);
-                $errorMessage = "Failed to write {$dbName} backup section.";
-                return false;
-            }
-
-            $tmpFile = $filepath . '.' . $dbName . '.tmp';
-            $excludeArgs = '';
-            $excludeTables = is_array($config['exclude_tables'] ?? null) ? $config['exclude_tables'] : [];
-            foreach ($excludeTables as $tableName) {
-                $tableName = trim(strval($tableName));
-                if ($tableName !== '') {
-                    $excludeArgs .= ' -T ' . escapeshellarg($tableName);
-                }
-            }
-
-            $command = "HOME=/tmp pg_dump -h " . escapeshellarg($host)
-                . " -p " . escapeshellarg($port)
-                . " -U " . escapeshellarg($username)
-                . " -d " . escapeshellarg($dbName)
-                . $excludeArgs
-                . " > " . escapeshellarg($tmpFile) . " 2>&1";
-            $result = shell_exec($command);
-
-            if (!file_exists($tmpFile) || filesize($tmpFile) <= 0) {
-                @unlink($tmpFile);
-                @unlink($filepath);
-                $errorMessage = "Automatic backup creation failed for {$dbName}.";
-                if (is_string($result) && trim($result) !== '') {
-                    $errorMessage .= ' ' . trim(substr($result, 0, 500));
-                }
-                return false;
-            }
-
-            $firstChunk = strval(@file_get_contents($tmpFile, false, null, 0, 256));
-            if (strpos($firstChunk, 'pg_dump: error:') !== false || strpos($firstChunk, 'FATAL:') !== false) {
-                @unlink($tmpFile);
-                @unlink($filepath);
-                $errorMessage = "Automatic backup creation failed for {$dbName}: " . trim(substr($firstChunk, 0, 500));
-                return false;
-            }
-
-            if (!$this->appendFileToBackup($tmpFile, $filepath)) {
-                @unlink($tmpFile);
-                @unlink($filepath);
-                $errorMessage = "Failed to append {$dbName} dump to automatic backup.";
-                return false;
-            }
-
-            @unlink($tmpFile);
-        }
-
-        return true;
-    }
-
     public function createBackup() {
         if (!$this->isEnabled()) {
             dashboardAutomaticBackupLogInfo("Automatic backup skipped - feature is disabled");
+            return false;
+        }
+        if (!is_dir($this->backupDir) && !mkdir($this->backupDir, 0755, true) && !is_dir($this->backupDir)) {
             return false;
         }
 
@@ -257,7 +147,7 @@ class DashboardAutomaticBackup {
 
         try {
             $timestamp = date('Y-m-d_H-i-s');
-            $filename = "auto_backup_" . $this->getBackupScopeSlug() . "_{$timestamp}.sql";
+            $filename = "auto_backup_cluster_{$timestamp}.sql";
             $filepath = $this->backupDir . $filename;
 
             dashboardAutomaticBackupLogInfo("Creating backup file: " . $filename);
@@ -266,13 +156,8 @@ class DashboardAutomaticBackup {
             $port = '5432';
             $username = 'dwemer';
 
-            shell_exec('echo "localhost:5432:*:dwemer:dwemer" > /tmp/.pgpass; echo $?');
-            shell_exec('chmod 600 /tmp/.pgpass; echo $?');
-
-            dashboardAutomaticBackupLogInfo("Authentication setup complete");
-
             $backupError = '';
-            $backupCreated = $this->createCombinedBackupFile($filepath, $host, $port, $username, $backupError);
+            $backupCreated = dashboardCreateClusterBackup($filepath, $host, $port, $username, 'dwemer', $backupError);
 
             if ($backupCreated && file_exists($filepath) && filesize($filepath) > 0) {
                 $fileSize = filesize($filepath);
