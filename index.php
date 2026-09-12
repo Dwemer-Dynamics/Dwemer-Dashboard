@@ -306,7 +306,7 @@ $dbUpdateLines = [
     ['status' => $dialecticUpdateStatus, 'detail' => $dialecticUpdateDetail],
 ];
 
-$chimUrl = '/HerikaServer/ui/index.php';
+$chimUrl = '/HerikaServer/ui/home.php';
 $patreonCampaignUrl = 'https://www.patreon.com/DwemerDynamics';
 
 $requestHostRaw = trim((string)($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost')));
@@ -320,8 +320,13 @@ $stobeHostForUrl = $dashboardHost;
 if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[')) {
     $stobeHostForUrl = '[' . $stobeHostForUrl . ']';
 }
-$stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/index.php', $requestScheme, $stobeHostForUrl);
-$dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/index.php', $requestScheme, $stobeHostForUrl);
+$stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/home.php', $requestScheme, $stobeHostForUrl);
+$dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/home.php', $requestScheme, $stobeHostForUrl);
+$modCards = [
+    ['name' => 'CHIM', 'game' => 'Skyrim / Skyrim VR', 'image' => 'chim-rail.jpg', 'url' => $chimUrl, 'root' => $herikaRoot],
+    ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
+    ['name' => 'DIALECTIC', 'game' => 'Fallout: New Vegas / TTW', 'image' => 'dialectic-rail.jpg', 'url' => $dialecticUrl, 'root' => $dialecticRoot],
+];
 $distroDebuggerUrl = 'distro_debugger.php';
 $databaseManagerUrl = 'data_manager.php?mod=all&view=playthroughs';
 $databaseManagerLabel = 'Playthrough Saves';
@@ -1178,44 +1183,76 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             color: #ffffff;
         }
 
-        .dashboard-button.chim {
-            background-color: rgb(242, 124, 17);
-            border-color: rgba(242, 124, 17, 0.95);
-            color: #ffffff;
+        .dashboard-mods {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-top: 22px;
         }
 
-        .dashboard-button.chim:hover {
-            background-color: rgb(221, 106, 6);
-            border-color: rgba(221, 106, 6, 0.95);
+        .mod-card {
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+            min-height: 180px;
+            overflow: hidden;
+            border: 1px solid #68717d;
+            border-radius: 10px;
+            background: #17191c;
+            color: #fff;
+            text-align: left;
+            text-decoration: none;
         }
 
-        .dashboard-button.stobe {
-            background-color: #e6b76c;
+        .mod-card-art {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .mod-card-label {
+            position: relative;
+            width: 100%;
+            padding: 10px 14px;
+            background: rgba(0, 0, 0, 0.78);
+        }
+
+        .mod-card-name,
+        .mod-card-game,
+        .mod-card-status {
+            display: block;
+        }
+
+        .mod-card-name { font-size: 23px; line-height: 1.2; }
+        .mod-card-game { margin-top: 3px; font-size: 13px; color: #e0e0e0; }
+        .mod-card-status { margin-top: 4px; font-size: 13px; color: #e0e0e0; }
+
+        .mod-card[href]:hover {
             border-color: #e6b76c;
-            color: #ffffff;
+            box-shadow: 0 0 0 1px #e6b76c;
+            color: #fff;
+            text-decoration: none;
         }
 
-        .dashboard-button.stobe:hover {
-            background-color: #d2a45a;
-            border-color: #d2a45a;
+        .mod-card:focus-visible {
+            outline: 3px solid #f5ca82;
+            outline-offset: 4px;
         }
 
-        .dashboard-button.dialectic {
-            background-color: rgb(255, 182, 65);
-            border-color: rgb(255, 182, 65);
-            color: #17130d;
-        }
+        .mod-card[aria-disabled="true"] { border-color: #454950; cursor: not-allowed; }
+        .mod-card[aria-disabled="true"] .mod-card-art { filter: grayscale(1) brightness(0.45); }
 
-        .dashboard-button.dialectic:hover {
-            background-color: rgb(235, 160, 40);
-            border-color: rgb(235, 160, 40);
-            color: #17130d;
-        }
-
-        .dashboard-button.dialectic:focus-visible {
-            background-color: rgb(255, 182, 65);
-            border-color: rgb(255, 182, 65);
-            color: #17130d;
+        @media (max-width: 640px) {
+            .dashboard-mods { grid-template-columns: minmax(0, 1fr); }
+            .dashboard-shell { padding: 24px 18px; box-sizing: border-box; }
+            .dashboard-actions.dashboard-actions-secondary .dashboard-button {
+                min-width: 0;
+                width: 100%;
+                box-sizing: border-box;
+                font-size: 18px;
+            }
         }
 
         .dashboard-button.distro-debugger {
@@ -1345,25 +1382,27 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
     <main class="dashboard-layout">
         <section class="dashboard-shell">
             <h1 class="dashboard-title">Dwemer Dashboard</h1>
-            <div class="dashboard-actions">
-                <a class="dashboard-button chim" href="<?= htmlspecialchars($chimUrl, ENT_QUOTES, 'UTF-8') ?>">
-                    <span class="chim-brand">
-                        <img class="chim-brand-icon" src="images/chim-icon.png" alt="Dwemer Dynamics logo">
-                        <img class="chim-brand-main" src="images/chim-logo.png" alt="CHIM logo">
+            <div class="dashboard-mods" role="group" aria-label="Mods">
+                <?php foreach ($modCards as $mod):
+                    // Installation is local file presence, independent of update or service health.
+                    $installed = $mod['root'] !== '' && is_file($mod['root'] . '/ui/home.php');
+                ?>
+                <a class="mod-card"
+                    <?php if ($installed): ?>
+                        href="<?= htmlspecialchars($mod['url'], ENT_QUOTES, 'UTF-8') ?>"
+                        aria-label="Open <?= htmlspecialchars($mod['name'], ENT_QUOTES, 'UTF-8') ?>"
+                    <?php else: ?>
+                        role="link" aria-disabled="true" tabindex="-1"
+                        aria-label="<?= htmlspecialchars($mod['name'], ENT_QUOTES, 'UTF-8') ?> — Not installed"
+                    <?php endif; ?>>
+                    <img class="mod-card-art" src="images/<?= htmlspecialchars($mod['image'], ENT_QUOTES, 'UTF-8') ?>" alt="" width="416" height="124">
+                    <span class="mod-card-label">
+                        <strong class="mod-card-name"><?= htmlspecialchars($mod['name'], ENT_QUOTES, 'UTF-8') ?></strong>
+                        <span class="mod-card-game"><?= htmlspecialchars($mod['game'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <?php if (!$installed): ?><span class="mod-card-status">Not installed</span><?php endif; ?>
                     </span>
                 </a>
-                <a class="dashboard-button stobe" href="<?= htmlspecialchars($stobeUrl, ENT_QUOTES, 'UTF-8') ?>">
-                    <span class="chim-brand">
-                        <img class="chim-brand-icon" src="images/stobe-icon.png" alt="StobeServer icon">
-                        <img class="chim-brand-main" src="images/stobe-logo.png" alt="StobeServer logo">
-                    </span>
-                </a>
-                <a class="dashboard-button dialectic" href="<?= htmlspecialchars($dialecticUrl, ENT_QUOTES, 'UTF-8') ?>">
-                    <span class="chim-brand">
-                        <img class="chim-brand-icon" src="images/dialectic-icon.png" alt="DialecticServer icon">
-                        <img class="chim-brand-main" src="images/dialectic-logo.png" alt="DialecticServer logo">
-                    </span>
-                </a>
+                <?php endforeach; ?>
             </div>
             <div class="dashboard-actions dashboard-actions-secondary">
                 <a class="dashboard-button distro-debugger" href="<?= htmlspecialchars($distroDebuggerUrl, ENT_QUOTES, 'UTF-8') ?>">
