@@ -314,7 +314,7 @@ if (is_file('/opt/dwemerdistro/reign/current/ReignBetaServer')) {
             && $reignDbVersion === ($reignHealth['requiredDatabaseSchemaVersion'] ?? null)
             && ($reignHealth['databaseSchemaUpToDate'] ?? false) === true) {
             $reignUpdateStatus = 'ok';
-            $reignUpdateDetail = 'ReignServer database versioning check completed. Schema version ' . $reignDbVersion . '.';
+            $reignUpdateDetail = 'ReignServer database versioning check completed.';
         } else {
             $reignUpdateStatus = 'error';
             $reignUpdateDetail = 'ReignServer database version could not be verified. Update or repair Reign in the launcher.';
