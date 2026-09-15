@@ -1227,7 +1227,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card-reign { border-color: #c9a227; flex-direction: column; background: #080807; }
         .mod-card-reign .mod-card-art { position: relative; height: auto; aspect-ratio: 1672 / 941; object-fit: contain; }
         .mod-card-reign .mod-card-label { margin-top: auto; }
-        .mod-card-reign .mod-card-name { color: #ffd700; }
+        .mod-card-reign .mod-card-name { color: #f5f6f8; font-family: "Times New Roman", Times, serif; font-weight: normal; }
 
         .mod-card-name,
         .mod-card-game,
@@ -1394,20 +1394,21 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             <h1 class="dashboard-title">Dwemer Dashboard</h1>
             <div class="dashboard-mods" role="group" aria-label="Mods">
                 <?php foreach ($modCards as $mod):
+                    $displayName = $mod['name'] === 'REIGN' ? 'REIGN (Alpha)' : $mod['name'];
                     // Installation is local file presence, independent of update or service health.
                     $installed = $mod['root'] !== '' && is_file($mod['root'] . ($mod['name'] === 'REIGN' ? '/ReignBetaServer' : '/ui/home.php'));
                 ?>
                 <a class="mod-card<?= $mod['name'] === 'REIGN' ? ' mod-card-reign' : '' ?>"
                     <?php if ($installed): ?>
                         href="<?= htmlspecialchars($mod['url'], ENT_QUOTES, 'UTF-8') ?>"
-                        aria-label="Open <?= htmlspecialchars($mod['name'], ENT_QUOTES, 'UTF-8') ?>"
+                        aria-label="Open <?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?>"
                     <?php else: ?>
                         role="link" aria-disabled="true" tabindex="-1"
-                        aria-label="<?= htmlspecialchars($mod['name'], ENT_QUOTES, 'UTF-8') ?> — Not installed"
+                        aria-label="<?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?> — Not installed"
                     <?php endif; ?>>
                     <img class="mod-card-art" src="images/<?= htmlspecialchars($mod['image'], ENT_QUOTES, 'UTF-8') ?>" alt="" width="416" height="124">
                     <span class="mod-card-label">
-                        <strong class="mod-card-name"><?= htmlspecialchars($mod['name'], ENT_QUOTES, 'UTF-8') ?></strong>
+                        <strong class="mod-card-name"><?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?></strong>
                         <span class="mod-card-game"><?= htmlspecialchars($mod['game'], ENT_QUOTES, 'UTF-8') ?></span>
                         <?php if (!$installed): ?><span class="mod-card-status">Not installed</span><?php endif; ?>
                     </span>
