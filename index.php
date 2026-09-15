@@ -300,10 +300,33 @@ if (function_exists('deferredDashboardAutomaticBackupInit')) {
     deferredDashboardAutomaticBackupInit();
 }
 
+// Reign applies migrations before accepting requests; inspect its managed runtime, never launch a second server.
+$reignUpdateStatus = 'unavailable';
+$reignUpdateDetail = 'ReignServer is not installed; database versioning was not checked.';
+if (is_file('/opt/dwemerdistro/reign/current/ReignBetaServer')) {
+    $reignUpdateDetail = 'ReignServer is stopped or unavailable; database versioning will be checked when it starts.';
+    $reignHealthJson = @file_get_contents('http://127.0.0.1:5101/health', false,
+        stream_context_create(['http' => ['timeout' => 2, 'follow_location' => 0]]), 0, 16384);
+    $reignHealth = $reignHealthJson === false ? null : json_decode($reignHealthJson, true);
+    if (is_array($reignHealth) && ($reignHealth['service'] ?? '') === 'BannerlordReignServer') {
+        $reignDbVersion = $reignHealth['databaseSchemaVersion'] ?? null;
+        if (($reignHealth['ok'] ?? false) === true && is_int($reignDbVersion) && $reignDbVersion > 0
+            && $reignDbVersion === ($reignHealth['requiredDatabaseSchemaVersion'] ?? null)
+            && ($reignHealth['databaseSchemaUpToDate'] ?? false) === true) {
+            $reignUpdateStatus = 'ok';
+            $reignUpdateDetail = 'ReignServer database versioning check completed. Schema version ' . $reignDbVersion . '.';
+        } else {
+            $reignUpdateStatus = 'error';
+            $reignUpdateDetail = 'ReignServer database version could not be verified. Update or repair Reign in the launcher.';
+        }
+    }
+}
+
 $dbUpdateLines = [
     ['status' => $herikaUpdateStatus, 'detail' => $herikaUpdateDetail],
     ['status' => $stobeUpdateStatus, 'detail' => $stobeUpdateDetail],
     ['status' => $dialecticUpdateStatus, 'detail' => $dialecticUpdateDetail],
+    ['status' => $reignUpdateStatus, 'detail' => $reignUpdateDetail],
 ];
 
 $chimUrl = '/HerikaServer/ui/home.php';
