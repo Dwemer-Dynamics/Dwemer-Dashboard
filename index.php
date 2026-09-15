@@ -924,6 +924,30 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             font-style: normal;
         }
 
+        @font-face {
+            font-family: 'Pelagiad';
+            src: url('css/font/Pelagiad.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Rye';
+            src: url('css/font/Rye-Regular.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Share Tech Mono';
+            src: url('css/font/ShareTechMono-Regular.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+        }
+
         body {
             margin: 0;
             min-height: 100vh;
@@ -1231,6 +1255,9 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card-reign .mod-card-art { position: relative; height: auto; aspect-ratio: 1672 / 941; object-fit: contain; }
         .mod-card-reign .mod-card-label { margin-top: auto; }
         .mod-card-reign .mod-card-name { color: #f5f6f8; font-family: "Times New Roman", Times, serif; font-weight: normal; }
+        .mod-card-chim .mod-card-name { font-family: 'Pelagiad', serif; font-weight: normal; }
+        .mod-card-stobe .mod-card-name { font-family: 'Rye', serif; font-weight: normal; }
+        .mod-card-dialectic .mod-card-name { font-family: 'Share Tech Mono', monospace; font-weight: normal; }
 
         .mod-card-name,
         .mod-card-game,
