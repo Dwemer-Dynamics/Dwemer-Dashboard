@@ -1447,7 +1447,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             <h1 class="dashboard-title">Dwemer Dashboard</h1>
             <div class="dashboard-mods" role="group" aria-label="Mods">
                 <?php foreach ($modCards as $mod):
-                    $displayName = $mod['name'] === 'REIGN' ? 'REIGN (Alpha)' : $mod['name'];
+                    $displayName = $mod['name'] === 'REIGN' ? 'REIGN (Closed Alpha)' : $mod['name'];
                     // Installation is local file presence, independent of update or service health.
                     $installed = $mod['root'] !== '' && is_file($mod['root'] . ($mod['name'] === 'REIGN' ? '/ReignBetaServer' : '/ui/home.php'));
                 ?>
