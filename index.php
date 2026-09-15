@@ -322,10 +322,13 @@ if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[
 }
 $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/home.php', $requestScheme, $stobeHostForUrl);
+$reignUrl = sprintf('%s://%s:8089/', $requestScheme, $stobeHostForUrl);
 $modCards = [
     ['name' => 'CHIM', 'game' => 'Skyrim / Skyrim VR', 'image' => 'chim-rail.jpg', 'url' => $chimUrl, 'root' => $herikaRoot],
     ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
     ['name' => 'DIALECTIC', 'game' => 'Fallout: New Vegas / TTW', 'image' => 'dialectic-rail.jpg', 'url' => $dialecticUrl, 'root' => $dialecticRoot],
+    ['name' => 'REIGN', 'game' => 'Mount & Blade II: Bannerlord', 'image' => 'reign-logo.png', 'url' => $reignUrl,
+        'root' => is_file('/opt/dwemerdistro/reign/current/ReignBetaServer') ? '/opt/dwemerdistro/reign/current' : ''],
 ];
 $distroDebuggerUrl = 'distro_debugger.php';
 $databaseManagerUrl = 'data_manager.php?mod=all&view=playthroughs';
@@ -942,6 +945,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         .dashboard-shell {
             width: 100%;
+            box-sizing: border-box;
             background: rgba(24, 28, 35, 0.95);
             border: 1px solid rgba(138, 155, 182, 0.25);
             border-radius: 14px;
@@ -1185,7 +1189,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         .dashboard-mods {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 14px;
             margin-top: 22px;
         }
@@ -1215,9 +1219,15 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card-label {
             position: relative;
             width: 100%;
+            box-sizing: border-box;
             padding: 10px 14px;
             background: rgba(0, 0, 0, 0.78);
         }
+
+        .mod-card-reign { border-color: #c9a227; flex-direction: column; background: #080807; }
+        .mod-card-reign .mod-card-art { position: relative; height: auto; aspect-ratio: 1672 / 941; object-fit: contain; }
+        .mod-card-reign .mod-card-label { margin-top: auto; }
+        .mod-card-reign .mod-card-name { color: #ffd700; }
 
         .mod-card-name,
         .mod-card-game,
@@ -1353,7 +1363,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             color: #ef6b6b;
         }
 
-        @media (max-width: 1080px) {
+        @media (max-width: 1740px) {
             .dashboard-layout {
                 width: min(980px, 94vw);
             }
@@ -1385,9 +1395,9 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             <div class="dashboard-mods" role="group" aria-label="Mods">
                 <?php foreach ($modCards as $mod):
                     // Installation is local file presence, independent of update or service health.
-                    $installed = $mod['root'] !== '' && is_file($mod['root'] . '/ui/home.php');
+                    $installed = $mod['root'] !== '' && is_file($mod['root'] . ($mod['name'] === 'REIGN' ? '/ReignBetaServer' : '/ui/home.php'));
                 ?>
-                <a class="mod-card"
+                <a class="mod-card<?= $mod['name'] === 'REIGN' ? ' mod-card-reign' : '' ?>"
                     <?php if ($installed): ?>
                         href="<?= htmlspecialchars($mod['url'], ENT_QUOTES, 'UTF-8') ?>"
                         aria-label="Open <?= htmlspecialchars($mod['name'], ENT_QUOTES, 'UTF-8') ?>"
