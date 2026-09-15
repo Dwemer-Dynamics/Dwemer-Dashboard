@@ -1200,7 +1200,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             align-items: flex-end;
             min-height: 180px;
             overflow: hidden;
-            border: 1px solid #68717d;
+            border: 1px solid var(--mod-card-accent, #68717d);
             border-radius: 10px;
             background: #17191c;
             color: #fff;
@@ -1224,7 +1224,10 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             background: rgba(0, 0, 0, 0.78);
         }
 
-        .mod-card-reign { border-color: #c9a227; flex-direction: column; background: #080807; }
+        .mod-card-chim { --mod-card-accent: #f27c11; }
+        .mod-card-stobe { --mod-card-accent: #e6b76c; }
+        .mod-card-dialectic { --mod-card-accent: #ffb641; }
+        .mod-card-reign { --mod-card-accent: #c9a227; flex-direction: column; background: #080807; }
         .mod-card-reign .mod-card-art { position: relative; height: auto; aspect-ratio: 1672 / 941; object-fit: contain; }
         .mod-card-reign .mod-card-label { margin-top: auto; }
         .mod-card-reign .mod-card-name { color: #f5f6f8; font-family: "Times New Roman", Times, serif; font-weight: normal; }
@@ -1240,18 +1243,18 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card-status { margin-top: 4px; font-size: 13px; color: #e0e0e0; }
 
         .mod-card[href]:hover {
-            border-color: #e6b76c;
-            box-shadow: 0 0 0 1px #e6b76c;
+            border-color: var(--mod-card-accent, #68717d);
+            box-shadow: 0 0 0 1px var(--mod-card-accent, #68717d);
             color: #fff;
             text-decoration: none;
         }
 
         .mod-card:focus-visible {
-            outline: 3px solid #f5ca82;
+            outline: 3px solid var(--mod-card-accent, #68717d);
             outline-offset: 4px;
         }
 
-        .mod-card[aria-disabled="true"] { border-color: #454950; cursor: not-allowed; }
+        .mod-card[aria-disabled="true"] { cursor: not-allowed; }
         .mod-card[aria-disabled="true"] .mod-card-art { filter: grayscale(1) brightness(0.45); }
 
         @media (max-width: 640px) {
@@ -1398,7 +1401,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                     // Installation is local file presence, independent of update or service health.
                     $installed = $mod['root'] !== '' && is_file($mod['root'] . ($mod['name'] === 'REIGN' ? '/ReignBetaServer' : '/ui/home.php'));
                 ?>
-                <a class="mod-card<?= $mod['name'] === 'REIGN' ? ' mod-card-reign' : '' ?>"
+                <a class="mod-card mod-card-<?= htmlspecialchars(strtolower($mod['name']), ENT_QUOTES, 'UTF-8') ?>"
                     <?php if ($installed): ?>
                         href="<?= htmlspecialchars($mod['url'], ENT_QUOTES, 'UTF-8') ?>"
                         aria-label="Open <?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?>"
