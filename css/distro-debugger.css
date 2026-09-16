@@ -212,7 +212,8 @@ body {
 
 .tab-button[data-tab="chim"].active,
 .tab-button[data-tab="dialectic"].active,
-.tab-button[data-tab="stobe"].active {
+.tab-button[data-tab="stobe"].active,
+.tab-button[data-tab="reign"].active {
     box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.14), inset 0 1px rgba(255, 255, 255, 0.18);
     filter: saturate(1.03);
 }
@@ -240,19 +241,22 @@ body {
     border-color: #e6b76c;
 }
 
-/* Keep REIGN's gold accent and serif title consistent with the launcher. */
+/* Match the other mod tabs with a solid brand colour and supplied wordmark. */
 .tab-button[data-tab="reign"] {
-    border-color: #c9a227;
-    background-color: #302712;
+    border-color: #927016;
+    background-color: #927016;
     color: #fff;
-    font-family: "Times New Roman", Times, serif;
-    font-size: 24px;
 }
 
-.tab-button[data-tab="reign"]:hover,
 .tab-button[data-tab="reign"].active {
-    border-color: #e2bd4c;
-    background-color: #58451b;
+    border-color: #927016;
+    background-color: #927016;
+    color: #fff;
+}
+
+.tab-button[data-tab="reign"]:hover {
+    border-color: #7d5f12;
+    background-color: #7d5f12;
     color: #fff;
 }
 

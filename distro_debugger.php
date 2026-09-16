@@ -1823,7 +1823,8 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
             <img class="tab-button-logo" src="images/dialectic-logo.png" alt="Dialectic">
         </button>
         <button class="tab-button<?= $initialServerTab === 'reign' ? ' active' : '' ?>" type="button" data-tab="reign" role="tab" aria-selected="<?= $initialServerTab === 'reign' ? 'true' : 'false' ?>" aria-controls="tab-reign">
-            <span>REIGN</span>
+            <img class="tab-button-icon" src="images/reign-icon.webp" alt="" aria-hidden="true">
+            <img class="tab-button-logo" src="images/reign-server-logo.png" alt="REIGN">
         </button>
     </div>
 
