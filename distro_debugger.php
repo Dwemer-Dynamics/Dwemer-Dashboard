@@ -594,8 +594,29 @@ function renderLogSection(array $source): void
     $contextBlocks = [];
     $outputBlocks = [];
 
+    $apiError = '';
+    $reignLog = strval($source['reign_log'] ?? '');
+    if (in_array($reignLog, ['server-log.jsonl', 'llm-log.jsonl'], true)) {
+        // Use the server's bounded log API without granting Apache access to private data.
+        $displayPath = 'ReignServer / ' . $reignLog;
+        $response = @file_get_contents('http://127.0.0.1:5101/api/logs?limit=500&file=' . rawurlencode($reignLog), false,
+            stream_context_create(['http' => ['timeout' => 3, 'follow_location' => 0]]), 0, 1048577);
+        $payload = $response !== false && strlen($response) <= 1048576 ? json_decode($response, true) : null;
+        $exists = $readable = is_array($payload) && ($payload['ok'] ?? false) === true && is_array($payload['entries'] ?? null);
+        if ($readable) {
+            foreach (array_reverse(array_slice($payload['entries'], 0, 500)) as $entry) {
+                $rawLines[] = strval(json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
+            }
+            $fileSize = strlen(implode("\n", $rawLines));
+        } else {
+            $apiError = 'ReignServer logs are unavailable. Start Reign in the launcher, then refresh. If it cannot start, use Download Logs for startup diagnostics.';
+        }
+    }
+
     if ($exists && $readable) {
-        $rawLines = tailFile($resolvedPath, 6000);
+        if ($reignLog === '') {
+            $rawLines = tailFile($resolvedPath, 6000);
+        }
         if ($isLlmContextMode) {
             $contextBlocks = parseLlmContextBlocks($rawLines);
         } elseif ($isLlmOutputMode) {
@@ -650,7 +671,9 @@ function renderLogSection(array $source): void
     }
 
     echo '<div class="log-container" id="' . h($id) . '_container" data-level-filter="' . (($rawMode || $isSpecialMode) ? '0' : '1') . '">';
-    if (!$exists) {
+    if ($apiError !== '') {
+        echo '<div class="info-message">' . h($apiError) . '</div>';
+    } elseif (!$exists) {
         echo '<div class="info-message">Log file does not exist yet.';
         if (count($candidates) > 0) {
             echo '<div class="checked-paths">';
@@ -1406,11 +1429,17 @@ $dialecticLogSources = [
     ],
 ];
 
+$reignLogSources = [
+    ['id' => 'reign_server', 'title' => 'REIGN Server Events', 'reign_log' => 'server-log.jsonl', 'raw' => true],
+    ['id' => 'reign_llm', 'title' => 'REIGN LLM Requests', 'reign_log' => 'llm-log.jsonl', 'raw' => true],
+];
+
 $logSourcesByPanel = [
     'distro' => $distroLogSources,
     'chim' => $chimLogSources,
     'stobe' => $stobeLogSources,
     'dialectic' => $dialecticLogSources,
+    'reign' => $reignLogSources,
 ];
 
 $requestedLogPanel = strtolower(trim(strval($_GET['log_panel'] ?? '')));
@@ -1793,6 +1822,9 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
             <img class="tab-button-icon" src="images/dialectic-icon.png" alt="" aria-hidden="true">
             <img class="tab-button-logo" src="images/dialectic-logo.png" alt="Dialectic">
         </button>
+        <button class="tab-button<?= $initialServerTab === 'reign' ? ' active' : '' ?>" type="button" data-tab="reign" role="tab" aria-selected="<?= $initialServerTab === 'reign' ? 'true' : 'false' ?>" aria-controls="tab-reign">
+            <span>REIGN</span>
+        </button>
     </div>
 
     <section class="tab-panel<?= $initialServerTab === 'distro' ? ' active' : '' ?>" id="tab-distro" role="tabpanel" data-log-panel="distro" data-loaded="<?= $initialServerTab === 'distro' ? '1' : '0' ?>">
@@ -1954,6 +1986,46 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
         <div class="file-log-grid" data-log-grid="stobe" aria-live="polite">
             <?php if ($initialServerTab === 'stobe'): ?>
             <?php foreach ($stobeLogSources as $source): ?>
+                <?php renderLogSection($source); ?>
+            <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+    </section>
+
+    <section class="tab-panel<?= $initialServerTab === 'reign' ? ' active' : '' ?>" id="tab-reign" role="tabpanel" data-log-panel="reign" data-loaded="<?= $initialServerTab === 'reign' ? '1' : '0' ?>">
+        <div class="title-container">
+            <h2>REIGN Server Logs</h2>
+            <div class="toolbar-actions">
+                <a class="refresh-button diagnostics-button" href="http://127.0.0.1:7135/download-diagnostics" target="diagnosticsDownloadFrame" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
+                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
+                    <span>Download Logs</span>
+                </a>
+                <button class="refresh-button tab-refresh-button" type="button" data-panel="tab-reign" title="Reload REIGN logs">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 0 0-5 5H1l3.5 3.5L8 8H6a2 2 0 1 1 2 2v2a4 4 0 1 0-4-4H2a6 6 0 1 1 6 6v-2a4 4 0 0 0 0-8z"/></svg>
+                    <span>Refresh Logs</span>
+                </button>
+                <button class="refresh-button tab-timezone-button" type="button" title="Toggle UTC/local browser time">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/></svg>
+                    <span>Timezone: UTC</span>
+                </button>
+                <div class="toolbar-menu" data-toolbar-menu>
+                    <button class="refresh-button toolbar-menu-toggle" type="button" id="toolbarMenuButton-reign" aria-haspopup="menu" aria-expanded="false" aria-controls="toolbarMenu-reign" title="More REIGN log options">
+                        <span>Other Logs</span>
+                        <svg class="toolbar-menu-caret" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.5 5.5h9L8 11z"/></svg>
+                    </button>
+                    <div class="toolbar-menu-panel" id="toolbarMenu-reign" role="menu" aria-labelledby="toolbarMenuButton-reign" hidden>
+                        <button class="toolbar-menu-item tab-download-button" type="button" role="menuitem" data-panel="tab-reign" data-download-prefix="reign">
+                            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0a1 1 0 0 1 1 1v6h2.586l-2.293 2.293a1 1 0 0 1-1.414 0L5.586 7H8V1a1 1 0 0 1 1-1zM4 11h8a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2z"/></svg>
+                            <span>Download visible logs (.txt)</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="title-helper">Latest 500 entries per log. Download Logs includes process startup logs and traces.</div>
+        <div class="file-log-grid" data-log-grid="reign" aria-live="polite">
+            <?php if ($initialServerTab === 'reign'): ?>
+            <?php foreach ($reignLogSources as $source): ?>
                 <?php renderLogSection($source); ?>
             <?php endforeach; ?>
             <?php endif; ?>
