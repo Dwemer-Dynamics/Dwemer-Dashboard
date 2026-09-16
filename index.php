@@ -986,7 +986,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         }
 
         .dashboard-layout {
-            width: min(980px, 95vw);
+            width: min(1200px, 95vw);
             box-sizing: border-box;
         }
 
@@ -1307,6 +1307,10 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card[aria-disabled="true"] { cursor: not-allowed; }
         .mod-card[aria-disabled="true"] .mod-card-art { filter: grayscale(1) brightness(0.45); }
 
+        @media (max-width: 1000px) {
+            .dashboard-mods { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+
         @media (max-width: 640px) {
             .dashboard-mods { grid-template-columns: minmax(0, 1fr); }
             .dashboard-shell { padding: 24px 18px; box-sizing: border-box; }
@@ -1416,9 +1420,9 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             color: #ef6b6b;
         }
 
-        @media (max-width: 1740px) {
+        @media (max-width: 2000px) {
             .dashboard-layout {
-                width: min(980px, 94vw);
+                width: min(1200px, 94vw);
             }
 
             .patron-shell {
