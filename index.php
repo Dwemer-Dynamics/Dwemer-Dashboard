@@ -303,7 +303,7 @@ if (function_exists('deferredDashboardAutomaticBackupInit')) {
 // Reign applies migrations before accepting requests; inspect its managed runtime, never launch a second server.
 $reignUpdateStatus = 'unavailable';
 $reignUpdateDetail = 'ReignServer is not installed; database versioning was not checked.';
-if (is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer')) {
+if ((is_file('/var/www/html/ReignServer/runtime/current/ReignServer') || is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer'))) {
     $reignUpdateDetail = 'ReignServer is stopped or unavailable; database versioning will be checked when it starts.';
     $reignHealthJson = @file_get_contents('http://127.0.0.1:5101/health', false,
         stream_context_create(['http' => ['timeout' => 2, 'follow_location' => 0]]), 0, 16384);
@@ -351,7 +351,7 @@ $modCards = [
     ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
     ['name' => 'DIALECTIC', 'game' => 'Fallout: New Vegas / TTW', 'image' => 'dialectic-rail.jpg', 'url' => $dialecticUrl, 'root' => $dialecticRoot],
     ['name' => 'REIGN', 'game' => 'Mount & Blade II: Bannerlord', 'image' => 'reign-logo.png', 'url' => $reignUrl,
-        'root' => is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer') ? '/var/www/html/ReignServer/runtime/current' : ''],
+        'root' => (is_file('/var/www/html/ReignServer/runtime/current/ReignServer') || is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer')) ? '/var/www/html/ReignServer/runtime/current' : ''],
 ];
 $distroDebuggerUrl = 'distro_debugger.php';
 $databaseManagerUrl = 'data_manager.php?mod=all&view=playthroughs';
@@ -986,7 +986,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         }
 
         .dashboard-layout {
-            width: min(980px, 95vw);
+            width: min(1200px, 95vw);
             box-sizing: border-box;
         }
 
@@ -1307,6 +1307,10 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card[aria-disabled="true"] { cursor: not-allowed; }
         .mod-card[aria-disabled="true"] .mod-card-art { filter: grayscale(1) brightness(0.45); }
 
+        @media (max-width: 1000px) {
+            .dashboard-mods { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+
         @media (max-width: 640px) {
             .dashboard-mods { grid-template-columns: minmax(0, 1fr); }
             .dashboard-shell { padding: 24px 18px; box-sizing: border-box; }
@@ -1416,9 +1420,9 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             color: #ef6b6b;
         }
 
-        @media (max-width: 1740px) {
+        @media (max-width: 2000px) {
             .dashboard-layout {
-                width: min(980px, 94vw);
+                width: min(1200px, 94vw);
             }
 
             .patron-shell {
@@ -1449,7 +1453,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 <?php foreach ($modCards as $mod):
                     $displayName = $mod['name'] === 'REIGN' ? 'REIGN (Closed Alpha)' : $mod['name'];
                     // Installation is local file presence, independent of update or service health.
-                    $installed = $mod['root'] !== '' && is_file($mod['root'] . ($mod['name'] === 'REIGN' ? '/ReignBetaServer' : '/ui/home.php'));
+                    $installed = $mod['root'] !== '' && ($mod['name'] === 'REIGN' ? (is_file($mod['root'] . '/ReignServer') || is_file($mod['root'] . '/ReignBetaServer')) : is_file($mod['root'] . '/ui/home.php'));
                 ?>
                 <a class="mod-card mod-card-<?= htmlspecialchars(strtolower($mod['name']), ENT_QUOTES, 'UTF-8') ?>"
                     <?php if ($installed): ?>
