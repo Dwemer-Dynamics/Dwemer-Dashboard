@@ -303,7 +303,7 @@ if (function_exists('deferredDashboardAutomaticBackupInit')) {
 // Reign applies migrations before accepting requests; inspect its managed runtime, never launch a second server.
 $reignUpdateStatus = 'unavailable';
 $reignUpdateDetail = 'ReignServer is not installed; database versioning was not checked.';
-if (is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer')) {
+if ((is_file('/var/www/html/ReignServer/runtime/current/ReignServer') || is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer'))) {
     $reignUpdateDetail = 'ReignServer is stopped or unavailable; database versioning will be checked when it starts.';
     $reignHealthJson = @file_get_contents('http://127.0.0.1:5101/health', false,
         stream_context_create(['http' => ['timeout' => 2, 'follow_location' => 0]]), 0, 16384);
@@ -351,7 +351,7 @@ $modCards = [
     ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
     ['name' => 'DIALECTIC', 'game' => 'Fallout: New Vegas / TTW', 'image' => 'dialectic-rail.jpg', 'url' => $dialecticUrl, 'root' => $dialecticRoot],
     ['name' => 'REIGN', 'game' => 'Mount & Blade II: Bannerlord', 'image' => 'reign-logo.png', 'url' => $reignUrl,
-        'root' => is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer') ? '/var/www/html/ReignServer/runtime/current' : ''],
+        'root' => (is_file('/var/www/html/ReignServer/runtime/current/ReignServer') || is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer')) ? '/var/www/html/ReignServer/runtime/current' : ''],
 ];
 $distroDebuggerUrl = 'distro_debugger.php';
 $databaseManagerUrl = 'data_manager.php?mod=all&view=playthroughs';
@@ -1449,7 +1449,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 <?php foreach ($modCards as $mod):
                     $displayName = $mod['name'] === 'REIGN' ? 'REIGN (Closed Alpha)' : $mod['name'];
                     // Installation is local file presence, independent of update or service health.
-                    $installed = $mod['root'] !== '' && is_file($mod['root'] . ($mod['name'] === 'REIGN' ? '/ReignBetaServer' : '/ui/home.php'));
+                    $installed = $mod['root'] !== '' && ($mod['name'] === 'REIGN' ? (is_file($mod['root'] . '/ReignServer') || is_file($mod['root'] . '/ReignBetaServer')) : is_file($mod['root'] . '/ui/home.php'));
                 ?>
                 <a class="mod-card mod-card-<?= htmlspecialchars(strtolower($mod['name']), ENT_QUOTES, 'UTF-8') ?>"
                     <?php if ($installed): ?>
