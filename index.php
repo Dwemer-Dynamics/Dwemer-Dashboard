@@ -303,7 +303,7 @@ if (function_exists('deferredDashboardAutomaticBackupInit')) {
 // Reign applies migrations before accepting requests; inspect its managed runtime, never launch a second server.
 $reignUpdateStatus = 'unavailable';
 $reignUpdateDetail = 'ReignServer is not installed; database versioning was not checked.';
-if (is_file('/opt/dwemerdistro/reign/current/ReignBetaServer')) {
+if (is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer')) {
     $reignUpdateDetail = 'ReignServer is stopped or unavailable; database versioning will be checked when it starts.';
     $reignHealthJson = @file_get_contents('http://127.0.0.1:5101/health', false,
         stream_context_create(['http' => ['timeout' => 2, 'follow_location' => 0]]), 0, 16384);
@@ -351,7 +351,7 @@ $modCards = [
     ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
     ['name' => 'DIALECTIC', 'game' => 'Fallout: New Vegas / TTW', 'image' => 'dialectic-rail.jpg', 'url' => $dialecticUrl, 'root' => $dialecticRoot],
     ['name' => 'REIGN', 'game' => 'Mount & Blade II: Bannerlord', 'image' => 'reign-logo.png', 'url' => $reignUrl,
-        'root' => is_file('/opt/dwemerdistro/reign/current/ReignBetaServer') ? '/opt/dwemerdistro/reign/current' : ''],
+        'root' => is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer') ? '/var/www/html/ReignServer/runtime/current' : ''],
 ];
 $distroDebuggerUrl = 'distro_debugger.php';
 $databaseManagerUrl = 'data_manager.php?mod=all&view=playthroughs';
