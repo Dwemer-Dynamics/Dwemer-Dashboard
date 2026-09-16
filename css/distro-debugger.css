@@ -240,6 +240,27 @@ body {
     border-color: #e6b76c;
 }
 
+/* Keep REIGN's gold accent and serif title consistent with the launcher. */
+.tab-button[data-tab="reign"] {
+    border-color: #c9a227;
+    background-color: #302712;
+    color: #fff;
+    font-family: "Times New Roman", Times, serif;
+    font-size: 24px;
+}
+
+.tab-button[data-tab="reign"]:hover,
+.tab-button[data-tab="reign"].active {
+    border-color: #e2bd4c;
+    background-color: #58451b;
+    color: #fff;
+}
+
+.tab-button[data-tab="reign"]:focus-visible {
+    outline: 2px solid #e2bd4c;
+    outline-offset: 3px;
+}
+
 .tab-panel {
     display: none;
 }

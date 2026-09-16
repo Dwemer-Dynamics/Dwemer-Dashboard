@@ -300,10 +300,33 @@ if (function_exists('deferredDashboardAutomaticBackupInit')) {
     deferredDashboardAutomaticBackupInit();
 }
 
+// Reign applies migrations before accepting requests; inspect its managed runtime, never launch a second server.
+$reignUpdateStatus = 'unavailable';
+$reignUpdateDetail = 'ReignServer is not installed; database versioning was not checked.';
+if (is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer')) {
+    $reignUpdateDetail = 'ReignServer is stopped or unavailable; database versioning will be checked when it starts.';
+    $reignHealthJson = @file_get_contents('http://127.0.0.1:5101/health', false,
+        stream_context_create(['http' => ['timeout' => 2, 'follow_location' => 0]]), 0, 16384);
+    $reignHealth = $reignHealthJson === false ? null : json_decode($reignHealthJson, true);
+    if (is_array($reignHealth) && ($reignHealth['service'] ?? '') === 'BannerlordReignServer') {
+        $reignDbVersion = $reignHealth['databaseSchemaVersion'] ?? null;
+        if (($reignHealth['ok'] ?? false) === true && is_int($reignDbVersion) && $reignDbVersion > 0
+            && $reignDbVersion === ($reignHealth['requiredDatabaseSchemaVersion'] ?? null)
+            && ($reignHealth['databaseSchemaUpToDate'] ?? false) === true) {
+            $reignUpdateStatus = 'ok';
+            $reignUpdateDetail = 'ReignServer database versioning check completed.';
+        } else {
+            $reignUpdateStatus = 'error';
+            $reignUpdateDetail = 'ReignServer database version could not be verified. Update or repair Reign in the launcher.';
+        }
+    }
+}
+
 $dbUpdateLines = [
     ['status' => $herikaUpdateStatus, 'detail' => $herikaUpdateDetail],
     ['status' => $stobeUpdateStatus, 'detail' => $stobeUpdateDetail],
     ['status' => $dialecticUpdateStatus, 'detail' => $dialecticUpdateDetail],
+    ['status' => $reignUpdateStatus, 'detail' => $reignUpdateDetail],
 ];
 
 $chimUrl = '/HerikaServer/ui/home.php';
@@ -322,10 +345,13 @@ if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[
 }
 $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/home.php', $requestScheme, $stobeHostForUrl);
+$reignUrl = sprintf('%s://%s:8089/', $requestScheme, $stobeHostForUrl);
 $modCards = [
     ['name' => 'CHIM', 'game' => 'Skyrim / Skyrim VR', 'image' => 'chim-rail.jpg', 'url' => $chimUrl, 'root' => $herikaRoot],
     ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
     ['name' => 'DIALECTIC', 'game' => 'Fallout: New Vegas / TTW', 'image' => 'dialectic-rail.jpg', 'url' => $dialecticUrl, 'root' => $dialecticRoot],
+    ['name' => 'REIGN', 'game' => 'Mount & Blade II: Bannerlord', 'image' => 'reign-logo.png', 'url' => $reignUrl,
+        'root' => is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer') ? '/var/www/html/ReignServer/runtime/current' : ''],
 ];
 $distroDebuggerUrl = 'distro_debugger.php';
 $databaseManagerUrl = 'data_manager.php?mod=all&view=playthroughs';
@@ -921,6 +947,30 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             font-style: normal;
         }
 
+        @font-face {
+            font-family: 'Pelagiad';
+            src: url('css/font/Pelagiad.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Rye';
+            src: url('css/font/Rye-Regular.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Share Tech Mono';
+            src: url('css/font/ShareTechMono-Regular.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+        }
+
         body {
             margin: 0;
             min-height: 100vh;
@@ -942,6 +992,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         .dashboard-shell {
             width: 100%;
+            box-sizing: border-box;
             background: rgba(24, 28, 35, 0.95);
             border: 1px solid rgba(138, 155, 182, 0.25);
             border-radius: 14px;
@@ -1185,7 +1236,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         .dashboard-mods {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 14px;
             margin-top: 22px;
         }
@@ -1196,7 +1247,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             align-items: flex-end;
             min-height: 180px;
             overflow: hidden;
-            border: 1px solid #68717d;
+            border: 1px solid var(--mod-card-accent, #68717d);
             border-radius: 10px;
             background: #17191c;
             color: #fff;
@@ -1215,9 +1266,21 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card-label {
             position: relative;
             width: 100%;
+            box-sizing: border-box;
             padding: 10px 14px;
             background: rgba(0, 0, 0, 0.78);
         }
+
+        .mod-card-chim { --mod-card-accent: #f27c11; }
+        .mod-card-stobe { --mod-card-accent: #e6b76c; }
+        .mod-card-dialectic { --mod-card-accent: #ffb641; }
+        .mod-card-reign { --mod-card-accent: #c9a227; flex-direction: column; background: #080807; }
+        .mod-card-reign .mod-card-art { position: relative; height: auto; aspect-ratio: 1672 / 941; object-fit: contain; }
+        .mod-card-reign .mod-card-label { margin-top: auto; }
+        .mod-card-reign .mod-card-name { color: #f5f6f8; font-family: "Times New Roman", Times, serif; font-weight: normal; }
+        .mod-card-chim .mod-card-name { font-family: 'Pelagiad', serif; font-weight: normal; }
+        .mod-card-stobe .mod-card-name { font-family: 'Rye', serif; font-weight: normal; }
+        .mod-card-dialectic .mod-card-name { font-family: 'Share Tech Mono', monospace; font-weight: normal; }
 
         .mod-card-name,
         .mod-card-game,
@@ -1230,18 +1293,18 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card-status { margin-top: 4px; font-size: 13px; color: #e0e0e0; }
 
         .mod-card[href]:hover {
-            border-color: #e6b76c;
-            box-shadow: 0 0 0 1px #e6b76c;
+            border-color: var(--mod-card-accent, #68717d);
+            box-shadow: 0 0 0 1px var(--mod-card-accent, #68717d);
             color: #fff;
             text-decoration: none;
         }
 
         .mod-card:focus-visible {
-            outline: 3px solid #f5ca82;
+            outline: 3px solid var(--mod-card-accent, #68717d);
             outline-offset: 4px;
         }
 
-        .mod-card[aria-disabled="true"] { border-color: #454950; cursor: not-allowed; }
+        .mod-card[aria-disabled="true"] { cursor: not-allowed; }
         .mod-card[aria-disabled="true"] .mod-card-art { filter: grayscale(1) brightness(0.45); }
 
         @media (max-width: 640px) {
@@ -1353,7 +1416,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             color: #ef6b6b;
         }
 
-        @media (max-width: 1080px) {
+        @media (max-width: 1740px) {
             .dashboard-layout {
                 width: min(980px, 94vw);
             }
@@ -1384,20 +1447,21 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             <h1 class="dashboard-title">Dwemer Dashboard</h1>
             <div class="dashboard-mods" role="group" aria-label="Mods">
                 <?php foreach ($modCards as $mod):
+                    $displayName = $mod['name'] === 'REIGN' ? 'REIGN (Closed Alpha)' : $mod['name'];
                     // Installation is local file presence, independent of update or service health.
-                    $installed = $mod['root'] !== '' && is_file($mod['root'] . '/ui/home.php');
+                    $installed = $mod['root'] !== '' && is_file($mod['root'] . ($mod['name'] === 'REIGN' ? '/ReignBetaServer' : '/ui/home.php'));
                 ?>
-                <a class="mod-card"
+                <a class="mod-card mod-card-<?= htmlspecialchars(strtolower($mod['name']), ENT_QUOTES, 'UTF-8') ?>"
                     <?php if ($installed): ?>
                         href="<?= htmlspecialchars($mod['url'], ENT_QUOTES, 'UTF-8') ?>"
-                        aria-label="Open <?= htmlspecialchars($mod['name'], ENT_QUOTES, 'UTF-8') ?>"
+                        aria-label="Open <?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?>"
                     <?php else: ?>
                         role="link" aria-disabled="true" tabindex="-1"
-                        aria-label="<?= htmlspecialchars($mod['name'], ENT_QUOTES, 'UTF-8') ?> — Not installed"
+                        aria-label="<?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?> — Not installed"
                     <?php endif; ?>>
                     <img class="mod-card-art" src="images/<?= htmlspecialchars($mod['image'], ENT_QUOTES, 'UTF-8') ?>" alt="" width="416" height="124">
                     <span class="mod-card-label">
-                        <strong class="mod-card-name"><?= htmlspecialchars($mod['name'], ENT_QUOTES, 'UTF-8') ?></strong>
+                        <strong class="mod-card-name"><?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?></strong>
                         <span class="mod-card-game"><?= htmlspecialchars($mod['game'], ENT_QUOTES, 'UTF-8') ?></span>
                         <?php if (!$installed): ?><span class="mod-card-status">Not installed</span><?php endif; ?>
                     </span>
