@@ -322,10 +322,40 @@ if ((is_file('/var/www/html/ReignServer/runtime/current/ReignServer') || is_file
     }
 }
 
+$lorkhanRoot = is_file('/var/www/html/LorkhanServer/ui/home.php') ? '/var/www/html/LorkhanServer' : '';
+$lorkhanUpdateStatus = 'unavailable';
+$lorkhanUpdateDetail = 'LorkhanServer is not installed; database versioning was not checked.';
+if ($lorkhanRoot !== '') {
+    try {
+        // Use the server's checksum/ledger validation without initializing or applying migrations.
+        $lorkhanCurrent = (static function (string $root): bool {
+            require_once $root . '/lib/Autoload.php';
+            $configFile = getenv('LORKHAN_CONFIG') ?: '/etc/lorkhanserver/server.php';
+            if (!is_file($configFile)) throw new RuntimeException('Lorkhan configuration unavailable.');
+            $config = require $configFile;
+            if (!is_array($config)) throw new RuntimeException('Lorkhan configuration invalid.');
+            $config['database_password'] = getenv('LORKHAN_DATABASE_PASSWORD') ?: (string) ($config['database_password'] ?? '');
+            $config['database_dsn'] = rtrim((string) ($config['database_dsn'] ?? ''), ';') . ';connect_timeout=2';
+            $connection = \LorkhanServer\Infrastructure\Connection::open($config);
+            $connection->exec("SET statement_timeout='2000ms'");
+            $connection->exec('SET default_transaction_read_only=on');
+            $rows = (new \LorkhanServer\Infrastructure\MigrationRunner($connection, $root . '/data/migrations'))->status(false);
+            return $rows !== [] && count(array_filter($rows, static fn(array $row): bool => !$row['applied'])) === 0;
+        })($lorkhanRoot);
+        $lorkhanUpdateStatus = $lorkhanCurrent ? 'ok' : 'error';
+        $lorkhanUpdateDetail = $lorkhanCurrent ? 'LorkhanServer database versioning check completed.'
+            : 'LorkhanServer has pending database updates. Update or repair Lorkhan in the launcher.';
+    } catch (Throwable) {
+        $lorkhanUpdateStatus = 'error';
+        $lorkhanUpdateDetail = 'LorkhanServer database version could not be verified. Start, update or repair Lorkhan in the launcher.';
+    }
+}
+
 $dbUpdateLines = [
     ['status' => $herikaUpdateStatus, 'detail' => $herikaUpdateDetail],
     ['status' => $stobeUpdateStatus, 'detail' => $stobeUpdateDetail],
     ['status' => $dialecticUpdateStatus, 'detail' => $dialecticUpdateDetail],
+    ['status' => $lorkhanUpdateStatus, 'detail' => $lorkhanUpdateDetail],
     ['status' => $reignUpdateStatus, 'detail' => $reignUpdateDetail],
 ];
 
@@ -347,7 +377,6 @@ $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/home.php', $requestScheme, $sto
 $dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $reignUrl = sprintf('%s://%s:8089/', $requestScheme, $stobeHostForUrl);
 $lorkhanUrl = sprintf('%s://%s:7514/LorkhanServer/ui/home.php', $requestScheme, $stobeHostForUrl);
-$lorkhanRoot = is_file('/var/www/html/LorkhanServer/ui/home.php') ? '/var/www/html/LorkhanServer' : '';
 $modCards = [
     ['name' => 'CHIM', 'game' => 'Skyrim / Skyrim VR', 'image' => 'chim-rail.jpg', 'url' => $chimUrl, 'root' => $herikaRoot],
     ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
@@ -1239,12 +1268,13 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         .dashboard-mods {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 14px;
             margin-top: 22px;
         }
 
         .mod-card {
+            grid-column: span 2;
             position: relative;
             display: flex;
             align-items: flex-end;
@@ -1313,8 +1343,13 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card[aria-disabled="true"] { cursor: not-allowed; }
         .mod-card[aria-disabled="true"] .mod-card-art { filter: grayscale(1) brightness(0.45); }
 
+        @media (min-width: 1001px) {
+            .mod-card:nth-child(4):nth-last-child(2) { grid-column: 2 / span 2; }
+        }
+
         @media (max-width: 1000px) {
             .dashboard-mods { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .mod-card { grid-column: auto; }
         }
 
         @media (max-width: 640px) {
