@@ -616,7 +616,7 @@ function renderLogSection(array $source): void
     $lorkhanLog = !empty($source['lorkhan_log']);
     if ($lorkhanLog) {
         require_once __DIR__ . '/lib/lorkhan_logs.php';
-        $tail = dashboard_lorkhan_log_tail($resolvedPath);
+        $tail = dashboard_lorkhan_log_tail($resolvedPath, 262144, 6000);
         $readable = $tail !== null;
         $rawLines = $readable ? (preg_split('/\R/u', dashboard_lorkhan_redact_log($tail)) ?: []) : [];
     }
@@ -1444,9 +1444,13 @@ $reignLogSources = [
 
 // Fixed Lorkhan service files; never accept a filesystem path from the browser.
 $lorkhanLogSources = [
-    ['id'=>'lorkhan_worker','title'=>'LORKHAN Worker','candidates'=>['/var/log/lorkhanserver/worker.log'],'lorkhan_log'=>true],
-    ['id'=>'lorkhan_error','title'=>'LORKHAN Apache / PHP Errors','candidates'=>['/var/log/apache2/lorkhanserver-error.log'],'lorkhan_log'=>true],
-    ['id'=>'lorkhan_access','title'=>'LORKHAN Apache Requests','candidates'=>['/var/log/apache2/lorkhanserver-access.log'],'lorkhan_log'=>true,'raw'=>true],
+    ['id'=>'lorkhan_error','title'=>'Apache Logs (lorkhanserver-error.log)','candidates'=>['/var/log/apache2/lorkhanserver-error.log'],'lorkhan_log'=>true],
+    ['id'=>'lorkhan_core','title'=>'LORKHAN Log (lorkhan.log)','candidates'=>['/var/log/lorkhanserver/lorkhan.log'],'lorkhan_log'=>true],
+    ['id'=>'lorkhan_llm_output','title'=>'LLM Output (output_from_llm.log)','candidates'=>['/var/log/lorkhanserver/output_from_llm.log'],'lorkhan_log'=>true,'special'=>'llm_output'],
+    ['id'=>'lorkhan_llm_context','title'=>'LLM Context (context_sent_to_llm.log)','candidates'=>['/var/log/lorkhanserver/context_sent_to_llm.log'],'lorkhan_log'=>true,'special'=>'llm_context'],
+    ['id'=>'lorkhan_llm_context_fast','title'=>'LLM Context Fast (context_sent_to_llm_fast.log)','candidates'=>['/var/log/lorkhanserver/context_sent_to_llm_fast.log'],'lorkhan_log'=>true,'special'=>'llm_context'],
+    ['id'=>'lorkhan_plugin_output','title'=>'Plugin Output (output_to_plugin.log)','candidates'=>['/var/log/lorkhanserver/output_to_plugin.log'],'lorkhan_log'=>true],
+    ['id'=>'lorkhan_stt','title'=>'Speech-to-Text Log (stt.log)','candidates'=>['/var/log/lorkhanserver/stt.log'],'lorkhan_log'=>true],
 ];
 
 $logSourcesByPanel = [
@@ -2082,7 +2086,7 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
                 </div>
             </div>
         </div>
-        <div class="title-helper">Worker, Apache/PHP errors and access logs. Each tail is limited to 256 KiB and 200 lines, with credentials redacted.</div>
+        <div class="title-helper">Server, LLM, plugin output and speech-to-text logs. Each tail is limited to 256 KiB and 6,000 lines, with credentials redacted.</div>
         <div class="file-log-grid" data-log-grid="lorkhan" aria-live="polite">
             <?php if ($initialServerTab === 'lorkhan'): ?>
             <?php foreach ($lorkhanLogSources as $source): ?>
