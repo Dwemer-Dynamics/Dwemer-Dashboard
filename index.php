@@ -1502,7 +1502,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                         role="link" aria-disabled="true" tabindex="-1"
                         aria-label="<?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?> — Not installed"
                     <?php endif; ?>>
-                    <img class="mod-card-art" src="images/<?= htmlspecialchars($mod['image'], ENT_QUOTES, 'UTF-8') ?>" alt="" width="416" height="124">
+                    <img class="mod-card-art" src="images/<?= htmlspecialchars($mod['image'], ENT_QUOTES, 'UTF-8') ?>?v=<?= (int) filemtime(__DIR__ . '/images/' . $mod['image']) ?>" alt="" width="1920" height="1080">
                     <span class="mod-card-label">
                         <span class="mod-card-game"><?= htmlspecialchars($mod['game'], ENT_QUOTES, 'UTF-8') ?></span>
                         <?php if (!$installed): ?><span class="mod-card-status">Not installed</span><?php endif; ?>
