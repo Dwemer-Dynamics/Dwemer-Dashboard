@@ -28,4 +28,3 @@ function dashboard_lorkhan_redact_log(string $text): string
         static fn(array $match): string => $match[1].(str_starts_with($match[2], '"') ? '"[REDACTED]"' : '[REDACTED]'), $text) ?? $text;
     return preg_replace('/([?&](?:key|'.$keys.')=)[^&\s"\x27]+/i', '$1[REDACTED]', $text) ?? $text;
 }
-
