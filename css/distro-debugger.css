@@ -213,6 +213,7 @@ body {
 .tab-button[data-tab="chim"].active,
 .tab-button[data-tab="dialectic"].active,
 .tab-button[data-tab="stobe"].active,
+.tab-button[data-tab="lorkhan"].active,
 .tab-button[data-tab="reign"].active {
     box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.14), inset 0 1px rgba(255, 255, 255, 0.18);
     filter: saturate(1.03);
@@ -262,6 +263,24 @@ body {
 
 .tab-button[data-tab="reign"]:focus-visible {
     outline: 2px solid #e2bd4c;
+    outline-offset: 3px;
+}
+
+.tab-button[data-tab="lorkhan"],
+.tab-button[data-tab="lorkhan"].active {
+    border-color: #bc9d5a;
+    background-color: #bc9d5a;
+    color: #fff;
+    filter: none;
+}
+
+.tab-button[data-tab="lorkhan"]:hover {
+    border-color: #a88b4d;
+    background-color: #a88b4d;
+}
+
+.tab-button[data-tab="lorkhan"]:focus-visible {
+    outline: 2px solid #bc9d5a;
     outline-offset: 3px;
 }
 

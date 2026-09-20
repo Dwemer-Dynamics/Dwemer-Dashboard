@@ -1678,7 +1678,7 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
     <title><?= h($title) ?></title>
     <link rel="icon" type="image/x-icon" href="images/favicon.ico">
     <link rel="stylesheet" href="css/main.css">
-    <link rel="stylesheet" href="css/distro-debugger.css">
+    <link rel="stylesheet" href="css/distro-debugger.css?v=<?= (int) filemtime(__DIR__ . '/css/distro-debugger.css') ?>">
     <style>
         <?php if ($hasCustomBackground): ?>
         body {
