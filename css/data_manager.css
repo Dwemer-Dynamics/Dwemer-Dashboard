@@ -249,6 +249,9 @@ textarea {
 .sm-brand[data-mod=dialectic] {
     --brand: #ffb641;
 }
+.sm-brand[data-mod=lorkhan] {
+    --brand: #bc9d5a;
+}
 
 .sm-brand.is-active {
     box-shadow: 0 0 0 2px rgba(255,255,255,.5), inset 0 1px rgba(255,255,255,.18);
@@ -1092,6 +1095,7 @@ textarea {
 .sm-kept-row .sm-help { grid-column:1/-1; margin:0; }
 .sm-size-help { color:var(--muted); font-size:13px; margin:12px 0 20px; }
 .sm-size-help > summary { cursor:pointer; }
+.sm-native-manager { display:block; width:100%; height:calc(100vh - 240px); min-height:600px; border:0; }
 @media(max-width:600px) {
     .sm-cleanup-row > summary { flex-wrap:wrap; gap:6px 10px; padding:12px; }
     .sm-cleanup-row > summary strong { flex-basis:calc(100% - 30px); }

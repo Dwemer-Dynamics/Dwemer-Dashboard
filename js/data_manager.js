@@ -1,6 +1,44 @@
 (() => {
     'use strict';
     const config = JSON.parse(document.getElementById('sm-config').textContent);
+    // Native Lorkhan pages keep their own sessions, CSRF protection and backup policy.
+    if (config.nativeManager) {
+        // The launcher exposes Lorkhan and Dashboard together on Lorkhan's own route.
+        if (location.port !== '7514' && location.port !== '8090') {
+            const destination = new URL(location.href);
+            destination.port = '7514';
+            location.replace(destination.href);
+            return;
+        }
+        const manager = config.nativeManager;
+        document.querySelector('[data-mod="lorkhan"]').classList.add('is-active');
+        document.querySelector('[data-mod="lorkhan"]').setAttribute('aria-current', 'page');
+        const tasks = document.getElementById('sm-tasks');
+        Object.entries(manager.views).forEach(([key, label]) => {
+            const link = document.createElement('a');
+            link.textContent = label;
+            link.href = '?mod=lorkhan&view=' + key;
+            if (manager.installation) link.href += '&installation_id=' + encodeURIComponent(manager.installation);
+            link.className = 'sm-task' + (key === manager.view ? ' is-active' : '');
+            if (key === manager.view) link.setAttribute('aria-current', 'page');
+            tasks.append(link);
+        });
+        const content = document.getElementById('sm-content');
+        content.replaceChildren();
+        content.setAttribute('aria-busy', 'false');
+        if (!manager.available) {
+            content.textContent = 'LORKHAN is not installed. Install it through the launcher to manage playthroughs.';
+            document.getElementById('sm-refresh').addEventListener('click', () => location.reload());
+            return;
+        }
+        const frame = document.createElement('iframe');
+        frame.title = 'LORKHAN ' + manager.views[manager.view];
+        frame.className = 'sm-native-manager';
+        frame.src = manager.url;
+        content.append(frame);
+        document.getElementById('sm-refresh').addEventListener('click', () => frame.contentWindow.location.reload());
+        return;
+    }
     const content = document.getElementById('sm-content');
     const status = document.getElementById('sm-status');
     const dialog = document.getElementById('sm-dialog');
@@ -239,6 +277,13 @@
         }));
         if (ticket !== generation) return;
         const shared = panel('Backups for the whole setup');
+        const lorkhan = panel('LORKHAN');
+        const lorkhanLink = link('Manage LORKHAN', 'lorkhan', 'playthroughs');
+        const lorkhanDestination = new URL(lorkhanLink.href);
+        lorkhanDestination.port = '7514';
+        lorkhanLink.href = lorkhanDestination.href;
+        lorkhan.append(note('Morrowind / OpenMW'), note('Manage saves, cleanup and backups in LorkhanServer.'), lorkhanLink);
+        grid.append(lorkhan);
         shared.style.marginTop = '16px';
         shared.append(note('New automatic archives include every PostgreSQL database and server role. Inspect a backup before restoring it; scope is checked from the file.'),el('br'),link('Manage database backups','all','backups'));
         content.append(shared);
@@ -656,6 +701,11 @@
         const key=anchor.dataset.mod;anchor.classList.toggle('is-active',key===mod);
         if(key===mod)anchor.setAttribute('aria-current','page');
         anchor.href='?mod='+key+'&view='+(key==='all'?(view==='backups'||view==='advanced'?view:'overview'):(view==='overview'||view==='backups'?'playthroughs':view));
+        if (key === 'lorkhan') {
+            const destination = new URL(anchor.href);
+            destination.port = '7514';
+            anchor.href = destination.href;
+        }
     });
     const tasks=document.getElementById('sm-tasks');
     Object.entries(views).forEach(([key,label])=>{

@@ -613,8 +613,16 @@ function renderLogSection(array $source): void
         }
     }
 
+    $lorkhanLog = !empty($source['lorkhan_log']);
+    if ($lorkhanLog) {
+        require_once __DIR__ . '/lib/lorkhan_logs.php';
+        $tail = dashboard_lorkhan_log_tail($resolvedPath);
+        $readable = $tail !== null;
+        $rawLines = $readable ? (preg_split('/\R/u', dashboard_lorkhan_redact_log($tail)) ?: []) : [];
+    }
+
     if ($exists && $readable) {
-        if ($reignLog === '') {
+        if ($reignLog === '' && !$lorkhanLog) {
             $rawLines = tailFile($resolvedPath, 6000);
         }
         if ($isLlmContextMode) {
@@ -1434,12 +1442,20 @@ $reignLogSources = [
     ['id' => 'reign_llm', 'title' => 'REIGN LLM Requests', 'reign_log' => 'llm-log.jsonl', 'raw' => true],
 ];
 
+// Fixed Lorkhan service files; never accept a filesystem path from the browser.
+$lorkhanLogSources = [
+    ['id'=>'lorkhan_worker','title'=>'LORKHAN Worker','candidates'=>['/var/log/lorkhanserver/worker.log'],'lorkhan_log'=>true],
+    ['id'=>'lorkhan_error','title'=>'LORKHAN Apache / PHP Errors','candidates'=>['/var/log/apache2/lorkhanserver-error.log'],'lorkhan_log'=>true],
+    ['id'=>'lorkhan_access','title'=>'LORKHAN Apache Requests','candidates'=>['/var/log/apache2/lorkhanserver-access.log'],'lorkhan_log'=>true,'raw'=>true],
+];
+
 $logSourcesByPanel = [
     'distro' => $distroLogSources,
     'chim' => $chimLogSources,
     'stobe' => $stobeLogSources,
     'dialectic' => $dialecticLogSources,
     'reign' => $reignLogSources,
+    'lorkhan' => $lorkhanLogSources,
 ];
 
 $requestedLogPanel = strtolower(trim(strval($_GET['log_panel'] ?? '')));
@@ -1826,6 +1842,10 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
             <img class="tab-button-icon" src="images/reign-icon.webp" alt="" aria-hidden="true">
             <img class="tab-button-logo" src="images/reign-server-logo.png" alt="REIGN">
         </button>
+        <button class="tab-button<?= $initialServerTab === 'lorkhan' ? ' active' : '' ?>" type="button" data-tab="lorkhan" role="tab" aria-selected="<?= $initialServerTab === 'lorkhan' ? 'true' : 'false' ?>" aria-controls="tab-lorkhan">
+            <img class="tab-button-icon" src="images/lorkhan-icon.png" alt="" aria-hidden="true">
+            <img class="tab-button-logo" src="images/lorkhan-logo.png" alt="LORKHAN">
+        </button>
     </div>
 
     <section class="tab-panel<?= $initialServerTab === 'distro' ? ' active' : '' ?>" id="tab-distro" role="tabpanel" data-log-panel="distro" data-loaded="<?= $initialServerTab === 'distro' ? '1' : '0' ?>">
@@ -2027,6 +2047,45 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
         <div class="file-log-grid" data-log-grid="reign" aria-live="polite">
             <?php if ($initialServerTab === 'reign'): ?>
             <?php foreach ($reignLogSources as $source): ?>
+                <?php renderLogSection($source); ?>
+            <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+    </section>
+    <section class="tab-panel<?= $initialServerTab === 'lorkhan' ? ' active' : '' ?>" id="tab-lorkhan" role="tabpanel" data-log-panel="lorkhan" data-loaded="<?= $initialServerTab === 'lorkhan' ? '1' : '0' ?>">
+        <div class="title-container">
+            <h2>LORKHAN Server Logs</h2>
+            <div class="toolbar-actions">
+                <a class="refresh-button diagnostics-button" href="http://127.0.0.1:7135/download-diagnostics" target="diagnosticsDownloadFrame" title="Generate the DwemerDistro Launcher diagnostic report and download it through your browser">
+                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 0h5.086A1.5 1.5 0 0 1 10.146.44l3.414 3.414A1.5 1.5 0 0 1 14 4.914V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V4a.5.5 0 0 0 .5.5h2.5L9 1.5zM5 7.5h6V9H5V7.5zm0 3h6V12H5v-1.5z"/></svg>
+                    <span>Download Logs</span>
+                </a>
+                <button class="refresh-button tab-refresh-button" type="button" data-panel="tab-lorkhan" title="Reload LORKHAN logs">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 0 0-5 5H1l3.5 3.5L8 8H6a2 2 0 1 1 2 2v2a4 4 0 1 0-4-4H2a6 6 0 1 1 6 6v-2a4 4 0 0 0 0-8z"/></svg>
+                    <span>Refresh Logs</span>
+                </button>
+                <button class="refresh-button tab-timezone-button" type="button" title="Toggle UTC/local browser time">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/></svg>
+                    <span>Timezone: UTC</span>
+                </button>
+                <div class="toolbar-menu" data-toolbar-menu>
+                    <button class="refresh-button toolbar-menu-toggle" type="button" id="toolbarMenuButton-lorkhan" aria-haspopup="menu" aria-expanded="false" aria-controls="toolbarMenu-lorkhan" title="More LORKHAN log options">
+                        <span>Other Logs</span>
+                        <svg class="toolbar-menu-caret" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.5 5.5h9L8 11z"/></svg>
+                    </button>
+                    <div class="toolbar-menu-panel" id="toolbarMenu-lorkhan" role="menu" aria-labelledby="toolbarMenuButton-lorkhan" hidden>
+                        <button class="toolbar-menu-item tab-download-button" type="button" role="menuitem" data-panel="tab-lorkhan" data-download-prefix="lorkhan">
+                            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0a1 1 0 0 1 1 1v6h2.586l-2.293 2.293a1 1 0 0 1-1.414 0L5.586 7H8V1a1 1 0 0 1 1-1zM4 11h8a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2z"/></svg>
+                            <span>Download visible logs (.txt)</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="title-helper">Worker, Apache/PHP errors and access logs. Each tail is limited to 256 KiB and 200 lines, with credentials redacted.</div>
+        <div class="file-log-grid" data-log-grid="lorkhan" aria-live="polite">
+            <?php if ($initialServerTab === 'lorkhan'): ?>
+            <?php foreach ($lorkhanLogSources as $source): ?>
                 <?php renderLogSection($source); ?>
             <?php endforeach; ?>
             <?php endif; ?>

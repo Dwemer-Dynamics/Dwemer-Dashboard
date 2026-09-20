@@ -17,6 +17,22 @@ $transferRoot=$transferProduct?dm_server_root($transferProduct['dir']):null;
 $transferTemplate=$transferRoot?$transferRoot.'/ui/tmpl/playthrough_transfer_controls.php':null;
 $transferAvailable=$transferTemplate && is_file($transferTemplate) && is_file($transferRoot.'/ui/api/playthrough_transfer.php');
 $config = ['transferAvailable'=>(bool)$transferAvailable,'csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_csrf'], 'prefix'=>dm_url_prefix()];
+// Lorkhan owns its schema, session and mutation guards; embed its native tools, never run sibling SQL.
+if ($transferMod === 'lorkhan') {
+    $nativeViews = ['playthroughs' => ['Playthrough Saves', 'playthrough_manager.php'],
+        'advanced' => ['Database Manager', 'database_manager.php']];
+    $nativeView = is_string($_GET['view'] ?? null) ? $_GET['view'] : 'playthroughs';
+    if (!isset($nativeViews[$nativeView])) $nativeView = 'playthroughs';
+    $nativeRoot = dirname(__DIR__) . '/LorkhanServer';
+    $nativeQuery = ['embed' => '1'];
+    if (is_string($_GET['installation_id'] ?? null) && preg_match('/^[a-f0-9-]{36}$/Di', $_GET['installation_id'])) {
+        $nativeQuery['installation_id'] = $_GET['installation_id'];
+    }
+    $config['nativeManager'] = ['view' => $nativeView, 'views' => array_map(static fn(array $view): string => $view[0], $nativeViews),
+        'available' => is_file($nativeRoot . '/ui/' . $nativeViews[$nativeView][1]),
+        'url' => dm_url_prefix() . '/LorkhanServer/ui/' . $nativeViews[$nativeView][1] . '?' . http_build_query($nativeQuery),
+        'installation' => $nativeQuery['installation_id'] ?? ''];
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -39,6 +55,7 @@ $config = ['transferAvailable'=>(bool)$transferAvailable,'csrf'=>$_SESSION['stor
         <a class="sm-brand" data-mod="chim" href="?mod=chim"><img class="sm-brand-icon" src="images/chim-icon.png" alt=""><img class="sm-brand-logo" src="images/chim-logo.png" alt="CHIM"></a>
         <a class="sm-brand" data-mod="stobe" href="?mod=stobe"><img class="sm-brand-icon" src="images/stobe-icon.png" alt=""><img class="sm-brand-logo" src="images/stobe-logo.png" alt="STOBE"></a>
         <a class="sm-brand" data-mod="dialectic" href="?mod=dialectic"><img class="sm-brand-icon" src="images/dialectic-icon.png" alt=""><img class="sm-brand-logo" src="images/dialectic-logo.png" alt="DIALECTIC"></a>
+        <a class="sm-brand" data-mod="lorkhan" href="?mod=lorkhan"><img class="sm-brand-icon" src="images/lorkhan-icon.png" alt=""><img class="sm-brand-logo" src="images/lorkhan-logo.png" alt="LORKHAN"></a>
     </nav>
     <nav class="sm-task-tabs" id="sm-tasks" aria-label="Storage task"></nav>
     <div id="sm-status" class="sm-status" role="status" aria-live="polite"></div>

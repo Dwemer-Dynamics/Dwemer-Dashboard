@@ -346,10 +346,13 @@ if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[
 $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $reignUrl = sprintf('%s://%s:8089/', $requestScheme, $stobeHostForUrl);
+$lorkhanUrl = sprintf('%s://%s:7514/LorkhanServer/ui/home.php', $requestScheme, $stobeHostForUrl);
+$lorkhanRoot = is_file('/var/www/html/LorkhanServer/ui/home.php') ? '/var/www/html/LorkhanServer' : '';
 $modCards = [
     ['name' => 'CHIM', 'game' => 'Skyrim / Skyrim VR', 'image' => 'chim-rail.jpg', 'url' => $chimUrl, 'root' => $herikaRoot],
     ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
     ['name' => 'DIALECTIC', 'game' => 'Fallout: New Vegas / TTW', 'image' => 'dialectic-rail.jpg', 'url' => $dialecticUrl, 'root' => $dialecticRoot],
+    ['name' => 'LORKHAN', 'game' => 'Morrowind / OpenMW', 'image' => 'lorkhan-rail.jpg', 'url' => $lorkhanUrl, 'root' => $lorkhanRoot],
     ['name' => 'REIGN', 'game' => 'Mount & Blade II: Bannerlord', 'image' => 'reign-logo.png', 'url' => $reignUrl,
         'root' => (is_file('/var/www/html/ReignServer/runtime/current/ReignServer') || is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer')) ? '/var/www/html/ReignServer/runtime/current' : ''],
 ];
@@ -1274,6 +1277,9 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card-chim { --mod-card-accent: #f27c11; }
         .mod-card-stobe { --mod-card-accent: #e6b76c; }
         .mod-card-dialectic { --mod-card-accent: #ffb641; }
+        .mod-card-lorkhan { --mod-card-accent: #bc9d5a; flex-direction: column; background: #080807; }
+        .mod-card-lorkhan .mod-card-art { position: relative; height: auto; aspect-ratio: 16 / 9; object-fit: contain; }
+        .mod-card-lorkhan .mod-card-label { margin-top: auto; }
         .mod-card-reign { --mod-card-accent: #c9a227; flex-direction: column; background: #080807; }
         .mod-card-reign .mod-card-art { position: relative; height: auto; aspect-ratio: 1672 / 941; object-fit: contain; }
         .mod-card-reign .mod-card-label { margin-top: auto; }
