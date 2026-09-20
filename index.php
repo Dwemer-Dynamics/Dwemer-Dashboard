@@ -1504,7 +1504,6 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                     <?php endif; ?>>
                     <img class="mod-card-art" src="images/<?= htmlspecialchars($mod['image'], ENT_QUOTES, 'UTF-8') ?>" alt="" width="416" height="124">
                     <span class="mod-card-label">
-                        <strong class="mod-card-name"><?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?></strong>
                         <span class="mod-card-game"><?= htmlspecialchars($mod['game'], ENT_QUOTES, 'UTF-8') ?></span>
                         <?php if (!$installed): ?><span class="mod-card-status">Not installed</span><?php endif; ?>
                     </span>
