@@ -48,7 +48,7 @@ if ($transferMod === 'lorkhan') {
 <main class="sm-shell">
     <header class="sm-header">
         <div><h1>Playthrough Saves</h1><p class="sm-muted">Save mod progress, clean up old logs and manage backups.</p></div>
-        <div class="sm-actions"><button id="sm-refresh" type="button">Refresh</button></div>
+        <div class="sm-actions"><a class="sm-button" href="index.php" target="_top">Back to Homepage</a><button id="sm-refresh" type="button">Refresh</button></div>
     </header>
     <nav class="sm-brand-tabs" aria-label="Choose a mod">
         <a class="sm-brand" data-mod="all" href="?mod=all"><img class="sm-brand-icon" src="images/kagrenac-icon.png" alt=""><span>Distro</span></a>
