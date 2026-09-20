@@ -1282,21 +1282,23 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             overflow: hidden;
             border: 1px solid var(--mod-card-accent, #68717d);
             border-radius: 10px;
-            background: #17191c;
+            background: #080807;
+            flex-direction: column;
             color: #fff;
             text-align: left;
             text-decoration: none;
         }
 
         .mod-card-art {
-            position: absolute;
-            inset: 0;
+            position: relative;
             width: 100%;
-            height: 100%;
-            object-fit: cover;
+            height: auto;
+            aspect-ratio: 16 / 9;
+            object-fit: contain;
         }
 
         .mod-card-label {
+            margin-top: auto;
             position: relative;
             width: 100%;
             box-sizing: border-box;
@@ -1307,12 +1309,8 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card-chim { --mod-card-accent: #f27c11; }
         .mod-card-stobe { --mod-card-accent: #e6b76c; }
         .mod-card-dialectic { --mod-card-accent: #ffb641; }
-        .mod-card-lorkhan { --mod-card-accent: #bc9d5a; flex-direction: column; background: #080807; }
-        .mod-card-lorkhan .mod-card-art { position: relative; height: auto; aspect-ratio: 16 / 9; object-fit: contain; }
-        .mod-card-lorkhan .mod-card-label { margin-top: auto; }
-        .mod-card-reign { --mod-card-accent: #c9a227; flex-direction: column; background: #080807; }
-        .mod-card-reign .mod-card-art { position: relative; height: auto; aspect-ratio: 1672 / 941; object-fit: contain; }
-        .mod-card-reign .mod-card-label { margin-top: auto; }
+        .mod-card-lorkhan { --mod-card-accent: #bc9d5a; }
+        .mod-card-reign { --mod-card-accent: #c9a227; }
         .mod-card-reign .mod-card-name { color: #f5f6f8; font-family: "Times New Roman", Times, serif; font-weight: normal; }
         .mod-card-chim .mod-card-name { font-family: 'Pelagiad', serif; font-weight: normal; }
         .mod-card-stobe .mod-card-name { font-family: 'Rye', serif; font-weight: normal; }
