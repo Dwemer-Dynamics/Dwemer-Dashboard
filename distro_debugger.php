@@ -1834,21 +1834,21 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
             <img class="tab-button-icon" src="images/chim-icon.png" alt="" aria-hidden="true">
             <img class="tab-button-logo" src="images/chim-logo.png" alt="CHIM">
         </button>
-        <button class="tab-button<?= $initialServerTab === 'stobe' ? ' active' : '' ?>" type="button" data-tab="stobe" role="tab" aria-selected="<?= $initialServerTab === 'stobe' ? 'true' : 'false' ?>" aria-controls="tab-stobe">
-            <img class="tab-button-icon" src="images/stobe-icon.png" alt="" aria-hidden="true">
-            <img class="tab-button-logo" src="images/stobe-logo.png" alt="STOBE">
+        <button class="tab-button<?= $initialServerTab === 'lorkhan' ? ' active' : '' ?>" type="button" data-tab="lorkhan" role="tab" aria-selected="<?= $initialServerTab === 'lorkhan' ? 'true' : 'false' ?>" aria-controls="tab-lorkhan">
+            <img class="tab-button-icon" src="images/lorkhan-icon.png" alt="" aria-hidden="true">
+            <img class="tab-button-logo" src="images/lorkhan-logo.png" alt="LORKHAN">
         </button>
         <button class="tab-button<?= $initialServerTab === 'dialectic' ? ' active' : '' ?>" type="button" data-tab="dialectic" role="tab" aria-selected="<?= $initialServerTab === 'dialectic' ? 'true' : 'false' ?>" aria-controls="tab-dialectic">
             <img class="tab-button-icon" src="images/dialectic-icon.png" alt="" aria-hidden="true">
             <img class="tab-button-logo" src="images/dialectic-logo.png" alt="Dialectic">
         </button>
+        <button class="tab-button<?= $initialServerTab === 'stobe' ? ' active' : '' ?>" type="button" data-tab="stobe" role="tab" aria-selected="<?= $initialServerTab === 'stobe' ? 'true' : 'false' ?>" aria-controls="tab-stobe">
+            <img class="tab-button-icon" src="images/stobe-icon.png" alt="" aria-hidden="true">
+            <img class="tab-button-logo" src="images/stobe-logo.png" alt="STOBE">
+        </button>
         <button class="tab-button<?= $initialServerTab === 'reign' ? ' active' : '' ?>" type="button" data-tab="reign" role="tab" aria-selected="<?= $initialServerTab === 'reign' ? 'true' : 'false' ?>" aria-controls="tab-reign">
             <img class="tab-button-icon" src="images/reign-icon.webp" alt="" aria-hidden="true">
             <img class="tab-button-logo" src="images/reign-server-logo.png" alt="REIGN">
-        </button>
-        <button class="tab-button<?= $initialServerTab === 'lorkhan' ? ' active' : '' ?>" type="button" data-tab="lorkhan" role="tab" aria-selected="<?= $initialServerTab === 'lorkhan' ? 'true' : 'false' ?>" aria-controls="tab-lorkhan">
-            <img class="tab-button-icon" src="images/lorkhan-icon.png" alt="" aria-hidden="true">
-            <img class="tab-button-logo" src="images/lorkhan-logo.png" alt="LORKHAN">
         </button>
     </div>
 

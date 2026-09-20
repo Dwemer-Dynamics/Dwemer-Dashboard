@@ -53,9 +53,9 @@ if ($transferMod === 'lorkhan') {
     <nav class="sm-brand-tabs" aria-label="Choose a mod">
         <a class="sm-brand" data-mod="all" href="?mod=all"><img class="sm-brand-icon" src="images/kagrenac-icon.png" alt=""><span>Distro</span></a>
         <a class="sm-brand" data-mod="chim" href="?mod=chim"><img class="sm-brand-icon" src="images/chim-icon.png" alt=""><img class="sm-brand-logo" src="images/chim-logo.png" alt="CHIM"></a>
-        <a class="sm-brand" data-mod="stobe" href="?mod=stobe"><img class="sm-brand-icon" src="images/stobe-icon.png" alt=""><img class="sm-brand-logo" src="images/stobe-logo.png" alt="STOBE"></a>
-        <a class="sm-brand" data-mod="dialectic" href="?mod=dialectic"><img class="sm-brand-icon" src="images/dialectic-icon.png" alt=""><img class="sm-brand-logo" src="images/dialectic-logo.png" alt="DIALECTIC"></a>
         <a class="sm-brand" data-mod="lorkhan" href="?mod=lorkhan"><img class="sm-brand-icon" src="images/lorkhan-icon.png" alt=""><img class="sm-brand-logo" src="images/lorkhan-logo.png" alt="LORKHAN"></a>
+        <a class="sm-brand" data-mod="dialectic" href="?mod=dialectic"><img class="sm-brand-icon" src="images/dialectic-icon.png" alt=""><img class="sm-brand-logo" src="images/dialectic-logo.png" alt="DIALECTIC"></a>
+        <a class="sm-brand" data-mod="stobe" href="?mod=stobe"><img class="sm-brand-icon" src="images/stobe-icon.png" alt=""><img class="sm-brand-logo" src="images/stobe-logo.png" alt="STOBE"></a>
     </nav>
     <nav class="sm-task-tabs" id="sm-tasks" aria-label="Storage task"></nav>
     <div id="sm-status" class="sm-status" role="status" aria-live="polite"></div>

@@ -353,9 +353,9 @@ if ($lorkhanRoot !== '') {
 
 $dbUpdateLines = [
     ['status' => $herikaUpdateStatus, 'detail' => $herikaUpdateDetail],
-    ['status' => $stobeUpdateStatus, 'detail' => $stobeUpdateDetail],
-    ['status' => $dialecticUpdateStatus, 'detail' => $dialecticUpdateDetail],
     ['status' => $lorkhanUpdateStatus, 'detail' => $lorkhanUpdateDetail],
+    ['status' => $dialecticUpdateStatus, 'detail' => $dialecticUpdateDetail],
+    ['status' => $stobeUpdateStatus, 'detail' => $stobeUpdateDetail],
     ['status' => $reignUpdateStatus, 'detail' => $reignUpdateDetail],
 ];
 
@@ -379,9 +379,9 @@ $reignUrl = sprintf('%s://%s:8089/', $requestScheme, $stobeHostForUrl);
 $lorkhanUrl = sprintf('%s://%s:7514/LorkhanServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $modCards = [
     ['name' => 'CHIM', 'game' => 'Skyrim / Skyrim VR', 'image' => 'chim-rail.jpg', 'url' => $chimUrl, 'root' => $herikaRoot],
-    ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
-    ['name' => 'DIALECTIC', 'game' => 'Fallout: New Vegas / TTW', 'image' => 'dialectic-rail.jpg', 'url' => $dialecticUrl, 'root' => $dialecticRoot],
     ['name' => 'LORKHAN', 'game' => 'Morrowind / OpenMW', 'image' => 'lorkhan-rail.jpg', 'url' => $lorkhanUrl, 'root' => $lorkhanRoot],
+    ['name' => 'DIALECTIC', 'game' => 'Fallout: New Vegas / TTW', 'image' => 'dialectic-rail.jpg', 'url' => $dialecticUrl, 'root' => $dialecticRoot],
+    ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
     ['name' => 'REIGN', 'game' => 'Mount & Blade II: Bannerlord', 'image' => 'reign-logo.png', 'url' => $reignUrl,
         'root' => (is_file('/var/www/html/ReignServer/runtime/current/ReignServer') || is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer')) ? '/var/www/html/ReignServer/runtime/current' : ''],
 ];

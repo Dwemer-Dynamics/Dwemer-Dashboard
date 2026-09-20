@@ -266,7 +266,7 @@
     async function overview(ticket) {
         const grid = el('div',null,'sm-grid');
         content.replaceChildren(toolbar('Your mod databases','Choose a mod to manage its Playthrough Saves and cleanup settings.'),grid);
-        await Promise.all(['chim','stobe','dialectic'].map(async key => {
+        await Promise.all(['chim','dialectic','stobe'].map(async key => {
             const card = panel(labels[key]); grid.append(card); card.append(note('Loading…'));
             try {
                 const data = await request('api/data_manager.php?mod=' + key);
@@ -283,7 +283,7 @@
         lorkhanDestination.port = '7514';
         lorkhanLink.href = lorkhanDestination.href;
         lorkhan.append(note('Morrowind / OpenMW'), note('Manage saves, cleanup and backups in LorkhanServer.'), lorkhanLink);
-        grid.append(lorkhan);
+        grid.insertBefore(lorkhan, grid.children[1]);
         shared.style.marginTop = '16px';
         shared.append(note('New automatic archives include every PostgreSQL database and server role. Inspect a backup before restoring it; scope is checked from the file.'),el('br'),link('Manage database backups','all','backups'));
         content.append(shared);
@@ -646,7 +646,7 @@
                 ()=>action('maintenance')),'sm-danger'));
             box.append(note('Shared maintenance can reclaim unused disk space. It does not choose or delete old events.'),el('br'),actions);
             content.append(box);
-            const grid=el('div',null,'sm-grid');['chim','stobe','dialectic'].forEach(key=>{const p=panel(labels[key]);p.append(note('Version entries and supported repairs for this mod.'),el('br'),link('Open '+labels[key]+' tools',key,'advanced'));grid.append(p);});content.append(grid);return;
+            const grid=el('div',null,'sm-grid');['chim','dialectic','stobe'].forEach(key=>{const p=panel(labels[key]);p.append(note('Version entries and supported repairs for this mod.'),el('br'),link('Open '+labels[key]+' tools',key,'advanced'));grid.append(p);});content.append(grid);return;
         }
         if(mod==='stobe') {
             actions.append(button('Analyze database',()=>confirmAction('Analyze STOBE database','Run VACUUM ANALYZE to update database statistics and make deleted-row space reusable. It does not shrink database files.',
