@@ -1,12 +1,14 @@
 (() => {
     'use strict';
     const config = JSON.parse(document.getElementById('sm-config').textContent);
+    // Only retain the Windows forwarding port when already using that route.
+    const lorkhanPort = location.port === '7514' ? '7514' : '8090';
     // Native Lorkhan pages keep their own sessions, CSRF protection and backup policy.
     if (config.nativeManager) {
         // The launcher exposes Lorkhan and Dashboard together on Lorkhan's own route.
         if (location.port !== '7514' && location.port !== '8090') {
             const destination = new URL(location.href);
-            destination.port = '7514';
+            destination.port = lorkhanPort;
             location.replace(destination.href);
             return;
         }
@@ -280,7 +282,7 @@
         const lorkhan = panel('LORKHAN');
         const lorkhanLink = link('Manage LORKHAN', 'lorkhan', 'playthroughs');
         const lorkhanDestination = new URL(lorkhanLink.href);
-        lorkhanDestination.port = '7514';
+        lorkhanDestination.port = lorkhanPort;
         lorkhanLink.href = lorkhanDestination.href;
         lorkhan.append(note('Morrowind / OpenMW'), note('Manage saves, cleanup and backups in LorkhanServer.'), lorkhanLink);
         grid.insertBefore(lorkhan, grid.children[1]);
@@ -703,7 +705,7 @@
         anchor.href='?mod='+key+'&view='+(key==='all'?(view==='backups'||view==='advanced'?view:'overview'):(view==='overview'||view==='backups'?'playthroughs':view));
         if (key === 'lorkhan') {
             const destination = new URL(anchor.href);
-            destination.port = '7514';
+            destination.port = lorkhanPort;
             anchor.href = destination.href;
         }
     });
