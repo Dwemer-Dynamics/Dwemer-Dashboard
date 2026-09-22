@@ -322,10 +322,40 @@ if ((is_file('/var/www/html/ReignServer/runtime/current/ReignServer') || is_file
     }
 }
 
+$lorkhanRoot = is_file('/var/www/html/LorkhanServer/ui/home.php') ? '/var/www/html/LorkhanServer' : '';
+$lorkhanUpdateStatus = 'unavailable';
+$lorkhanUpdateDetail = 'LorkhanServer is not installed; database versioning was not checked.';
+if ($lorkhanRoot !== '') {
+    try {
+        // Use the server's checksum/ledger validation without initializing or applying migrations.
+        $lorkhanCurrent = (static function (string $root): bool {
+            require_once $root . '/lib/Autoload.php';
+            $configFile = getenv('LORKHAN_CONFIG') ?: '/etc/lorkhanserver/server.php';
+            if (!is_file($configFile)) throw new RuntimeException('Lorkhan configuration unavailable.');
+            $config = require $configFile;
+            if (!is_array($config)) throw new RuntimeException('Lorkhan configuration invalid.');
+            $config['database_password'] = getenv('LORKHAN_DATABASE_PASSWORD') ?: (string) ($config['database_password'] ?? '');
+            $config['database_dsn'] = rtrim((string) ($config['database_dsn'] ?? ''), ';') . ';connect_timeout=2';
+            $connection = \LorkhanServer\Infrastructure\Connection::open($config);
+            $connection->exec("SET statement_timeout='2000ms'");
+            $connection->exec('SET default_transaction_read_only=on');
+            $rows = (new \LorkhanServer\Infrastructure\MigrationRunner($connection, $root . '/data/migrations'))->status(false);
+            return $rows !== [] && count(array_filter($rows, static fn(array $row): bool => !$row['applied'])) === 0;
+        })($lorkhanRoot);
+        $lorkhanUpdateStatus = $lorkhanCurrent ? 'ok' : 'error';
+        $lorkhanUpdateDetail = $lorkhanCurrent ? 'LorkhanServer database versioning check completed.'
+            : 'LorkhanServer has pending database updates. Update or repair Lorkhan in the launcher.';
+    } catch (Throwable) {
+        $lorkhanUpdateStatus = 'error';
+        $lorkhanUpdateDetail = 'LorkhanServer database version could not be verified. Start, update or repair Lorkhan in the launcher.';
+    }
+}
+
 $dbUpdateLines = [
     ['status' => $herikaUpdateStatus, 'detail' => $herikaUpdateDetail],
-    ['status' => $stobeUpdateStatus, 'detail' => $stobeUpdateDetail],
+    ['status' => $lorkhanUpdateStatus, 'detail' => $lorkhanUpdateDetail],
     ['status' => $dialecticUpdateStatus, 'detail' => $dialecticUpdateDetail],
+    ['status' => $stobeUpdateStatus, 'detail' => $stobeUpdateDetail],
     ['status' => $reignUpdateStatus, 'detail' => $reignUpdateDetail],
 ];
 
@@ -346,10 +376,12 @@ if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[
 $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $reignUrl = sprintf('%s://%s:8089/', $requestScheme, $stobeHostForUrl);
+$lorkhanUrl = sprintf('%s://%s:7514/LorkhanServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $modCards = [
     ['name' => 'CHIM', 'game' => 'Skyrim / Skyrim VR', 'image' => 'chim-rail.jpg', 'url' => $chimUrl, 'root' => $herikaRoot],
-    ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
+    ['name' => 'LORKHAN', 'game' => 'Morrowind / OpenMW', 'image' => 'lorkhan-rail.jpg', 'url' => $lorkhanUrl, 'root' => $lorkhanRoot],
     ['name' => 'DIALECTIC', 'game' => 'Fallout: New Vegas / TTW', 'image' => 'dialectic-rail.jpg', 'url' => $dialecticUrl, 'root' => $dialecticRoot],
+    ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
     ['name' => 'REIGN', 'game' => 'Mount & Blade II: Bannerlord', 'image' => 'reign-logo.png', 'url' => $reignUrl,
         'root' => (is_file('/var/www/html/ReignServer/runtime/current/ReignServer') || is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer')) ? '/var/www/html/ReignServer/runtime/current' : ''],
 ];
@@ -1236,12 +1268,13 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         .dashboard-mods {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 14px;
             margin-top: 22px;
         }
 
         .mod-card {
+            grid-column: span 2;
             position: relative;
             display: flex;
             align-items: flex-end;
@@ -1249,21 +1282,23 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             overflow: hidden;
             border: 1px solid var(--mod-card-accent, #68717d);
             border-radius: 10px;
-            background: #17191c;
+            background: #080807;
+            flex-direction: column;
             color: #fff;
             text-align: left;
             text-decoration: none;
         }
 
         .mod-card-art {
-            position: absolute;
-            inset: 0;
+            position: relative;
             width: 100%;
-            height: 100%;
-            object-fit: cover;
+            height: auto;
+            aspect-ratio: 16 / 9;
+            object-fit: contain;
         }
 
         .mod-card-label {
+            margin-top: auto;
             position: relative;
             width: 100%;
             box-sizing: border-box;
@@ -1274,9 +1309,8 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card-chim { --mod-card-accent: #f27c11; }
         .mod-card-stobe { --mod-card-accent: #e6b76c; }
         .mod-card-dialectic { --mod-card-accent: #ffb641; }
-        .mod-card-reign { --mod-card-accent: #c9a227; flex-direction: column; background: #080807; }
-        .mod-card-reign .mod-card-art { position: relative; height: auto; aspect-ratio: 1672 / 941; object-fit: contain; }
-        .mod-card-reign .mod-card-label { margin-top: auto; }
+        .mod-card-lorkhan { --mod-card-accent: #bc9d5a; }
+        .mod-card-reign { --mod-card-accent: #c9a227; }
         .mod-card-reign .mod-card-name { color: #f5f6f8; font-family: "Times New Roman", Times, serif; font-weight: normal; }
         .mod-card-chim .mod-card-name { font-family: 'Pelagiad', serif; font-weight: normal; }
         .mod-card-stobe .mod-card-name { font-family: 'Rye', serif; font-weight: normal; }
@@ -1307,8 +1341,13 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card[aria-disabled="true"] { cursor: not-allowed; }
         .mod-card[aria-disabled="true"] .mod-card-art { filter: grayscale(1) brightness(0.45); }
 
+        @media (min-width: 1001px) {
+            .mod-card:nth-child(4):nth-last-child(2) { grid-column: 2 / span 2; }
+        }
+
         @media (max-width: 1000px) {
             .dashboard-mods { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .mod-card { grid-column: auto; }
         }
 
         @media (max-width: 640px) {
@@ -1463,9 +1502,8 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                         role="link" aria-disabled="true" tabindex="-1"
                         aria-label="<?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?> — Not installed"
                     <?php endif; ?>>
-                    <img class="mod-card-art" src="images/<?= htmlspecialchars($mod['image'], ENT_QUOTES, 'UTF-8') ?>" alt="" width="416" height="124">
+                    <img class="mod-card-art" src="images/<?= htmlspecialchars($mod['image'], ENT_QUOTES, 'UTF-8') ?>?v=<?= (int) filemtime(__DIR__ . '/images/' . $mod['image']) ?>" alt="" width="1920" height="1080">
                     <span class="mod-card-label">
-                        <strong class="mod-card-name"><?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?></strong>
                         <span class="mod-card-game"><?= htmlspecialchars($mod['game'], ENT_QUOTES, 'UTF-8') ?></span>
                         <?php if (!$installed): ?><span class="mod-card-status">Not installed</span><?php endif; ?>
                     </span>
