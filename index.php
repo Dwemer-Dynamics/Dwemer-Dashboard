@@ -376,7 +376,10 @@ if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[
 $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $reignUrl = sprintf('%s://%s:8089/', $requestScheme, $stobeHostForUrl);
-$lorkhanUrl = sprintf('%s://%s:7514/LorkhanServer/ui/home.php', $requestScheme, $stobeHostForUrl);
+// Keep an existing launcher route; otherwise use Lorkhan's native server port.
+$requestPort = parse_url('http://' . $requestHostRaw, PHP_URL_PORT);
+$lorkhanPort = $requestPort === 7514 ? 7514 : 8090;
+$lorkhanUrl = sprintf('%s://%s:%d/LorkhanServer/ui/home.php', $requestScheme, $stobeHostForUrl, $lorkhanPort);
 $modCards = [
     ['name' => 'CHIM', 'game' => 'Skyrim / Skyrim VR', 'image' => 'chim-rail.jpg', 'url' => $chimUrl, 'root' => $herikaRoot],
     ['name' => 'LORKHAN', 'game' => 'Morrowind / OpenMW', 'image' => 'lorkhan-rail.jpg', 'url' => $lorkhanUrl, 'root' => $lorkhanRoot],
