@@ -1212,15 +1212,6 @@ $distroLogSources = [
         ],
     ],
     [
-        'id' => 'melotts',
-        'title' => 'MeloTTS (MeloTTS/melo/log.txt)',
-        'raw' => true,
-        'candidates' => [
-            '/home/dwemer/MeloTTS/melo/log.txt',
-            '\\\\wsl.localhost\\DwemerAI4Skyrim3\\home\\dwemer\\MeloTTS\\melo\\log.txt',
-        ],
-    ],
-    [
         'id' => 'piper',
         'title' => 'Piper-TTS (piper/log.txt)',
         'candidates' => [
@@ -1244,14 +1235,6 @@ $distroLogSources = [
         'candidates' => [
             '/home/dwemer/parakeet-api-server/log.txt',
             '\\\\wsl.localhost\\DwemerAI4Skyrim3\\home\\dwemer\\parakeet-api-server\\log.txt',
-        ],
-    ],
-    [
-        'id' => 'mimic3',
-        'title' => 'Mimic3 TTS (mimic3/log.txt)',
-        'candidates' => [
-            '/home/dwemer/mimic3/log.txt',
-            '\\\\wsl.localhost\\DwemerAI4Skyrim3\\home\\dwemer\\mimic3\\log.txt',
         ],
     ],
 ];
