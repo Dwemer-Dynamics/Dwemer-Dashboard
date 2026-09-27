@@ -1388,6 +1388,14 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             border-color: #9f2e2e;
         }
 
+        .dashboard-button.lmstudio-manager {
+            border-color: #c66b20;
+            background-color: #783908;
+        }
+
+        .dashboard-button.lmstudio-manager:hover { background-color: #984b0f; }
+        .dashboard-button.lmstudio-manager:focus-visible { outline: 3px solid #ffad61; outline-offset: 4px; }
+
         .dashboard-button.placeholder {
             opacity: 0.65;
             pointer-events: auto;
@@ -1514,7 +1522,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 <?php endforeach; ?>
             </div>
             <div class="dashboard-actions dashboard-actions-secondary">
-                <a class="dashboard-button" href="lmstudio.php">LM Studio</a>
+                <a class="dashboard-button lmstudio-manager" href="lmstudio.php"><span class="chim-brand"><img class="chim-brand-icon" src="images/centurion.webp" alt="" width="42" height="42"><span>LM Studio</span></span></a>
                 <a class="dashboard-button distro-debugger" href="<?= htmlspecialchars($distroDebuggerUrl, ENT_QUOTES, 'UTF-8') ?>">
                     <span class="chim-brand">
                         <img class="kagrenac-brand-icon" src="images/kagrenac-icon.png" alt="Kagrenac MCP icon">
