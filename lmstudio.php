@@ -11,10 +11,10 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="lmstudio-csrf" content="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>">
-<title>LM Studio · DwemerDistro</title><link rel="stylesheet" href="css/lmstudio.css">
+<title>LLM Studio · DwemerDistro</title><link rel="stylesheet" href="css/lmstudio.css">
 <script src="js/lmstudio.js" defer></script></head>
 <body><main>
-<header><div class="brand"><img src="images/centurion.webp" alt="" width="64" height="64"><div><a href="index.php">← Dwemer Dashboard</a><h1>LM Studio</h1><p class="muted">Local AI inside DwemerDistro. Models stay on this machine.</p></div></div><strong id="status" role="status">Connecting…</strong></header>
+<header><div class="brand"><img src="images/centurion.webp" alt="" width="64" height="64"><div><a href="index.php">← Dwemer Dashboard</a><h1>LLM Studio</h1><p class="muted">Local AI inside DwemerDistro. Models stay on this machine.</p></div></div><strong id="status" role="status">Connecting…</strong></header>
 <p id="error" role="alert" hidden></p>
 <section id="unlock" hidden><h2>Unlock manager</h2><p>Use <b>Open Manager</b> in the launcher's Components page. You can also paste the access key from <code>ddistro_lmstudio access</code>, run as dwemer inside WSL.</p>
 <form id="unlock-form"><label>Access key <input id="token" type="password" autocomplete="off" required></label><button>Unlock</button></form></section>
