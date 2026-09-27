@@ -65,7 +65,10 @@ async function api(action, data = {}) {
         body: JSON.stringify({...data, action, csrf}), cache: 'no-store'});
     const result = await response.json();
     if (!response.ok) {
-        if (response.status === 401) { unlocked = false; el('unlock').hidden = false; el('manager').hidden = true; }
+        if (response.status === 401) {
+            unlocked = false; el('unlock').hidden = false; el('manager').hidden = true;
+            el('status').textContent = 'Locked'; el('status').dataset.state = 'locked';
+        }
         throw new Error(result.error || 'Request failed.');
     }
     return result;
@@ -90,9 +93,13 @@ async function refresh() {
         current = state;
         unlocked = true; el('unlock').hidden = true; el('manager').hidden = false;
         el('status').textContent = state.running ? 'Running' : state.installed ? 'Stopped' : 'Not installed';
+        el('status').dataset.state = state.running ? 'running' : state.installed ? 'stopped' : 'missing';
         if (!engineDirty) el('autostart').checked = state.settings.autostart;
         el('endpoint').value = state.endpoint; el('chatUrl').value = state.chatUrl;
         const gb = bytes => (bytes / 1073741824).toFixed(1);
+        el('ram-available').textContent = `${gb(state.resources.ramAvailable)} GB`;
+        el('vram-available').textContent = `${gb(state.resources.vramFree)} GB`;
+        el('disk-available').textContent = `${gb(state.resources.diskFree)} GB`;
         el('resources').textContent = `Available: ${gb(state.resources.ramAvailable)} GB WSL RAM · ${gb(state.resources.vramFree)} GB GPU memory · ${gb(state.resources.diskFree)} GB disk`;
         options('model', state.models.filter(m => m.type === 'llm'), 'key', 'display_name');
         options('loaded', state.models.flatMap(m => m.loaded_instances || []), 'id', 'id');
@@ -102,16 +109,19 @@ async function refresh() {
         if (!engineDirty) el('startup-model').value = state.settings.startupModel || '';
         options('test-presets', [{key: '', name: 'Choose a preset'}, ...Object.keys(state.testPresets || {}).map(key => ({key, name: key}))], 'key', 'name');
         if (shownModel !== el('model').value) selectModel();
-        el('sdk-note').textContent = state.advancedAvailable ? 'Advanced loading is available. Saved defaults are used by this manager and startup.' : 'Reinstall the LM Studio component to enable advanced loading.';
+        el('sdk-note').textContent = state.advancedAvailable ? 'Advanced loading is available. Saved defaults are used by this manager and startup.' : 'Reinstall the LLM Studio component to enable advanced loading.';
         el('load-fields').querySelectorAll('input,select').forEach(input => input.disabled = !state.advancedAvailable);
         el('model-details').textContent = JSON.stringify({model: state.models.find(m => m.key === el('model').value),
             lastAdvancedLoad: state.lastLoad?.model === el('model').value ? state.lastLoad.appliedConfig : undefined}, null, 2);
-        el('model-note').textContent = state.running ? 'Select a downloaded language model.' : 'Start the engine to list installed models.';
+        if (!state.running) el('model-note').textContent = 'Start the engine to list installed models.';
+        else if (state.models.some(m => m.type === 'llm')) el('model-note').textContent = 'Select a downloaded language model.';
+        else el('model-note').textContent = 'No language models found. Download a model to get started.';
         busy = state.job.state === 'running';
         el('manager').querySelectorAll('button:not([data-copy]), input[type=checkbox]').forEach(button => button.disabled = busy);
         el('job').textContent = state.job.message ? `${state.job.state}: ${state.job.message}` : 'No operation yet.';
         const test = state.job.action === 'test' && state.job.state === 'running' ? state.job : state.lastTest || {};
         el('output').textContent = test.output || '';
+        el('response-placeholder').hidden = Boolean(test.output);
         el('test-stats').textContent = test.elapsedSeconds ? `${test.elapsedSeconds}s total · ${test.stats?.total_output_tokens ?? '—'} output tokens · ${test.stats?.tokens_per_second?.toFixed(1) ?? '—'} tokens/sec` : '';
         el('test-details').textContent = JSON.stringify({...test, output: undefined}, null, 2);
         if (busy && !state.job.total) el('progress').removeAttribute('value');
