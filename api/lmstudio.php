@@ -15,7 +15,7 @@ function lmstudio_helper(string $command, array $input = []): array
     }
     fwrite($pipes[0], json_encode($input, JSON_THROW_ON_ERROR));
     fclose($pipes[0]);
-    $output = stream_get_contents($pipes[1], 65536);
+    $output = stream_get_contents($pipes[1], 262144);
     fclose($pipes[1]);
     $error = stream_get_contents($pipes[2], 2048);
     fclose($pipes[2]);
@@ -59,7 +59,7 @@ try {
         session_write_close();
         if ($action === 'status' || $action === 'catalog') {
             $result = lmstudio_helper($action);
-        } elseif (in_array($action, ['start', 'stop', 'restart', 'settings', 'download', 'load', 'unload', 'test'], true)) {
+        } elseif (in_array($action, ['start', 'stop', 'restart', 'settings', 'download', 'load', 'unload', 'test', 'model-defaults', 'test-preset'], true)) {
             unset($input['csrf']);
             $result = lmstudio_helper('submit', $input);
         } else {
