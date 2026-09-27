@@ -1514,6 +1514,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 <?php endforeach; ?>
             </div>
             <div class="dashboard-actions dashboard-actions-secondary">
+                <a class="dashboard-button" href="lmstudio.php">LM Studio</a>
                 <a class="dashboard-button distro-debugger" href="<?= htmlspecialchars($distroDebuggerUrl, ENT_QUOTES, 'UTF-8') ?>">
                     <span class="chim-brand">
                         <img class="kagrenac-brand-icon" src="images/kagrenac-icon.png" alt="Kagrenac MCP icon">
