@@ -65,7 +65,10 @@ async function api(action, data = {}) {
         body: JSON.stringify({...data, action, csrf}), cache: 'no-store'});
     const result = await response.json();
     if (!response.ok) {
-        if (response.status === 401) { unlocked = false; el('unlock').hidden = false; el('manager').hidden = true; }
+        if (response.status === 401) {
+            unlocked = false; el('unlock').hidden = false; el('manager').hidden = true;
+            el('status').textContent = 'Locked'; el('status').dataset.state = 'locked';
+        }
         throw new Error(result.error || 'Request failed.');
     }
     return result;
@@ -110,7 +113,9 @@ async function refresh() {
         el('load-fields').querySelectorAll('input,select').forEach(input => input.disabled = !state.advancedAvailable);
         el('model-details').textContent = JSON.stringify({model: state.models.find(m => m.key === el('model').value),
             lastAdvancedLoad: state.lastLoad?.model === el('model').value ? state.lastLoad.appliedConfig : undefined}, null, 2);
-        el('model-note').textContent = state.running ? (state.models.some(m => m.type === 'llm') ? 'Select a downloaded language model.' : 'No language models found. Download a model to get started.') : 'Start the engine to list installed models.';
+        if (!state.running) el('model-note').textContent = 'Start the engine to list installed models.';
+        else if (state.models.some(m => m.type === 'llm')) el('model-note').textContent = 'Select a downloaded language model.';
+        else el('model-note').textContent = 'No language models found. Download a model to get started.';
         busy = state.job.state === 'running';
         el('manager').querySelectorAll('button:not([data-copy]), input[type=checkbox]').forEach(button => button.disabled = busy);
         el('job').textContent = state.job.message ? `${state.job.state}: ${state.job.message}` : 'No operation yet.';

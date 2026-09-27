@@ -39,7 +39,7 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
     </section>
     <div id="manager" hidden>
         <nav class="section-nav wide" aria-label="Studio sections">
-            <a href="#engine">Engine</a><a href="#models">Models</a><a href="#test-console">Test response</a><a href="#activity">Activity</a>
+            <a href="#engine">Engine</a><a href="#downloads">Models</a><a href="#test-console">Test response</a><a href="#activity">Activity</a>
             <span>Runs on this machine</span>
         </nav>
         <section id="engine" class="wide" aria-labelledby="engine-title">
