@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/lib/storage_fragment.php';
+require_once __DIR__ . '/lib/storage_tools.php';
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
     http_response_code(409);
     exit('These controls have been updated. Reload Playthrough Saves. Nothing was changed.');
@@ -16,7 +17,7 @@ $transferProduct=dm_products()[$transferMod]??null;
 $transferRoot=$transferProduct?dm_server_root($transferProduct['dir']):null;
 $transferTemplate=$transferRoot?$transferRoot.'/ui/tmpl/playthrough_transfer_controls.php':null;
 $transferAvailable=$transferTemplate && is_file($transferTemplate) && is_file($transferRoot.'/ui/api/playthrough_transfer.php');
-$config = ['transferAvailable'=>(bool)$transferAvailable,'csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_csrf'], 'prefix'=>dm_url_prefix()];
+$config = ['transferAvailable'=>(bool)$transferAvailable,'csrf'=>$_SESSION['storage_csrf'], 'retentionCsrf'=>$_SESSION['ptm_csrf'], 'prefix'=>dm_url_prefix(), 'uploadLimit'=>sm_upload_limit()];
 // Lorkhan owns its schema, session and mutation guards; embed its native tools, never run sibling SQL.
 if ($transferMod === 'lorkhan') {
     $nativeViews = ['playthroughs' => ['Playthrough Saves', 'playthrough_manager.php'],

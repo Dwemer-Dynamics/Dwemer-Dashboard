@@ -2,6 +2,29 @@
 require_once __DIR__ . '/data_manager.php';
 require_once __DIR__ . '/storage_manager_actions.php';
 
+// Browser restore uploads must fit PHP's request and file limits. 0 means no configured limit.
+function sm_ini_bytes(string $value): int
+{
+    $value = trim($value);
+    if (!preg_match('/^(\d+)\s*([kmg]?)$/i', $value, $match)) return 0;
+    return (int)$match[1] * (1024 ** ['' => 0, 'k' => 1, 'm' => 2, 'g' => 3][strtolower($match[2])]);
+}
+
+function sm_upload_limit(): int
+{
+    $limits = array_filter([sm_ini_bytes((string)ini_get('post_max_size')), sm_ini_bytes((string)ini_get('upload_max_filesize'))]);
+    return $limits ? min($limits) : 0;
+}
+
+function sm_upload_limit_message(): string
+{
+    $limit = sm_upload_limit();
+    $size = $limit >= 1024 ** 3 ? round($limit / 1024 ** 3, 1) . ' GB' : round($limit / 1024 ** 2, 1) . ' MB';
+    return 'This file is larger than the server upload limit' . ($limit ? ' (' . $size . ')' : '') . '. Nothing was restored.'
+        . ' Place the file in a server backup folder and find it in the backup list; its row shows the supported restore method.'
+        . ' Full-server (cluster) backups need PostgreSQL restoration, not this tool.';
+}
+
 // Resolve only the established backup directories; never accept paths from a browser.
 function sm_backup_directory(string $mod, string $source): string
 {
