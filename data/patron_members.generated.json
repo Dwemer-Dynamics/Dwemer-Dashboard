@@ -1,6 +1,6 @@
 {
-    "generated_at": "2026-09-01T15:37:57+00:00",
-    "source": "C:\/Users\/reece\/Desktop\/Dwemer Dynamics\/MonoRepo\/Dwemer-Dashboard\/csv\/patreon.csv",
+    "generated_at": "2026-10-01T23:50:53+00:00",
+    "source": "D:\/wt\/Dwemer-Dashboard-patreon-oct2026\/csv\/patreon.csv",
     "members": [
         {
             "name": "Andre",
@@ -35,6 +35,10 @@
             "tier": "Puzzlebox (Bronze\/Siparru) Tier"
         },
         {
+            "name": "Gee",
+            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
+        },
+        {
             "name": "Gregoreous",
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
@@ -67,10 +71,6 @@
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
-            "name": "john ivanhusin",
-            "tier": "Puzzlebox (Bronze\/Siparru) Tier"
-        },
-        {
             "name": "Jonathan Ben Aharon",
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
@@ -91,11 +91,19 @@
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
+            "name": "Nathanael Nebula",
+            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
+        },
+        {
             "name": "Robert Bateman",
             "tier": "Puzzlebox (Bronze\/Siparru) Tier"
         },
         {
             "name": "Ryiora",
+            "tier": "Dynamo Core (Gold\/Hurasum) Tier"
+        },
+        {
+            "name": "Scott Soundheim",
             "tier": "Dynamo Core (Gold\/Hurasum) Tier"
         },
         {
@@ -133,10 +141,6 @@
         {
             "name": "Vandracon",
             "tier": "Gyro (Silver\/Sarpu) Tier"
-        },
-        {
-            "name": "Viva La Weird Love",
-            "tier": "Puzzlebox (Bronze\/Siparru) Tier"
         },
         {
             "name": "wario00",
