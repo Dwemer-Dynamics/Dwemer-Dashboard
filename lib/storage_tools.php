@@ -22,7 +22,7 @@ function sm_upload_limit_message(): string
     $size = $limit >= 1024 ** 3 ? round($limit / 1024 ** 3, 1) . ' GB' : round($limit / 1024 ** 2, 1) . ' MB';
     return 'This file is larger than the server upload limit' . ($limit ? ' (' . $size . ')' : '') . '. Nothing was restored.'
         . ' Place the file in a server backup folder and find it in the backup list; its row shows the supported restore method.'
-        . ' Full-server (cluster) backups need PostgreSQL restoration, not this tool.';
+        . ' Full-server (cluster) backups use Recover safely in that list instead of this tool.';
 }
 
 // Resolve only the established backup directories; never accept paths from a browser.
@@ -74,7 +74,7 @@ function sm_backup_list(string $mod, int $offset, string $search): array
             $scope = $mod === 'stobe' ? null : sm_backup_scope('', $name);
             $files[] = ['filename' => $name, 'source' => $source, 'size' => $entry->getSize(), 'modified' => $entry->getMTime(),
                 'scope' => $mod === 'stobe' ? 'STOBE' : $scope['scope_short_label'],
-                'can_restore' => empty($scope['cluster']),
+                'can_restore' => empty($scope['cluster']), 'can_recover' => !empty($scope['cluster']),
                 'can_download' => $mod === 'stobe' || $source === 'automatic',
                 'can_delete' => $mod === 'stobe' || $source === 'automatic'];
         }

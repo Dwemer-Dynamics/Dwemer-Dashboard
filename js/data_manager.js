@@ -71,7 +71,8 @@
     const selected = new Map();
     const bulkLimit = 50;
     // Full-cluster rows have no Restore button, so point users at the row rather than one action.
-    const largeBackupHint = 'place the file in a server backup folder and find it in the backup list; its row shows the supported restore method. Full-server (cluster) backups need PostgreSQL restoration, not this tool.';
+    const largeBackupHint = 'place the file in a server backup folder and find it in the backup list; its row shows the supported restore method. Full-server (cluster) backups use Recover safely there.';
+    let recoveryTimer = null;
     const retentionUrl = serverDirs[mod]
         ? config.prefix + '/' + serverDirs[mod] + '/ui/api/playthrough_retention.php?summary=1' : null;
 
@@ -616,6 +617,90 @@
         form.addEventListener('submit',event=>{event.preventDefault();checkSize();if(form.reportValidity())previewRestore({source:'upload',backup:file.input.files[0]},scope);});
         openDialog('Restore from a file',[form],[button('Inspect backup',()=>form.requestSubmit(),'sm-primary')]);
     }
+    // Full-server recovery runs in a server-side worker; this page only reads its saved status.
+    function recoveryAction(operation, fields = {}) {
+        const body = new FormData();
+        body.set('operation',operation); body.set('_sm_csrf',config.csrf); body.set('_sm_scope','Distro PostgreSQL server');
+        Object.entries(fields).forEach(([key,value]) => body.set(key,value));
+        return request('api/cluster_recovery.php',{method:'POST',body});
+    }
+    function startRecovery(item) {
+        confirmAction('Recover safely','Restore “'+item.filename+'” ('+bytes(item.size)+') into a separate, private PostgreSQL copy. The live database is not changed. Large backups can take hours; you can close this page.',
+            ()=>recoveryAction('start',{source:item.source,filename:item.filename}),false,
+            [note('Use only backups you trust: the SQL runs inside the private copy. Plan for at least 1.6 times the backup size plus 2 GB of free space; this is an estimate, not a guarantee. On Windows, the drive that holds the WSL virtual disk also needs that much free, because WSL can report far more space than Windows has.','sm-warning')]);
+    }
+    function commandBlock(text) {
+        const wrap=el('div',null,'sm-command'), code=el('pre',text,'sm-result');
+        wrap.append(code);
+        if(navigator.clipboard)wrap.append(button('Copy command',()=>navigator.clipboard.writeText(text).then(()=>announce('Command copied.','sm-success'),()=>announce('Select the command and copy it manually.','sm-error'))));
+        return wrap;
+    }
+    function recoveryLive(job) {
+        const live=el('div',null,'sm-recovery-live');
+        const verbs={staging:'Copied',verifying:'Checked',restoring:'SQL read'};
+        if(job.progress?.total&&verbs[job.state])live.append(note(verbs[job.state]+': '+bytes(job.progress.done)+' of '+bytes(job.progress.total)+'.'
+            +(job.state==='restoring'?' Index building can continue after all SQL is read.':'')));
+        const elapsed=Math.max(0,Math.round(((job.finished||job.updated||0)-(job.started||0))/60));
+        live.append(note((job.active?'Running for ':'Ran for ')+(elapsed>=60?Math.floor(elapsed/60)+' h ':'')+(elapsed%60)+' min. Last update '+date(job.updated*1000)+'.'));
+        return live;
+    }
+    function recoveryPanel(data) {
+        const box=panel('Safe full-server recovery'), job=data.job, pre=data.preflight;
+        box.dataset.signature=job?[job.id,job.state,job.error,job.cancel_requested].join('|'):'none';
+        if(!job){
+            box.append(note('Use Recover safely on a full PostgreSQL backup below. It is restored into a separate, private PostgreSQL copy you can inspect before an administrator activates it. The live database is not changed.'));
+            if(pre.problem)box.append(note(pre.problem,'sm-warning'),commandBlock(pre.setup_command));
+            return box;
+        }
+        box.append(metrics([['Status',job.label],['Backup',job.filename||'Unknown',true],['Size',bytes(job.bytes)],['Started',date(job.started*1000)]]));
+        const steps=el('ol',null,'sm-steps'), words={done:'Done',current:'In progress',stopped:'Stopped here',waiting:'Not started'};
+        job.stages.forEach(stage=>{const item=el('li',null,'is-'+stage.status);item.append(el('span',stage.label),el('span',words[stage.status],'sm-muted'));
+            if(stage.status==='current')item.setAttribute('aria-current','step');steps.append(item);});
+        box.append(steps,recoveryLive(job));
+        if(job.message)box.append(note(job.message));
+        if(job.error)box.append(note(job.error,'sm-error'));
+        if(job.products?.length){
+            box.append(table(['Mod','Database','Events','Game time range'],job.products.map(item=>[item.label,item.database,
+                !item.present?'Not in this backup':item.error||(item.eventlog===false?'No event log':number(item.events)),
+                item.present&&item.events?(item.game_first||item.gamets_first||'—')+' to '+(item.game_last||item.gamets_last||'—'):'—'])));
+            box.append(note('Recovered databases: '+job.databases.map(db=>db.name+' ('+bytes(db.bytes)+')').join(', ')+'.'));
+        }
+        if(job.activation_command){
+            const steps=el('ol',null,'sm-help');
+            ['Close every game and stop the mod servers.','In the Distro terminal, run this command and type the confirmation it shows:',
+             'It stops PostgreSQL, keeps the current cluster as a folder named main.before-recovery-…, moves this copy into place and starts PostgreSQL. If the copy does not start, the original is put back.',
+             'Check Playthrough Saves, then load the matching game save. The command prints a rollback command if you need to undo.'].forEach(text=>steps.append(el('li',text)));
+            box.append(el('h4','Activate this copy (administrator)'),note('The Dashboard cannot replace the live cluster itself. Activation needs root access in the Distro terminal.'),steps,commandBlock(job.activation_command));
+        }
+        if(job.rollback_command)box.append(note('The previous cluster was kept. To undo the activation, an administrator can run:'),commandBlock(job.rollback_command));
+        const actions=el('div',null,'sm-actions');
+        if(job.active)actions.append(button(job.cancel_requested?'Cancelling…':'Cancel recovery',()=>confirmAction('Cancel recovery','Stop this recovery and its private PostgreSQL copy. The live database is not changed. Discard the attempt afterwards to free disk space.',
+            ()=>recoveryAction('cancel',{job_id:job.id})),'sm-danger'));
+        else actions.append(button(job.state==='ready'?'Discard recovered copy':'Discard attempt',()=>confirmAction('Discard recovery files','Delete the private copy and the protected backup copy from this attempt. The live database is not changed. If automatic cleanup already removed the original backup file, this deletes the last copy of it.',
+            ()=>recoveryAction('discard',{job_id:job.id})),'sm-danger'));
+        actions.lastChild.disabled=!!job.cancel_requested&&job.active;
+        box.append(actions);
+        return box;
+    }
+    // Poll only while a job is active, at a bounded interval. Unchanged state updates text without moving focus.
+    function watchRecovery(host, ticket, delay = 5000) {
+        clearTimeout(recoveryTimer);
+        recoveryTimer=setTimeout(async()=>{
+            if(ticket!==generation||!host.isConnected)return;
+            if(busy)return watchRecovery(host,ticket,delay);
+            try {
+                const data=await request('api/cluster_recovery.php');
+                if(ticket!==generation||!host.isConnected)return;
+                const fresh=recoveryPanel(data);
+                if(fresh.dataset.signature===host.firstChild?.dataset.signature&&data.job)host.querySelector('.sm-recovery-live')?.replaceWith(recoveryLive(data.job));
+                else {host.replaceChildren(fresh);if(data.job)announce('Recovery: '+data.job.label+'.',data.job.state==='failed'?'sm-error':'');}
+                if(data.job?.active)watchRecovery(host,ticket);
+            } catch(error) {
+                host.querySelector('.sm-recovery-live')?.replaceChildren(note('Could not check recovery status: '+error.message+' Retrying.','sm-error'));
+                watchRecovery(host,ticket,Math.min(30000,delay*2));
+            }
+        },document.hidden?Math.max(delay,30000):delay);
+    }
     async function backups(ticket) {
         const scope = 'all';
         const top = toolbar('Database backups','Back up the entire PostgreSQL server, including every database and server role. Game saves and server files are not included.',true);
@@ -624,9 +709,15 @@
             'Download one SQL file containing every PostgreSQL database, all schemas, tables, Playthrough Saves and server roles. This includes databases for other mods and tests. Game saves and server files are not included.',
             ()=>action('export_backup',{},scope),false),'sm-primary'),button('Restore database backup',()=>uploadBackup(scope)));
         top.append(actions);
-        content.replaceChildren(top,note('Full PostgreSQL backups are restored with psql to a clean PostgreSQL instance. The restore tool below is for older mod-only SQL backups.'));
-        const data=await request('api/storage_tools.php?'+new URLSearchParams({mod:scope,view:'backups',q:search,offset}));
+        content.replaceChildren(top,note('Full PostgreSQL backups use Recover safely, which restores into a separate private PostgreSQL copy. The restore tool above is for older mod-only SQL backups.'));
+        const [data,recovery]=await Promise.all([request('api/storage_tools.php?'+new URLSearchParams({mod:scope,view:'backups',q:search,offset})),
+            request('api/cluster_recovery.php').catch(error=>({error:error.message}))]);
         if(ticket!==generation)return;
+        const recoveryHost=el('div');
+        if(recovery.error)recoveryHost.append(note('Recovery status is unavailable: '+recovery.error,'sm-error'));
+        else {recoveryHost.append(recoveryPanel(recovery));if(recovery.job?.active)watchRecovery(recoveryHost,ticket);}
+        content.append(recoveryHost);
+        if(data.automatic_unavailable)content.append(note(data.automatic_unavailable,'sm-warning'));
         if(data.automatic) {
             const box=panel('Automatic database backups'), form=el('form',null,'sm-form');
             const enabled=field('Create automatic backups','enabled','checkbox',data.automatic.enabled,'Off by default. New archives include every PostgreSQL database and server role, including other mods and test databases.');
@@ -645,7 +736,7 @@
             const name=el('div');name.append(el('div',item.filename,'sm-name'),note(item.source==='automatic'?'Automatic archive':'Server import folder'));
             const fields={filename:item.filename,source:item.source}, actions=el('div',null,'sm-actions');
             if(item.can_restore !== false)actions.append(button('Restore',()=>previewRestore(fields,scope)));
-            else actions.append(note('Restore with PostgreSQL.'));
+            else if(item.can_recover)actions.append(button('Recover safely',()=>startRecovery(item)));
             if(item.can_download)actions.append(button('Download',()=>perform(()=>action('download_backup',fields,scope),false)));
             if(item.can_delete)actions.append(button('Delete',()=>confirmAction('Delete backup file','Permanently delete “'+item.filename+'”. This does not change the live database.',
                 ()=>action('delete_backup',fields,scope)),'sm-danger'));

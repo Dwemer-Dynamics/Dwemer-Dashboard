@@ -13,11 +13,17 @@ try {
         $data = ['backups' => sm_backup_list($mod, $offset, trim($search))];
         if ($mod === 'all') {
             require_once dirname(__DIR__) . '/lib/automatic_backup.php';
-            $settings = DashboardBackupSettings::shared();
-            $enabled = dashboardReadSettingValue($settings, 'AUTOMATIC_DATABASE_BACKUPS');
-            $count = dashboardReadSettingValue($settings, 'AUTOMATIC_BACKUP_MAX_COUNT');
-            $keep = (int)$count;
-            $data['automatic'] = ['enabled' => in_array(strtolower($enabled ?? 'false'), ['true','1','yes','on'], true), 'keep' => $keep >= 1 && $keep <= 10 ? $keep : 5];
+            // Backup files and recovery must stay listed when the live database is down.
+            try {
+                $settings = DashboardBackupSettings::shared();
+                $enabled = dashboardReadSettingValue($settings, 'AUTOMATIC_DATABASE_BACKUPS');
+                $count = dashboardReadSettingValue($settings, 'AUTOMATIC_BACKUP_MAX_COUNT');
+                $keep = (int)$count;
+                $data['automatic'] = ['enabled' => in_array(strtolower($enabled ?? 'false'), ['true','1','yes','on'], true), 'keep' => $keep >= 1 && $keep <= 10 ? $keep : 5];
+            } catch (RuntimeException $e) {
+                error_log('[StorageTools] Automatic backup settings unavailable (' . get_class($e) . ')');
+                $data['automatic_unavailable'] = 'Automatic backup settings are unavailable because the database is not responding. Backup files and recovery below still work.';
+            }
         }
     } elseif ($view === 'advanced' && $mod !== 'all') {
         $data = ['versions' => sm_version_list($mod, $offset, trim($search))];
