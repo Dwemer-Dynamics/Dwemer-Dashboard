@@ -70,6 +70,8 @@
     // Bulk selection covers the visible page only; load() clears it on paging and searching.
     const selected = new Map();
     const bulkLimit = 50;
+    // Full-cluster rows have no Restore button, so point users at the row rather than one action.
+    const largeBackupHint = 'place the file in a server backup folder and find it in the backup list; its row shows the supported restore method. Full-server (cluster) backups need PostgreSQL restoration, not this tool.';
     const retentionUrl = serverDirs[mod]
         ? config.prefix + '/' + serverDirs[mod] + '/ui/api/playthrough_retention.php?summary=1' : null;
 
@@ -590,18 +592,28 @@
             openDialog('Inspect backup',[note(fields.filename || fields.backup?.name),field],[button('Inspect backup',()=>previewRestore({...fields,destination:select.value},scope),'sm-primary')]);
             return;
         }
-        const result = await perform(()=>action('preview_restore',fields,scope),false);
+        // A connection reset during a browser upload usually means the server rejected the request size.
+        const upload=run=>run().catch(error=>{if(fields.backup&&error instanceof TypeError)throw new Error('The upload stopped before the server responded. Nothing was restored. For large backups, '+largeBackupHint);throw error;});
+        const result = await perform(()=>upload(()=>action('preview_restore',fields,scope)),false);
         if(!result?.preview)return;
         const preview=result.preview;
         confirmAction('Restore database backup','Replace '+preview.scope+' using “'+preview.filename+'” ('+bytes(preview.bytes)+'). Stop all affected games and servers first.',
-            ()=>action('restore_backup',{...fields,preview_token:preview.token},scope),true,
+            ()=>upload(()=>action('restore_backup',{...fields,preview_token:preview.token},scope)),true,
             [note('Use only backups you trust. SQL backups contain commands that run on your database. This is not a game save.','sm-warning'),
              note(preview.combined ? 'Shared restore is not all-or-nothing. If it fails, some databases may already have changed. Keep a current backup of every affected mod.' : 'A supported STOBE pg_dump backup is restored in one transaction. Load the matching Kenshi save afterward.','sm-warning')]);
     }
     function uploadBackup(scope = mod) {
         const form=el('form',null,'sm-form'), file=field('Backup file','backup','file','',scope==='stobe'?'STOBE .sql or .sql.gz only. Combined archives belong in the Distro archives list.':'Plain .sql only. The next step inspects which databases it contains.');
         file.input.accept=scope==='stobe'?'.sql,.gz':'.sql';file.input.required=true;form.append(file.wrap);
-        form.addEventListener('submit',event=>{event.preventDefault();if(form.reportValidity())previewRestore({source:'upload',backup:file.input.files[0]},scope);});
+        // Stop a doomed upload before it starts; the server repeats this check.
+        const limit=Number(config.uploadLimit)||0;
+        if(limit){const hint=note('Server upload limit: '+bytes(limit)+'. For larger backups, '+largeBackupHint);
+            hint.id=file.input.id+'-limit';file.input.setAttribute('aria-describedby',file.input.getAttribute('aria-describedby')+' '+hint.id);file.wrap.append(hint);}
+        const checkSize=()=>{const tooLarge=limit>0&&(file.input.files[0]?.size||0)>limit;
+            file.input.setCustomValidity(tooLarge?'This file is larger than the server upload limit ('+bytes(limit)+'). Instead, '+largeBackupHint:'');
+            if(tooLarge)file.input.setAttribute('aria-invalid','true');else file.input.removeAttribute('aria-invalid');return!tooLarge;};
+        file.input.addEventListener('change',()=>{if(!checkSize())file.input.reportValidity();});
+        form.addEventListener('submit',event=>{event.preventDefault();checkSize();if(form.reportValidity())previewRestore({source:'upload',backup:file.input.files[0]},scope);});
         openDialog('Restore from a file',[form],[button('Inspect backup',()=>form.requestSubmit(),'sm-primary')]);
     }
     async function backups(ticket) {

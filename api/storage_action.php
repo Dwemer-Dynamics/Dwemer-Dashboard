@@ -24,6 +24,12 @@ try {
         http_response_code(405);
         throw new InvalidArgumentException('Use an action button in Playthrough Saves.');
     }
+    // PHP discards every field when a request exceeds post_max_size, so check before reading the scope.
+    $postLimit = sm_ini_bytes((string)ini_get('post_max_size'));
+    if (!$_POST && !$_FILES && $postLimit > 0 && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > $postLimit) {
+        http_response_code(413);
+        throw new InvalidArgumentException(sm_upload_limit_message());
+    }
     $input = $_POST;
     $mod = $input['mod'] ?? ''; $operation = $input['operation'] ?? '';
     if (!is_string($mod) || !in_array($mod, ['all','chim','stobe','dialectic'], true) || !is_string($operation)) throw new InvalidArgumentException('Invalid action scope.');
@@ -62,6 +68,10 @@ try {
         if (!in_array($mod, ['all','stobe'], true)) throw new InvalidArgumentException('Use Distro for shared backups.');
         $source = $scalar('source'); $filename = $scalar('filename');
         if ($source === 'upload') {
+            if (is_array($upload) && in_array($upload['error'] ?? null, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
+                http_response_code(413);
+                throw new InvalidArgumentException(sm_upload_limit_message());
+            }
             if (!in_array($operation, ['preview_restore','restore_backup'], true) || !is_array($upload)
                 || ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($upload['tmp_name'] ?? '')) throw new InvalidArgumentException('Choose a complete backup file. Check the server upload limit if the file is too large.');
             $filename = basename($upload['name']); $path = $upload['tmp_name'];
@@ -185,6 +195,7 @@ try {
     error_log('[StorageAction] ' . get_class($e) . ' at ' . basename($e->getFile()) . ':' . $e->getLine() . ' - ' . $e->getMessage());
     $response = ['ok'=>false,'error'=>($e instanceof InvalidArgumentException || $e instanceof StorageManagerRequestException || $e instanceof StorageBackupException)
         ? $e->getMessage() : 'The operation could not finish. Check the server log before trying again; it may have made partial changes.'];
+    if (http_response_code() === 413) $response += ['code' => 'upload_too_large', 'upload_limit' => sm_upload_limit()];
 }
 while (ob_get_level() > $bufferLevel) ob_end_clean();
 header_remove('Location');
