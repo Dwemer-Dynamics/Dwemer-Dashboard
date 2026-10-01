@@ -85,7 +85,7 @@ try {
                 $scope = 'STOBE';
             } else {
                 $backupScope = sm_backup_scope($path, $filename, true, $destination);
-                if (!empty($backupScope['cluster'])) throw new InvalidArgumentException('This is a full PostgreSQL backup. Restore it with psql to a clean PostgreSQL instance; the mod restore tool cannot restore the entire server.');
+                if (!empty($backupScope['cluster'])) throw new InvalidArgumentException('This is a full PostgreSQL backup. Place it in a server backup folder and use Recover safely in the backup list; the mod restore tool cannot restore the entire server.');
                 $scope = $backupScope['scope_label'];
             }
             $identity = hash_file('sha256', $path);
