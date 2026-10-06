@@ -1,8 +1,8 @@
 'use strict';
 const el = id => document.getElementById(id);
 const csrf = document.querySelector('meta[name="lmstudio-csrf"]').content;
-let unlocked = false, pending = false, busy = false;
-let current = null, shownModel = null, engineDirty = false;
+let unlocked = false, pending = false, queued = false, busy = false, submitting = false;
+let current = null, shownModel = null, engineDirty = false, tabChosen = false, dismissedJob = null, epoch = 0;
 let testRun = null, testFailure = '';
 const loadFields = {
     flashAttention: ['Flash Attention', 'bool'], offloadKVCacheToGpu: ['Offload KV cache to GPU', 'bool'],
@@ -14,6 +14,11 @@ const loadFields = {
 };
 // Matches the CHIM connector greeting test; the helper applies its own generation defaults.
 const testSystemPrompt = 'This is an isolated connection test, not a game scene. Respond with a short greeting. Do not request any action.';
+const jobNames = {start: 'Starting server', stop: 'Stopping server', restart: 'Restarting server', settings: 'Saving settings',
+    download: 'Downloading', load: 'Loading model', unload: 'Unloading model', test: 'Testing', 'model-defaults': 'Saving defaults'};
+const failNames = {start: 'Start failed', stop: 'Stop failed', restart: 'Restart failed', settings: 'Save failed',
+    download: 'Download failed', load: 'Load failed', unload: 'Unload failed', test: 'Test failed', 'model-defaults': 'Save failed'};
+const tabs = [...document.querySelectorAll('[role=tab]')];
 
 // Keep optional values empty so engine defaults remain available for every model.
 function buildFields(container, fields) {
@@ -44,11 +49,48 @@ function fillFields(fields, values) { Object.keys(fields).forEach(key => { el(ke
 
 function loadValues() { return {model: el('model').value, context: Number(el('context').value), gpu: Number(el('gpu').value), ttl: Number(el('ttl').value), advanced: readFields(loadFields)}; }
 
+// Settings live in collapsed sections, so open the section holding an invalid value before reporting it.
+function validLoad() {
+    const invalid = el('load-form').querySelector(':invalid:not(form)');
+    if (!invalid) return true;
+    for (let node = invalid.closest('details'); node; node = node.parentElement.closest('details')) node.open = true;
+    invalid.reportValidity();
+    return false;
+}
+
 // Apply defaults only when the user changes models, never during status polling.
 function selectModel(reset = false) {
     const values = reset ? {} : current?.modelDefaults?.[el('model').value] || {};
     el('context').value = values.context ?? 4096; el('gpu').value = values.gpu ?? 100; el('ttl').value = values.ttl ?? 600;
     fillFields(loadFields, values.advanced || {}); shownModel = el('model').value;
+}
+
+function selectTab(name, focus = false) {
+    tabChosen = true;
+    for (const tab of tabs) {
+        const selected = tab.dataset.tab === name;
+        tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1;
+        el(tab.getAttribute('aria-controls')).hidden = !selected;
+        if (selected && focus) tab.focus();
+    }
+}
+
+function setText(id, text) { if (el(id).textContent !== text) el(id).textContent = text; }
+
+// Mutations stay disabled while a request or job runs; navigation, disclosures and copy stay usable.
+function updateControls() {
+    const locked = busy || submitting, running = Boolean(current?.running), installed = Boolean(current?.installed);
+    const toggle = el('engine-toggle');
+    setText('engine-toggle', running ? 'Stop' : 'Start');
+    toggle.setAttribute('aria-label', running ? 'Stop server' : 'Start server');
+    toggle.classList.toggle('primary', !running);
+    toggle.disabled = locked || !unlocked || !current || !installed;
+    el('restart').disabled = locked || !installed || !running;
+    el('load-button').disabled = locked || !running || !el('model').value;
+    el('save-defaults').disabled = locked || !el('model').value;
+    el('unload').disabled = locked || !el('loaded').value;
+    ['save-engine', 'preset-download', 'custom-download'].forEach(id => { el(id).disabled = locked; });
+    el('run-test').disabled = locked || !el('loaded').value || Boolean(testRun);
 }
 
 // Show only output from the current or latest finished test, never an older result as a new one.
@@ -60,25 +102,51 @@ function renderTest(state) {
         if (last.updated === testRun.updated) testFailure = job.message || 'No response was returned.';
         testRun = null;
     }
-    let output = '', stats = '', note = 'No response yet. Load a model, then run the test.';
-    if (running) { output = job.output || ''; note = 'Generating…'; stats = 'Generating…'; }
-    else if (testRun) note = 'Sending test…';
+    let output = '', stats = '', note = '';
+    if (running) { output = job.output || ''; note = 'Generating…'; }
+    else if (testRun) note = 'Sending…';
     else if (testFailure) note = `Test failed: ${testFailure}`;
-    else if (last.output) { output = last.output; stats = last.elapsedSeconds ? `Last test took ${last.elapsedSeconds}s` : ''; }
+    else if (last.output) { output = last.output; stats = last.elapsedSeconds ? `Response time: ${Number(last.elapsedSeconds).toFixed(1)} s` : ''; }
     else if (last.updated) note = 'The model returned an empty response.';
-    el('output').textContent = output; el('test-stats').textContent = output ? stats : '';
-    el('response-placeholder').textContent = note; el('response-placeholder').hidden = Boolean(output);
-    el('run-test').disabled = busy || !el('loaded').value || Boolean(testRun);
+    else note = 'No response yet.';
+    if (running && output) stats = 'Generating…';
+    setText('output', output); setText('test-stats', output ? stats : '');
+    setText('response-placeholder', note); el('response-placeholder').hidden = Boolean(output) || !note;
+    el('response-placeholder').dataset.state = testFailure && !running && !testRun ? 'failed' : '';
+    const loaded = Boolean(el('loaded').value);
+    el('test-empty').hidden = loaded; el('loaded-row').hidden = !loaded;
+    updateControls();
+}
+
+function gb(bytes) { return (bytes / 1073741824).toFixed(1); }
+
+// Show running jobs and keep failures visible until another job starts or the user dismisses them.
+function renderActivity(job) {
+    const key = job.id || `${job.action}:${job.updated}`;
+    const show = job.state === 'running' || (job.state === 'failed' && dismissedJob !== key);
+    el('activity').hidden = !show;
+    if (!show) return;
+    const failed = job.state === 'failed';
+    el('activity').dataset.state = failed ? 'failed' : 'running';
+    setText('job-title', failed ? failNames[job.action] || 'Operation failed' : jobNames[job.action] || 'Working');
+    setText('job', job.message || '');
+    el('job-dismiss').hidden = !failed; el('job-dismiss').dataset.job = key;
+    el('progress').hidden = failed;
+    if (job.total) {
+        el('progress').value = job.downloaded * 100 / job.total;
+        setText('job-amount', `${Math.floor(job.downloaded * 100 / job.total)}% · ${gb(job.downloaded)} of ${gb(job.total)} GB`);
+    } else { el('progress').removeAttribute('value'); setText('job-amount', ''); }
 }
 
 async function api(action, data = {}) {
     const response = await fetch('api/lmstudio.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({...data, action, csrf}), cache: 'no-store'});
-    const result = await response.json();
+    let result;
+    try { result = await response.json(); } catch { throw new Error(`Request failed (HTTP ${response.status}).`); }
     if (!response.ok) {
         if (response.status === 401) {
             unlocked = false; el('unlock').hidden = false; el('manager').hidden = true;
-            el('status').textContent = 'Locked'; el('status').dataset.state = 'locked';
+            setText('status', 'Locked'); el('status').dataset.state = 'locked'; updateControls();
         }
         throw new Error(result.error || 'Request failed.');
     }
@@ -96,54 +164,63 @@ function options(id, models, key, title) {
     select.dataset.signature = signature;
 }
 
+function render(state) {
+    current = state;
+    unlocked = true; el('unlock').hidden = true; el('manager').hidden = false;
+    setText('status', state.running ? 'Running' : state.installed ? 'Stopped' : 'Not installed');
+    el('status').dataset.state = state.running ? 'running' : state.installed ? 'stopped' : 'missing';
+    if (!engineDirty) el('autostart').checked = state.settings.autostart;
+    el('endpoint').value = state.endpoint; el('chatUrl').value = state.chatUrl;
+    const llms = state.models.filter(m => m.type === 'llm');
+    options('model', llms, 'key', 'display_name');
+    options('loaded', state.models.flatMap(m => m.loaded_instances || []), 'id', 'id');
+    const startupModels = [{key: '', display_name: 'None'}, ...llms];
+    if (state.settings.startupModel && !startupModels.some(m => m.key === state.settings.startupModel)) startupModels.push({key: state.settings.startupModel});
+    options('startup-model', startupModels, 'key', 'display_name');
+    if (!engineDirty) el('startup-model').value = state.settings.startupModel || '';
+    if (shownModel !== el('model').value) selectModel();
+    setText('sdk-note', state.advancedAvailable ? '' : 'Reinstall the LLM Studio component to enable advanced loading.');
+    el('sdk-note').hidden = state.advancedAvailable;
+    el('load-fields').querySelectorAll('input,select').forEach(input => input.disabled = !state.advancedAvailable);
+    setText('model-details', JSON.stringify({model: state.models.find(m => m.key === el('model').value),
+        lastAdvancedLoad: state.lastLoad?.model === el('model').value ? state.lastLoad.appliedConfig : undefined}, null, 2));
+    const listed = state.running && llms.length > 0;
+    setText('model-note', state.running ? 'No models yet.' : 'Start the server to see models.');
+    el('model-note').hidden = listed; el('load-form').hidden = !listed;
+    busy = state.job.state === 'running';
+    if (!tabChosen) selectTab(el('loaded').value ? 'test' : 'models');
+    renderActivity(state.job);
+    renderTest(state);
+}
+
+// Results from a status request that started before a mutation are discarded and fetched again.
 async function refresh() {
-    if (pending || document.hidden) return;
+    if (document.hidden) return;
+    if (pending) { queued = true; return; }
     pending = true;
+    const started = epoch;
     try {
         const state = await api('status');
-        current = state;
-        unlocked = true; el('unlock').hidden = true; el('manager').hidden = false;
-        el('status').textContent = state.running ? 'Running' : state.installed ? 'Stopped' : 'Not installed';
-        el('status').dataset.state = state.running ? 'running' : state.installed ? 'stopped' : 'missing';
-        if (!engineDirty) el('autostart').checked = state.settings.autostart;
-        el('endpoint').value = state.endpoint; el('chatUrl').value = state.chatUrl;
-        const gb = bytes => (bytes / 1073741824).toFixed(1);
-        el('ram-available').textContent = `${gb(state.resources.ramAvailable)} GB`;
-        el('vram-available').textContent = `${gb(state.resources.vramFree)} GB`;
-        el('disk-available').textContent = `${gb(state.resources.diskFree)} GB`;
-        el('resources').textContent = `Available: ${gb(state.resources.ramAvailable)} GB WSL RAM · ${gb(state.resources.vramFree)} GB GPU memory · ${gb(state.resources.diskFree)} GB disk`;
-        options('model', state.models.filter(m => m.type === 'llm'), 'key', 'display_name');
-        options('loaded', state.models.flatMap(m => m.loaded_instances || []), 'id', 'id');
-        const startupModels = [{key: '', display_name: 'None — start engine only'}, ...state.models.filter(m => m.type === 'llm')];
-        if (state.settings.startupModel && !startupModels.some(m => m.key === state.settings.startupModel)) startupModels.push({key: state.settings.startupModel});
-        options('startup-model', startupModels, 'key', 'display_name');
-        if (!engineDirty) el('startup-model').value = state.settings.startupModel || '';
-        if (shownModel !== el('model').value) selectModel();
-        el('sdk-note').textContent = state.advancedAvailable ? 'Advanced loading is available. Saved defaults are used by this manager and startup.' : 'Reinstall the LLM Studio component to enable advanced loading.';
-        el('load-fields').querySelectorAll('input,select').forEach(input => input.disabled = !state.advancedAvailable);
-        el('model-details').textContent = JSON.stringify({model: state.models.find(m => m.key === el('model').value),
-            lastAdvancedLoad: state.lastLoad?.model === el('model').value ? state.lastLoad.appliedConfig : undefined}, null, 2);
-        if (!state.running) el('model-note').textContent = 'Start the engine to list installed models.';
-        else if (state.models.some(m => m.type === 'llm')) el('model-note').textContent = 'Select a downloaded language model.';
-        else el('model-note').textContent = 'No language models found. Download a model to get started.';
-        busy = state.job.state === 'running';
-        el('manager').querySelectorAll('button:not([data-copy]), input[type=checkbox]').forEach(button => button.disabled = busy);
-        el('job').textContent = state.job.message ? `${state.job.state}: ${state.job.message}` : 'No operation yet.';
-        renderTest(state);
-        if (busy && !state.job.total) el('progress').removeAttribute('value');
-        else el('progress').value = state.job.total ? state.job.downloaded * 100 / state.job.total : 0;
+        if (started === epoch) render(state); else queued = true;
     } catch (error) { report(error); }
-    finally { pending = false; }
+    finally { pending = false; if (queued) { queued = false; if (unlocked) refresh(); } }
+}
+
+async function submit(action, data) {
+    const job = await api(action, data);
+    epoch++;
+    if (job?.id && current) { busy = job.state === 'running'; current = {...current, job}; renderActivity(job); }
 }
 
 async function act(action, data = {}) {
-    if (busy) return;
-    el('error').hidden = true;
-    try { await api(action, data); await refresh(); return true; } catch (error) { report(error); return false; }
+    if (busy || submitting) return false;
+    el('error').hidden = true; submitting = true; updateControls();
+    try { await submit(action, data); return true; } catch (error) { report(error); return false; }
+    finally { submitting = false; updateControls(); await refresh(); }
 }
 
 async function catalog() {
-    const result = await api('catalog'); options('preset', result.models, 'id', 'name');
+    const result = await api('catalog'); options('preset', result.models, 'id', 'name'); updateControls();
 }
 
 async function unlock(token) {
@@ -151,38 +228,59 @@ async function unlock(token) {
     catch (error) { report(error); el('unlock').hidden = false; }
 }
 
+tabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => selectTab(tab.dataset.tab));
+    tab.addEventListener('keydown', event => {
+        const keys = {ArrowLeft: index - 1, ArrowUp: index - 1, ArrowRight: index + 1, ArrowDown: index + 1, Home: 0, End: tabs.length - 1};
+        if (!(event.key in keys)) return;
+        event.preventDefault();
+        selectTab(tabs[(keys[event.key] + tabs.length) % tabs.length].dataset.tab, true);
+    });
+});
+const vertical = matchMedia('(min-width: 761px)');
+const orient = () => document.querySelector('[role=tablist]').setAttribute('aria-orientation', vertical.matches ? 'vertical' : 'horizontal');
+orient(); vertical.addEventListener('change', orient);
+el('goto-models').addEventListener('click', () => selectTab('models', true));
+el('engine-toggle').addEventListener('click', () => { if (current) act(current.running ? 'stop' : 'start'); });
 document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => act(button.dataset.action)));
 document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
     try {
         const input = el(button.dataset.copy);
         if (navigator.clipboard) await navigator.clipboard.writeText(input.value);
         else { const copy = document.createElement('textarea'); copy.value = input.value; document.body.append(copy); copy.select(); document.execCommand('copy'); copy.remove(); }
-        button.textContent = 'Copied';
+        button.dataset.label ??= button.textContent; button.textContent = 'Copied';
+        clearTimeout(button.copyTimer); button.copyTimer = setTimeout(() => { button.textContent = button.dataset.label; }, 1500);
     } catch (error) { report(error); }
 }));
+el('job-dismiss').addEventListener('click', () => { dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true; el('workspace').focus(); });
 el('unlock-form').addEventListener('submit', event => { event.preventDefault(); unlock(el('token').value); });
 el('autostart').addEventListener('change', () => { engineDirty = true; });
 el('startup-model').addEventListener('change', () => { engineDirty = true; });
-el('save-engine').addEventListener('click', async () => { if (await act('settings', {autostart: el('autostart').checked, startupModel: el('startup-model').value})) engineDirty = false; });
+// Edits made while the save is pending stay dirty so polling does not overwrite them.
+el('save-engine').addEventListener('click', async () => {
+    const saved = {autostart: el('autostart').checked, startupModel: el('startup-model').value};
+    if (await act('settings', saved) && el('autostart').checked === saved.autostart && el('startup-model').value === saved.startupModel) engineDirty = false;
+});
 el('preset-form').addEventListener('submit', event => { event.preventDefault(); act('download', {preset: el('preset').value}); });
 el('custom-form').addEventListener('submit', event => { event.preventDefault(); act('download', {source: el('source').value.trim()}); });
-el('load-form').addEventListener('submit', event => { event.preventDefault(); try { act('load', loadValues()); } catch (error) { report(error); } });
-el('model').addEventListener('change', () => { selectModel(); refresh(); });
+el('load-form').addEventListener('submit', event => { event.preventDefault(); if (!validLoad()) return; try { act('load', loadValues()); } catch (error) { report(error); } });
+el('model').addEventListener('change', () => { selectModel(); updateControls(); refresh(); });
 el('reset-load').addEventListener('click', () => selectModel(true));
-el('save-defaults').addEventListener('click', () => { if (!el('load-form').reportValidity()) return; try { act('model-defaults', loadValues()); } catch (error) { report(error); } });
+el('save-defaults').addEventListener('click', () => { if (!validLoad()) return; try { act('model-defaults', loadValues()); } catch (error) { report(error); } });
 el('unload').addEventListener('click', () => act('unload', {model: el('loaded').value}));
 el('test-form').addEventListener('submit', async event => {
     event.preventDefault();
-    if (busy || testRun) return;
+    if (busy || submitting || testRun) return;
     const model = el('loaded').value, prompt = el('prompt').value.trim();
     if (!model) { report(new Error('Load a model before running the test.')); return; }
     if (!prompt) { report(new Error('Enter a test prompt.')); return; }
     el('error').hidden = true; testFailure = '';
     testRun = {updated: current.lastTest?.updated, job: JSON.stringify(current.job || {}), seen: false, sending: true};
+    submitting = true;
     renderTest(current);
-    try { await api('test', {model, prompt, generation: {system_prompt: testSystemPrompt}}); }
-    catch (error) { testRun = null; testFailure = error.message; report(error); renderTest(current); return; }
-    testRun.sending = false;
+    try { await submit('test', {model, prompt, generation: {system_prompt: testSystemPrompt}}); }
+    catch (error) { submitting = false; testRun = null; testFailure = error.message; report(error); renderTest(current); return; }
+    submitting = false; testRun.sending = false;
     await refresh();
 });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && unlocked) refresh(); });
