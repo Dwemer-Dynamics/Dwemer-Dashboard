@@ -3,6 +3,7 @@ const el = id => document.getElementById(id);
 const csrf = document.querySelector('meta[name="lmstudio-csrf"]').content;
 let unlocked = false, pending = false, busy = false;
 let current = null, shownModel = null, engineDirty = false;
+let testRun = null, testFailure = '';
 const loadFields = {
     flashAttention: ['Flash Attention', 'bool'], offloadKVCacheToGpu: ['Offload KV cache to GPU', 'bool'],
     gpuStrictVramCap: ['Strict GPU memory limit', 'bool'], keepModelInMemory: ['Keep model in RAM', 'bool'],
@@ -11,11 +12,8 @@ const loadFields = {
     llamaKCacheQuantizationType: ['K cache precision', 'cache'], llamaVCacheQuantizationType: ['V cache precision', 'cache'],
     ropeFrequencyBase: ['RoPE frequency base', 0, 10000000, 'any'], ropeFrequencyScale: ['RoPE frequency scale', .01, 100, 'any']
 };
-const generationFields = {
-    temperature: ['Temperature', 0, 1, .01], max_output_tokens: ['Maximum output tokens', 1, 4096, 1],
-    top_p: ['Top P', 0, 1, .01], top_k: ['Top K', 1, 1000, 1],
-    min_p: ['Min P', 0, 1, .01], repeat_penalty: ['Repeat penalty', .1, 2, .01]
-};
+// Matches the CHIM connector greeting test; the helper applies its own generation defaults.
+const testSystemPrompt = 'This is an isolated connection test, not a game scene. Respond with a short greeting. Do not request any action.';
 
 // Keep optional values empty so engine defaults remain available for every model.
 function buildFields(container, fields) {
@@ -27,13 +25,11 @@ function buildFields(container, fields) {
             const choices = min === 'bool' ? [['Enabled', 'true'], ['Disabled', 'false']] :
                 ['f32', 'f16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1'].map(v => [v, v]);
             choices.forEach(([name, value]) => input.add(new Option(name, value)));
-        } else { input.type = 'number'; input.min = min; input.max = max; input.step = step;
-            input.placeholder = key === 'temperature' ? 'Default: 0.2' : key === 'max_output_tokens' ? 'Default: 192' : 'Engine default'; }
+        } else { input.type = 'number'; input.min = min; input.max = max; input.step = step; input.placeholder = 'Engine default'; }
         label.append(input); el(container).append(label);
     }
 }
-buildFields('load-fields', loadFields); buildFields('generation-fields', generationFields);
-el('temperature').value = .2; el('max_output_tokens').value = 192;
+buildFields('load-fields', loadFields);
 
 function readFields(fields) {
     const values = {};
@@ -47,7 +43,6 @@ function readFields(fields) {
 function fillFields(fields, values) { Object.keys(fields).forEach(key => { el(key).value = values[key] ?? ''; }); }
 
 function loadValues() { return {model: el('model').value, context: Number(el('context').value), gpu: Number(el('gpu').value), ttl: Number(el('ttl').value), advanced: readFields(loadFields)}; }
-function generationValues() { return {...readFields(generationFields), system_prompt: el('system-prompt').value, reasoning: el('reasoning').value}; }
 
 // Apply defaults only when the user changes models, never during status polling.
 function selectModel(reset = false) {
@@ -56,8 +51,24 @@ function selectModel(reset = false) {
     fillFields(loadFields, values.advanced || {}); shownModel = el('model').value;
 }
 
-function applyGeneration(values) {
-    fillFields(generationFields, values); el('system-prompt').value = values.system_prompt || ''; el('reasoning').value = values.reasoning || 'default';
+// Show only output from the current or latest finished test, never an older result as a new one.
+function renderTest(state) {
+    const job = state.job || {}, last = state.lastTest || {};
+    const running = job.action === 'test' && job.state === 'running';
+    if (testRun && running) testRun.seen = true;
+    if (testRun && !testRun.sending && !running && (last.updated !== testRun.updated || testRun.seen || JSON.stringify(job) !== testRun.job)) {
+        if (last.updated === testRun.updated) testFailure = job.message || 'No response was returned.';
+        testRun = null;
+    }
+    let output = '', stats = '', note = 'No response yet. Load a model, then run the test.';
+    if (running) { output = job.output || ''; note = 'Generating…'; stats = 'Generating…'; }
+    else if (testRun) note = 'Sending test…';
+    else if (testFailure) note = `Test failed: ${testFailure}`;
+    else if (last.output) { output = last.output; stats = last.elapsedSeconds ? `Last test took ${last.elapsedSeconds}s` : ''; }
+    else if (last.updated) note = 'The model returned an empty response.';
+    el('output').textContent = output; el('test-stats').textContent = output ? stats : '';
+    el('response-placeholder').textContent = note; el('response-placeholder').hidden = Boolean(output);
+    el('run-test').disabled = busy || !el('loaded').value || Boolean(testRun);
 }
 
 async function api(action, data = {}) {
@@ -107,7 +118,6 @@ async function refresh() {
         if (state.settings.startupModel && !startupModels.some(m => m.key === state.settings.startupModel)) startupModels.push({key: state.settings.startupModel});
         options('startup-model', startupModels, 'key', 'display_name');
         if (!engineDirty) el('startup-model').value = state.settings.startupModel || '';
-        options('test-presets', [{key: '', name: 'Choose a preset'}, ...Object.keys(state.testPresets || {}).map(key => ({key, name: key}))], 'key', 'name');
         if (shownModel !== el('model').value) selectModel();
         el('sdk-note').textContent = state.advancedAvailable ? 'Advanced loading is available. Saved defaults are used by this manager and startup.' : 'Reinstall the LLM Studio component to enable advanced loading.';
         el('load-fields').querySelectorAll('input,select').forEach(input => input.disabled = !state.advancedAvailable);
@@ -119,11 +129,7 @@ async function refresh() {
         busy = state.job.state === 'running';
         el('manager').querySelectorAll('button:not([data-copy]), input[type=checkbox]').forEach(button => button.disabled = busy);
         el('job').textContent = state.job.message ? `${state.job.state}: ${state.job.message}` : 'No operation yet.';
-        const test = state.job.action === 'test' && state.job.state === 'running' ? state.job : state.lastTest || {};
-        el('output').textContent = test.output || '';
-        el('response-placeholder').hidden = Boolean(test.output);
-        el('test-stats').textContent = test.elapsedSeconds ? `${test.elapsedSeconds}s total · ${test.stats?.total_output_tokens ?? '—'} output tokens · ${test.stats?.tokens_per_second?.toFixed(1) ?? '—'} tokens/sec` : '';
-        el('test-details').textContent = JSON.stringify({...test, output: undefined}, null, 2);
+        renderTest(state);
         if (busy && !state.job.total) el('progress').removeAttribute('value');
         else el('progress').value = state.job.total ? state.job.downloaded * 100 / state.job.total : 0;
     } catch (error) { report(error); }
@@ -165,34 +171,19 @@ el('model').addEventListener('change', () => { selectModel(); refresh(); });
 el('reset-load').addEventListener('click', () => selectModel(true));
 el('save-defaults').addEventListener('click', () => { if (!el('load-form').reportValidity()) return; try { act('model-defaults', loadValues()); } catch (error) { report(error); } });
 el('unload').addEventListener('click', () => act('unload', {model: el('loaded').value}));
-el('test-form').addEventListener('submit', event => { event.preventDefault(); try { act('test', {model: el('loaded').value, prompt: el('prompt').value, generation: generationValues()}); } catch (error) { report(error); } });
-el('apply-preset').addEventListener('click', () => { const name = el('test-presets').value; if (name) { applyGeneration(current.testPresets[name]); el('preset-name').value = name; } });
-el('save-preset').addEventListener('click', () => { try { act('test-preset', {name: el('preset-name').value.trim(), generation: generationValues()}); } catch (error) { report(error); } });
-el('delete-preset').addEventListener('click', () => { const name = el('test-presets').value; if (name && confirm(`Delete test preset “${name}”?`)) act('test-preset', {name, delete: true}); });
-el('export-preset').addEventListener('click', () => {
-    try {
-        const content = JSON.stringify({format: 'dwemer-llm-test-v1', name: el('preset-name').value, generation: generationValues()}, null, 2);
-        const url = URL.createObjectURL(new Blob([content], {type: 'application/json'}));
-        const link = document.createElement('a'); link.href = url; link.download = 'llm-studio-test-preset.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (error) { report(error); }
-});
-el('import-preset').addEventListener('change', async event => {
-    try {
-        const file = event.target.files[0]; if (!file) return;
-        if (file.size > 12000) throw new Error('Preset file is too large.');
-        const value = JSON.parse(await file.text());
-        if (value.format !== 'dwemer-llm-test-v1' || !value.generation || typeof value.generation !== 'object' || Array.isArray(value.generation)) throw new Error('Invalid Dwemer test preset.');
-        if (Object.keys(value.generation).some(key => !Object.hasOwn(generationFields, key) && !['system_prompt', 'reasoning'].includes(key))) throw new Error('Preset contains unsupported settings.');
-        for (const [key, item] of Object.entries(value.generation)) {
-            const spec = generationFields[key];
-            if (spec && (typeof item !== 'number' || !Number.isFinite(item) || item < spec[1] || item > spec[2] || (spec[3] === 1 && !Number.isInteger(item)))) throw new Error(`Invalid ${spec[0]} in preset.`);
-            if (key === 'system_prompt' && (typeof item !== 'string' || item.length > 4000)) throw new Error('Invalid system prompt in preset.');
-            if (key === 'reasoning' && !['default', 'off', 'on', 'low', 'medium', 'high'].includes(item)) throw new Error('Invalid thinking setting in preset.');
-        }
-        applyGeneration(value.generation); el('preset-name').value = String(value.name || '').slice(0, 60);
-        generationValues();
-    } catch (error) { report(error); }
-    finally { event.target.value = ''; }
+el('test-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    if (busy || testRun) return;
+    const model = el('loaded').value, prompt = el('prompt').value.trim();
+    if (!model) { report(new Error('Load a model before running the test.')); return; }
+    if (!prompt) { report(new Error('Enter a test prompt.')); return; }
+    el('error').hidden = true; testFailure = '';
+    testRun = {updated: current.lastTest?.updated, job: JSON.stringify(current.job || {}), seen: false, sending: true};
+    renderTest(current);
+    try { await api('test', {model, prompt, generation: {system_prompt: testSystemPrompt}}); }
+    catch (error) { testRun = null; testFailure = error.message; report(error); renderTest(current); return; }
+    testRun.sending = false;
+    await refresh();
 });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && unlocked) refresh(); });
 setInterval(() => { if (unlocked) refresh(); }, 2000);

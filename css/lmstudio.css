@@ -77,15 +77,10 @@ details[open]>summary{margin-bottom:14px}
 .loaded-model>.eyebrow{margin-bottom:12px}
 .muted,#resources{color:var(--muted);font-size:12px;line-height:1.6}
 #sdk-note{margin-top:12px}
-.preset-row{max-width:700px;margin:0 0 22px}
 .test-workspace{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px}
-#test-form>details{margin-top:4px;margin-bottom:18px}
-#generation-fields{grid-template-columns:repeat(3,minmax(0,1fr))}
 .response-panel{min-width:0;background:var(--inset);border:1px solid var(--border);border-radius:6px;padding:18px;display:flex;flex-direction:column}
 .response-panel>h3{margin:0 0 16px;font-size:13px}
 .response-empty{margin:auto 0;text-align:center;color:#cad3df;padding:32px 12px;font-size:14px;line-height:1.9}
-.response-empty span{color:var(--muted);font-size:12px}
-.response-panel>details{margin-top:auto}
 #output{flex:1;min-height:220px;max-height:480px;margin:0 0 14px;background:transparent;border:0;padding:0;font-size:14px;line-height:1.8}
 #output:empty{display:none}
 #test-stats:empty{display:none}
@@ -106,6 +101,6 @@ progress{display:block;width:100%;height:6px;accent-color:var(--accent)}
 [hidden]{display:none!important}
 @media(max-width:1000px){main{padding:20px}.test-workspace{grid-template-columns:1fr}.response-panel{min-height:280px}.connection-grid{grid-template-columns:1fr}#manager{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)}.load-basics{grid-template-columns:1fr}.engine-controls{flex-wrap:wrap}}
 @media(max-width:760px){#manager{grid-template-columns:1fr;gap:16px}.section-nav span{display:none}.section-nav{justify-content:space-between}.section-nav a{padding:10px 8px;font-size:12px}.section-heading{gap:10px}.section-note{max-width:130px}.resource-grid>div{padding:12px}dd{font-size:20px}.load-basics{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:480px){main{padding:16px 12px 28px}.studio-header{gap:12px;align-items:flex-start;flex-wrap:wrap;padding-bottom:12px}.brand{gap:12px}.brand img{width:52px;height:52px}h1{font-size:30px}.engine-status{display:flex;align-items:center;gap:12px;width:100%;justify-content:space-between;padding-top:10px}section{padding:18px 16px}.resource-grid{grid-template-columns:1fr}.resource-grid>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px}.resource-grid>div+div{border-left:0;border-top:1px solid var(--border)}dt{margin:0}dd{font-size:18px}.row>label{flex-basis:100%;min-width:0}.row>button{flex:1}.connection-grid .row{flex-wrap:wrap}.connection-grid button{flex:1}.button-group{gap:8px}.button-group>button{flex:1}.engine-controls .button-group{width:100%;align-items:stretch}.engine-controls button{white-space:nowrap;padding-left:8px;padding-right:8px}.load-basics{grid-template-columns:1fr}.settings-grid,#generation-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.response-panel{padding:16px}.section-note{max-width:110px}.unlock-panel{margin:20px 0;padding:20px}.test-workspace{gap:18px}}
+@media(max-width:480px){main{padding:16px 12px 28px}.studio-header{gap:12px;align-items:flex-start;flex-wrap:wrap;padding-bottom:12px}.brand{gap:12px}.brand img{width:52px;height:52px}h1{font-size:30px}.engine-status{display:flex;align-items:center;gap:12px;width:100%;justify-content:space-between;padding-top:10px}section{padding:18px 16px}.resource-grid{grid-template-columns:1fr}.resource-grid>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px}.resource-grid>div+div{border-left:0;border-top:1px solid var(--border)}dt{margin:0}dd{font-size:18px}.row>label{flex-basis:100%;min-width:0}.row>button{flex:1}.connection-grid .row{flex-wrap:wrap}.connection-grid button{flex:1}.button-group{gap:8px}.button-group>button{flex:1}.engine-controls .button-group{width:100%;align-items:stretch}.engine-controls button{white-space:nowrap;padding-left:8px;padding-right:8px}.load-basics{grid-template-columns:1fr}.settings-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.response-panel{padding:16px}.section-note{max-width:110px}.unlock-panel{margin:20px 0;padding:20px}.test-workspace{gap:18px}}
 
 h1 span{margin-left:.22em}

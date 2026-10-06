@@ -86,19 +86,14 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
         </section>
         <section id="test-console" class="wide" aria-labelledby="test-title">
             <div class="section-heading"><div><span class="eyebrow">PLAYGROUND</span><h2 id="test-title">Test a response</h2></div><span class="section-note">Uses your loaded model</span></div>
-            <p class="muted">Try a prompt here. Game dialogue uses each game server’s connector settings.</p>
-            <div class="row preset-row"><label>Saved test preset<select id="test-presets"><option value="">Choose a preset</option></select></label><button id="apply-preset">Apply preset</button><button id="delete-preset" class="quiet">Delete preset</button></div>
+            <p class="muted">A short CHIM-style connection test. Load a model first.</p>
             <div class="test-workspace">
                 <form id="test-form">
-                    <label>Prompt<textarea id="prompt" maxlength="4000" rows="4" required>Say hello in one short sentence.</textarea></label>
-                    <details><summary>System prompt</summary><label>Instructions for this test<textarea id="system-prompt" maxlength="4000" rows="3" placeholder="Optional instructions for this test"></textarea></label></details>
-                    <h3>Generation settings</h3><div class="settings-grid" id="generation-fields"></div>
-                    <div class="row"><label>Thinking<select id="reasoning"><option value="default">Model default</option><option value="off">Off</option><option value="on">On</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label><button class="primary">Run test</button></div>
-                    <p class="muted">Up to 4,096 output tokens. Unsupported thinking settings return an error. Set a seed under advanced loading settings.</p>
+                    <label>Test prompt<textarea id="prompt" maxlength="4000" rows="4" required>Reply with Hello.</textarea></label>
+                    <div class="row"><button id="run-test" class="primary">Test</button></div>
                 </form>
-                <div class="response-panel"><h3>Response</h3><p id="response-placeholder" class="response-empty">Your model’s response will appear here.<br><span>Load a model, then run a test prompt.</span></p><pre id="output" aria-live="polite"></pre><p id="test-stats" class="muted"></p><details><summary>Last test diagnostics</summary><pre id="test-details"></pre></details></div>
+                <div class="response-panel"><h3>Response</h3><p id="response-placeholder" class="response-empty" role="status">No response yet.</p><pre id="output" aria-live="polite"></pre><p id="test-stats" class="muted"></p></div>
             </div>
-            <details><summary>Save or transfer test presets</summary><div class="row"><label>Preset name<input id="preset-name" maxlength="60" placeholder="My dialogue test"></label><button id="save-preset">Save preset</button><button id="export-preset">Export JSON</button><label>Import preset JSON<input id="import-preset" type="file" accept="application/json,.json"></label></div><p class="muted">Imports fill this form. Review and save to keep them. This is the Dwemer test-preset format.</p></details>
         </section>
         <section id="activity" class="wide activity-panel" aria-labelledby="activity-title"><div class="section-heading"><h2 id="activity-title">Activity</h2><span class="section-note">Downloads, loading &amp; tests</span></div><progress id="progress" max="100" value="0" aria-label="Current operation progress"></progress><pre id="job" aria-live="polite">No operation yet.</pre></section>
     </div>
