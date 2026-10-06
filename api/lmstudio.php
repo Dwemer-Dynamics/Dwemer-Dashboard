@@ -1,6 +1,7 @@
 <?php
 // Keep LM Studio mutations behind a manager session and the restricted WSL helper.
 declare(strict_types=1);
+require_once __DIR__ . '/../lib/lmstudio_access.php';
 session_start();
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
@@ -52,7 +53,7 @@ try {
         session_regenerate_id(true);
         $_SESSION['lmstudio_until'] = time() + 28800;
     } else {
-        if (($_SESSION['lmstudio_until'] ?? 0) < time()) {
+        if (($_SESSION['lmstudio_until'] ?? 0) < time() && !lmstudio_local_request($_SERVER)) {
             http_response_code(401);
             throw new RuntimeException('Open Manager from the launcher to unlock this page.');
         }
