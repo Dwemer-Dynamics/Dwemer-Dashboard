@@ -1285,6 +1285,9 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             margin-top: 22px;
         }
 
+        .dashboard-mods-title { margin-top: 22px; text-align: left; }
+        .dashboard-mods-title + .dashboard-mods { margin-top: 10px; }
+
         .mod-card {
             grid-column: span 2;
             position: relative;
@@ -1734,7 +1737,8 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
     <main class="dashboard-layout">
         <section class="dashboard-shell">
             <h1 class="dashboard-title">Dwemer Dashboard</h1>
-            <div class="dashboard-mods" role="group" aria-label="Mods">
+            <h2 class="home-storage-title dashboard-mods-title">Official mods</h2>
+            <div class="dashboard-mods" role="group" aria-label="Official mods">
                 <?php foreach ($modCards as $mod):
                     $displayName = $mod['name'] === 'REIGN' ? 'REIGN (Closed Alpha)' : $mod['name'];
                     // Installation is local file presence, independent of update or service health.
@@ -1756,6 +1760,30 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 </a>
                 <?php endforeach; ?>
             </div>
+            <section class="home-custom-mods" aria-labelledby="home-custom-mods-title">
+                <h2 class="home-storage-title" id="home-custom-mods-title">Custom mods</h2>
+                <?php if ($customMods['mods'] === []): ?>
+                    <p class="home-storage-note"><?= $customMods['readable'] ? 'No custom mods installed.' : 'No custom mods yet.' ?> Add one in the launcher under Mods &gt; Custom mods.</p>
+                <?php else: ?>
+                    <ul class="home-custom-mods-list">
+                        <?php foreach ($customMods['mods'] as $customMod): ?>
+                            <li>
+                                <a class="home-custom-mod" href="<?= htmlspecialchars($customMod['url'], ENT_QUOTES, 'UTF-8') ?>" aria-label="Open <?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?>">
+                                    <?php if ($customMod['icon'] !== ''): ?>
+                                        <img class="home-custom-mod-icon" src="<?= htmlspecialchars($customMod['icon'], ENT_QUOTES, 'UTF-8') ?>" alt="" width="28" height="28">
+                                    <?php endif; ?>
+                                    <span class="home-custom-mod-text">
+                                        <span class="home-custom-mod-name"><?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?></span>
+                                        <?php if ($customMod['description'] !== ''): ?>
+                                            <span class="home-custom-mod-description" title="<?= htmlspecialchars($customMod['description'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($customMod['description'], ENT_QUOTES, 'UTF-8') ?></span>
+                                        <?php endif; ?>
+                                    </span>
+                                </a>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </section>
             <div class="dashboard-actions dashboard-actions-secondary">
                 <a class="dashboard-button lmstudio-manager" href="lmstudio.php"><span class="chim-brand"><img class="chim-brand-icon" src="images/centurion.webp" alt="" width="42" height="42"><span>LLM Studio</span></span></a>
                 <a class="dashboard-button distro-debugger" href="<?= htmlspecialchars($distroDebuggerUrl, ENT_QUOTES, 'UTF-8') ?>">
@@ -1788,30 +1816,6 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 </ul>
                 <a class="home-storage-manage" href="data_manager.php?mod=all&amp;view=overview">Manage storage<span aria-hidden="true">&rarr;</span></a>
                 <noscript><span class="home-storage-note">Enable JavaScript to measure storage.</span></noscript>
-            </section>
-            <section class="home-custom-mods" aria-labelledby="home-custom-mods-title">
-                <h2 class="home-storage-title" id="home-custom-mods-title">Custom mods</h2>
-                <?php if ($customMods['mods'] === []): ?>
-                    <p class="home-storage-note"><?= $customMods['readable'] ? 'No custom mods installed.' : 'No custom mods yet.' ?> Add one in the launcher under Mods &gt; Custom mods.</p>
-                <?php else: ?>
-                    <ul class="home-custom-mods-list">
-                        <?php foreach ($customMods['mods'] as $customMod): ?>
-                            <li>
-                                <a class="home-custom-mod" href="<?= htmlspecialchars($customMod['url'], ENT_QUOTES, 'UTF-8') ?>" aria-label="Open <?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?>">
-                                    <?php if ($customMod['icon'] !== ''): ?>
-                                        <img class="home-custom-mod-icon" src="<?= htmlspecialchars($customMod['icon'], ENT_QUOTES, 'UTF-8') ?>" alt="" width="28" height="28">
-                                    <?php endif; ?>
-                                    <span class="home-custom-mod-text">
-                                        <span class="home-custom-mod-name"><?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?></span>
-                                        <?php if ($customMod['description'] !== ''): ?>
-                                            <span class="home-custom-mod-description" title="<?= htmlspecialchars($customMod['description'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($customMod['description'], ENT_QUOTES, 'UTF-8') ?></span>
-                                        <?php endif; ?>
-                                    </span>
-                                </a>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                <?php endif; ?>
             </section>
             <div class="dashboard-status">
                 <?php foreach ($dbUpdateLines as $line): ?>
