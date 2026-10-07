@@ -8,8 +8,7 @@ a:hover{text-decoration:underline}
 .brand{display:flex;align-items:center;gap:10px;min-width:0}
 .brand img{width:32px;height:32px;object-fit:contain;flex:none}
 .back{display:inline-block;font-size:12px;color:var(--muted)}
-h1{font-family:MagicCards,Georgia,serif;font-size:22px;line-height:1.15;font-weight:normal;margin:0;white-space:nowrap}
-h1 span{margin-left:.22em}
+h1{display:flex;gap:.4em;font-family:MagicCards,Georgia,serif;font-size:22px;line-height:1.15;font-weight:normal;margin:0;white-space:nowrap}
 h2{font-size:14px;font-weight:600;margin:0 0 12px;color:#e3e8ef}
 p{font-size:14px;line-height:1.5;margin:0 0 12px}
 .engine{display:flex;align-items:center;gap:10px;flex:none}
@@ -36,7 +35,7 @@ section{min-width:0;background:var(--surface);border:1px solid var(--border);bor
 .test-input{min-width:0}
 .server-panel{display:grid;gap:14px}
 .server-panel>*{max-width:640px}
-.server-panel .row{margin:0}
+.server-panel .row,.server-panel>label,.server-panel>.button-group{margin:0}
 .server-actions{border-top:1px solid var(--border);padding-top:14px}
 .button-group,.row{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
 .button-group{align-items:center;margin-top:4px}
@@ -58,7 +57,6 @@ button.quiet{background:transparent;color:#bcc6d3}
 button.quiet:hover{background:#282f38}
 button.small{min-height:32px;padding:4px 10px}
 button:disabled,button:disabled:hover{opacity:.45;cursor:not-allowed;background:#282f38;border-color:#4b5664}
-button.primary:disabled{background:#bd5b19;border-color:#e07a32}
 input:disabled,select:disabled{opacity:.55}
 .settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}
 .load-basics{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -76,7 +74,7 @@ details[open]>summary{margin-bottom:10px}
 .response{min-width:0;min-height:180px;background:var(--inset);border:1px solid var(--border);border-radius:6px;padding:14px;display:flex;flex-direction:column}
 .response-note{margin:auto;text-align:center;color:var(--muted);font-size:13px}
 .response-note[data-state=failed]{margin:0;text-align:left;color:#ffc9c9;overflow-wrap:anywhere;white-space:pre-wrap}
-#output{flex:1;margin:0;background:transparent;border:0;padding:0;font-size:14px;line-height:1.7;max-height:420px}
+#output{flex:1;margin:0;background:transparent;border:0;padding:0;font-family:inherit;font-size:14px;line-height:1.7;max-height:420px}
 #output:empty,#test-stats:empty{display:none}
 #test-stats{margin:10px 0 0}
 input[readonly],code,pre{font-family:Consolas,monospace}

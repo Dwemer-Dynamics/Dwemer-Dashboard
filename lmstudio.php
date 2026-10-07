@@ -107,17 +107,17 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
                             <label>Idle unload (s)<input id="ttl" type="number" min="60" max="86400" value="600" required></label>
                         </div>
                         <details id="advanced-load"><summary>Advanced</summary>
-                            <p class="muted">“Engine default” leaves that option unchanged. Quantized V cache requires Flash Attention.</p>
+                            <p class="muted">Engine default uses LM Studio’s own setting. Quantized V cache needs Flash Attention.</p>
                             <p id="memlock-note" class="muted" hidden></p>
                             <div id="load-fields" class="settings-grid"></div>
                         </details>
                         <div id="defaults-conflict" class="notice warn" role="status" hidden>
-                            <p>Defaults changed elsewhere. Your edits are kept. Use latest before saving.</p>
-                            <button type="button" id="use-latest" class="small">Use latest</button>
+                            <p>Saved defaults changed in another window. Reload saved replaces your edits.</p>
+                            <button type="button" id="use-latest" class="small">Reload saved</button>
                         </div>
                         <div class="button-group">
                             <button type="button" id="save-defaults" data-mutation>Save defaults</button>
-                            <button type="button" id="reset-load" class="quiet">Reset</button>
+                            <button type="button" id="reset-load" class="quiet">Reset to built-in</button>
                         </div>
                     </details>
                     <details><summary>Technical details</summary><pre id="model-details"></pre></details>
@@ -125,6 +125,7 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
             </div>
             <div class="block" role="group" aria-labelledby="download-title">
                 <h2 id="download-title">Download</h2>
+                <p id="preset-note" class="muted" role="status" hidden></p>
                 <form id="preset-form" class="row">
                     <label>Model<select id="preset"></select></label>
                     <button id="preset-download" class="primary" data-mutation>Download</button>
@@ -140,10 +141,8 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
 
         <section id="panel-server" class="panel server-panel" role="tabpanel" aria-labelledby="tab-server" hidden>
             <label class="inline"><input id="autostart" type="checkbox"> Start with DwemerDistro</label>
-            <div class="row">
-                <label>Startup model<select id="startup-model"><option value="">None</option></select></label>
-                <button type="button" id="save-engine" data-mutation>Save</button>
-            </div>
+            <label>Startup model<select id="startup-model"><option value="">None</option></select></label>
+            <div class="button-group"><button type="button" id="save-engine" data-mutation>Save</button></div>
             <div class="row">
                 <label>API base<input id="endpoint" readonly></label>
                 <button type="button" data-copy="endpoint">Copy</button>

@@ -3,7 +3,11 @@ const el = id => document.getElementById(id);
 const csrf = document.querySelector('meta[name="lmstudio-csrf"]').content;
 let unlocked = false, pending = false, queued = false, busy = false, submitting = false;
 let current = null, shownModel = null, engineDirty = false, tabChosen = false, dismissedJob = null, epoch = 0;
-let testRun = null, testFailure = null, pollError = false, staleBefore = 0, preferLoaded = '';
+let testRun = null, testFailure = null, staleBefore = 0, preferLoaded = '';
+// Polling stops only when the session needs unlocking; transient status failures keep retrying.
+let needsUnlock = false, catalogReady = false, catalogPending = false, catalogRetryAt = 0;
+// Action and polling failures are reported separately so a poll never hides an action error.
+const errors = {action: '', poll: ''};
 // Loaded instances seen by the previous poll, the latest test result seen, and a last-load record known to describe an earlier load.
 let seenInstances = null, seenTest = null, seenLoadJob = '', staleLoad = '';
 // Saved defaults the form was filled from, the form as filled, and the model and defaults this page last saved.
@@ -12,9 +16,9 @@ let savedBase = '', filledForm = '', ownSaved = null;
 const ownJobs = new Map();
 const loadFields = {
     flashAttention: ['Flash Attention', 'bool'], offloadKVCacheToGpu: ['Offload KV cache to GPU', 'bool'],
-    gpuStrictVramCap: ['Strict GPU memory limit', 'bool'], keepModelInMemory: ['Keep model in RAM', 'bool'],
+    gpuStrictVramCap: ['Strict GPU memory limit', 'bool'], keepModelInMemory: ['Keep model in memory', 'bool'],
     tryMmap: ['Memory mapping (mmap)', 'bool'], evalBatchSize: ['Evaluation batch size', 1, 2048, 1],
-    seed: ['Random seed (next load)', 0, 4294967295, 1],
+    seed: ['Random seed', 0, 4294967295, 1],
     llamaKCacheQuantizationType: ['K cache precision', 'cache'], llamaVCacheQuantizationType: ['V cache precision', 'cache'],
     ropeFrequencyBase: ['RoPE frequency base', 0, 10000000, 'any'], ropeFrequencyScale: ['RoPE frequency scale', .01, 100, 'any']
 };
@@ -113,6 +117,7 @@ function selectTab(name, focus = false) {
         el(tab.getAttribute('aria-controls')).hidden = !selected;
         if (selected && focus) tab.focus();
     }
+    if (current) renderActivity(current.job);
 }
 
 function setText(id, text) { if (el(id).textContent !== text) el(id).textContent = text; }
@@ -136,7 +141,8 @@ function updateControls() {
         'Reinstall the LLM Studio component to enable advanced loading.');
     el('save-defaults').disabled = locked || !el('model').value || !el('defaults-conflict').hidden;
     el('unload').disabled = el('notice-unload').disabled = locked || !el('loaded').value;
-    ['save-engine', 'preset-download', 'custom-download'].forEach(id => { el(id).disabled = locked; });
+    ['save-engine', 'custom-download'].forEach(id => { el(id).disabled = locked; });
+    el('preset-download').disabled = locked || !el('preset').value;
     el('run-test').disabled = locked || !el('loaded').value || Boolean(testRun);
 }
 
@@ -159,7 +165,7 @@ function renderTest(state) {
     else if (testRun) note = 'Sending…';
     else if (failure) note = `Test failed: ${failure}`;
     else if (fresh && last.output) { output = last.output; stats = last.elapsedSeconds ? `Response time: ${Number(last.elapsedSeconds).toFixed(1)} s` : ''; }
-    else if (fresh && last.updated) note = 'The model returned an empty response.';
+    else if (fresh && last.updated) note = emptyNote(job, last);
     else note = 'No response yet.';
     if (running && output) stats = 'Generating…';
     setText('output', output); setText('test-stats', output ? stats : '');
@@ -170,14 +176,22 @@ function renderTest(state) {
     updateControls();
 }
 
+// The helper explains an empty answer on the test job that wrote this result; older or other jobs say nothing about it.
+function emptyNote(job, last) {
+    const own = job.action === 'test' && job.state === 'completed' && job.model === last.model && job.elapsedSeconds === last.elapsedSeconds;
+    return own && /reasoning/i.test(job.message || '') ?
+        'No answer text. The model may have used its output limit on reasoning; turn reasoning off or raise max output tokens.' :
+        'No answer text. The model returned an empty response.';
+}
+
 function gb(bytes) { return (bytes / 1073741824).toFixed(1); }
 
-// The engine's RAM locking limit in readable units; empty when unlimited or unknown.
+// The engine's memory locking limit in readable units; empty when unlimited or unknown.
 function lockLimit(bytes) {
     if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return '';
-    if (bytes >= 1073741824) return `${gb(bytes)} GB`;
-    if (bytes >= 1048576) return `${Math.floor(bytes / 1048576)} MB`;
-    return `${Math.floor(bytes / 1024)} KB`;
+    if (bytes >= 1073741824) return `${gb(bytes)} GiB`;
+    if (bytes >= 1048576) return `${Math.floor(bytes / 1048576)} MiB`;
+    return `${Math.floor(bytes / 1024)} KiB`;
 }
 
 function modelName(key) { return current?.models.find(m => m.key === key)?.display_name || key; }
@@ -223,7 +237,9 @@ function renderActivity(job) {
     if (loadDone) { if (loadedModel(own.model)) own.seenLoaded = true; else if (own.seenLoaded) own.gone = true; }
     const gone = loadDone && (own.gone || !loadedModel(own.model));
     const faded = gone || (done && !lastingDone.has(job.action) && Date.now() - own.finished > 4000);
-    const show = dismissedJob !== key && (running || failed || (done && !faded));
+    // The Test tab's response pane already shows a running test, so the card would only repeat it there.
+    const shownInPane = running && job.action === 'test' && !el('panel-test').hidden;
+    const show = dismissedJob !== key && !shownInPane && (running || failed || (done && !faded));
     el('activity').hidden = !show;
     if (!show) return;
     el('activity').dataset.state = failed ? 'failed' : done ? 'done' : 'running';
@@ -256,7 +272,7 @@ async function api(action, data = {}) {
     try { result = await response.json(); } catch { throw new Error(`Request failed (HTTP ${response.status}).`); }
     if (!response.ok) {
         if (response.status === 401) {
-            unlocked = false; el('unlock').hidden = false; el('manager').hidden = true;
+            unlocked = false; needsUnlock = true; el('unlock').hidden = false; el('manager').hidden = true;
             setText('status', 'Locked'); el('status').dataset.state = 'locked'; updateControls();
         }
         throw new Error(result.error || 'Request failed.');
@@ -264,7 +280,14 @@ async function api(action, data = {}) {
     return result;
 }
 
-function report(error) { el('error').textContent = error.message; el('error').hidden = false; pollError = false; }
+function showErrors() {
+    const text = [...new Set([errors.action, errors.poll].filter(Boolean))].join('\n');
+    setText('error', text); el('error').hidden = !text;
+}
+
+function report(error) { errors.action = error.message; showErrors(); }
+
+function clearReport() { errors.action = ''; showErrors(); }
 
 function options(id, models, key, title) {
     const select = el(id), selected = select.value;
@@ -322,7 +345,7 @@ function render(state) {
     el('sdk-note').hidden = Boolean(state.advancedAvailable);
     el('load-fields').querySelectorAll('input,select').forEach(input => input.disabled = !state.advancedAvailable);
     const limit = lockLimit(state.memoryLockLimit);
-    setText('memlock-note', limit ? `RAM locking is limited to ${limit} on this system.` : ''); el('memlock-note').hidden = !limit;
+    setText('memlock-note', limit ? `Keep model in memory can lock at most ${limit} on this system.` : ''); el('memlock-note').hidden = !limit;
     const applied = state.lastLoad?.model === el('model').value && loadedModel(el('model').value) && loadRecord !== staleLoad;
     setText('model-details', JSON.stringify({model: state.models.find(m => m.key === el('model').value),
         lastAdvancedLoad: applied ? state.lastLoad.appliedConfig : undefined, memoryLockWarning: applied ? state.lastLoad.memoryLockWarning : undefined}, null, 2));
@@ -346,9 +369,10 @@ async function refresh() {
     try {
         const state = await api('status');
         if (started === epoch) render(state); else queued = true;
-        if (pollError) { el('error').hidden = true; pollError = false; }
-    } catch (error) { report(error); pollError = true; }
-    finally { pending = false; if (queued) { queued = false; if (unlocked) refresh(); } }
+        errors.poll = ''; showErrors();
+        if (unlocked) catalog();
+    } catch (error) { errors.poll = error.message; showErrors(); }
+    finally { pending = false; if (queued) { queued = false; if (!needsUnlock) refresh(); } }
 }
 
 async function submit(action, data) {
@@ -360,18 +384,29 @@ async function submit(action, data) {
 
 async function act(action, data = {}) {
     if (busy || submitting) return false;
-    el('error').hidden = true; submitting = true; updateControls();
+    clearReport(); submitting = true; updateControls();
     try { await submit(action, data); return true; } catch (error) { report(error); return false; }
     finally { submitting = false; updateControls(); await refresh(); }
 }
 
+// The download list is optional: a failure is shown beside Download and retried later, never blocking the manager.
 async function catalog() {
-    const result = await api('catalog'); options('preset', result.models, 'id', 'name'); updateControls();
+    if (catalogReady || catalogPending || Date.now() < catalogRetryAt) return;
+    catalogPending = true;
+    try {
+        const result = await api('catalog'); options('preset', result.models, 'id', 'name');
+        catalogReady = true; setText('preset-note', result.models.length ? '' : 'No suggested models. Use a custom model below.');
+    } catch (error) {
+        catalogRetryAt = Date.now() + 15000; setText('preset-note', `Suggested models unavailable: ${error.message}`);
+    } finally { catalogPending = false; el('preset-note').hidden = !el('preset-note').textContent; updateControls(); }
 }
 
+// The key is sent once; afterwards status polling opens the manager and loads the download list.
 async function unlock(token) {
-    try { await api('authorize', {token}); el('token').value = ''; el('error').hidden = true; await catalog(); await refresh(); }
-    catch (error) { report(error); el('unlock').hidden = false; }
+    try { await api('authorize', {token}); }
+    catch (error) { needsUnlock = true; report(error); el('unlock').hidden = false; return; }
+    el('token').value = ''; needsUnlock = false; errors.poll = ''; clearReport();
+    await refresh();
 }
 
 tabs.forEach((tab, index) => {
@@ -420,7 +455,7 @@ el('save-engine').addEventListener('click', async () => {
     const saved = {autostart: el('autostart').checked, startupModel: el('startup-model').value};
     if (await act('settings', saved) && el('autostart').checked === saved.autostart && el('startup-model').value === saved.startupModel) engineDirty = false;
 });
-el('preset-form').addEventListener('submit', event => { event.preventDefault(); act('download', {preset: el('preset').value}); });
+el('preset-form').addEventListener('submit', event => { event.preventDefault(); if (el('preset').value) act('download', {preset: el('preset').value}); });
 el('custom-form').addEventListener('submit', event => { event.preventDefault(); act('download', {source: el('source').value.trim()}); });
 el('load-form').addEventListener('submit', event => {
     event.preventDefault(); if (!validLoad()) return;
@@ -446,7 +481,7 @@ el('test-form').addEventListener('submit', async event => {
     const model = el('loaded').value, prompt = el('prompt').value.trim();
     if (!model) { report(new Error('Load a model before running the test.')); return; }
     if (!prompt) { report(new Error('Enter a test prompt.')); return; }
-    el('error').hidden = true; testFailure = null;
+    clearReport(); testFailure = null;
     testRun = {model, updated: current.lastTest?.updated, job: JSON.stringify(current.job || {}), seen: false, sending: true};
     submitting = true;
     renderTest(current);
@@ -455,9 +490,9 @@ el('test-form').addEventListener('submit', async event => {
     submitting = false; testRun.sending = false;
     await refresh();
 });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && unlocked) refresh(); });
-setInterval(() => { if (unlocked) refresh(); }, 2000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !needsUnlock) refresh(); });
+setInterval(() => { if (!needsUnlock) refresh(); }, 2000);
 const token = new URLSearchParams(location.hash.slice(1)).get('token');
 history.replaceState(null, '', location.pathname);
 if (token) unlock(token);
-else refresh().then(() => { if (unlocked) catalog().catch(report); });
+else refresh();
