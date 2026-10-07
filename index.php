@@ -359,7 +359,6 @@ $dbUpdateLines = [
     ['status' => $reignUpdateStatus, 'detail' => $reignUpdateDetail],
 ];
 
-$chimUrl = '/HerikaServer/ui/home.php';
 $patreonCampaignUrl = 'https://www.patreon.com/DwemerDynamics';
 
 $requestHostRaw = trim((string)($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost')));
@@ -373,6 +372,7 @@ $stobeHostForUrl = $dashboardHost;
 if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[')) {
     $stobeHostForUrl = '[' . $stobeHostForUrl . ']';
 }
+$chimUrl = sprintf('%s://%s:8081/HerikaServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $reignUrl = sprintf('%s://%s:8089/', $requestScheme, $stobeHostForUrl);
