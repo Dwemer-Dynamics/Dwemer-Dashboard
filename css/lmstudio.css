@@ -92,12 +92,15 @@ pre{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;
 .activity-actions{display:flex;gap:6px;margin-left:auto}
 #job-detail{margin:6px 0 0;font-size:13px;color:#c7d0dc;overflow-wrap:anywhere;white-space:pre-wrap}
 .activity[data-state=failed] #job-detail{color:#ffd4d4}
+.activity[data-state=done] #job-detail{color:#f5cfa8}
 #job-log{margin-top:6px;padding-top:4px}
 #job-log>summary{min-height:28px;padding:4px 0}
 #job{max-height:160px;color:#b9c4d2}
 .notice{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;padding:8px 12px;margin-bottom:12px;border:1px solid var(--border);border-left:3px solid #74ce9a;border-radius:6px;background:var(--inset)}
 .notice p{margin:0;font-size:13px;color:#d8dfe8;overflow-wrap:anywhere}
 .notice .button-group{margin:0}
+.notice.warn{border-left-color:var(--accent)}
+#sdk-note{margin:-4px 0 0}
 progress{display:block;width:100%;height:6px;margin-top:8px;accent-color:var(--accent)}
 .unlock-panel{max-width:560px;margin-top:24px;padding:20px}
 .unlock-panel h2{font-size:16px}

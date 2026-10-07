@@ -98,17 +98,23 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
                         <label>Model<select id="model"></select></label>
                         <button id="load-button" class="primary" data-mutation>Load</button>
                     </div>
+                    <p id="sdk-note" class="muted" hidden></p>
                     <details id="load-settings"><summary>Load settings</summary>
+                        <p class="muted">Changes apply next time you load the model.</p>
                         <div class="settings-grid load-basics">
                             <label>Context tokens<input id="context" type="number" min="512" max="131072" value="4096" required></label>
                             <label>GPU offload %<input id="gpu" type="number" min="0" max="100" value="100" required></label>
                             <label>Idle unload (s)<input id="ttl" type="number" min="60" max="86400" value="600" required></label>
                         </div>
                         <details id="advanced-load"><summary>Advanced</summary>
-                            <p class="muted">Changes apply on the next load. “Engine default” leaves that option unchanged. Quantized V cache requires Flash Attention.</p>
-                            <p id="sdk-note" class="muted" hidden></p>
+                            <p class="muted">“Engine default” leaves that option unchanged. Quantized V cache requires Flash Attention.</p>
+                            <p id="memlock-note" class="muted" hidden></p>
                             <div id="load-fields" class="settings-grid"></div>
                         </details>
+                        <div id="defaults-conflict" class="notice warn" role="status" hidden>
+                            <p>Defaults changed elsewhere. Your edits are kept. Use latest before saving.</p>
+                            <button type="button" id="use-latest" class="small">Use latest</button>
+                        </div>
                         <div class="button-group">
                             <button type="button" id="save-defaults" data-mutation>Save defaults</button>
                             <button type="button" id="reset-load" class="quiet">Reset</button>
