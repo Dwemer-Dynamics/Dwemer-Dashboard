@@ -6,6 +6,8 @@ let current = null, shownModel = null, engineDirty = false, tabChosen = false, d
 let testRun = null, testFailure = null, staleBefore = 0, preferLoaded = '';
 // Polling stops only when the session needs unlocking; transient status failures keep retrying.
 let needsUnlock = false, catalogReady = false, catalogPending = false, catalogRetryAt = 0;
+// Status pauses while a key is checked; responses to requests sent before the latest key check are stale and never lock or render.
+let authorizing = false, authGen = 0, authError = '';
 // Action and polling failures are reported separately so a poll never hides an action error.
 const errors = {action: '', poll: ''};
 // Loaded instances seen by the previous poll, the latest test result seen, and a last-load record known to describe an earlier load.
@@ -265,17 +267,22 @@ function renderActivity(job) {
     } else { el('progress').removeAttribute('value'); setText('job-amount', ''); }
 }
 
+function lock() {
+    unlocked = false; needsUnlock = true; el('unlock').hidden = false; el('manager').hidden = true;
+    setText('status', 'Locked'); el('status').dataset.state = 'locked'; updateControls();
+}
+
 async function api(action, data = {}) {
+    const auth = authGen;
     const response = await fetch('api/lmstudio.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({...data, action, csrf}), cache: 'no-store'});
+    // The HTTP status rides on the error so callers can tell a rejected key from a temporary failure.
+    const failure = message => Object.assign(new Error(message), {status: response.status});
     let result;
-    try { result = await response.json(); } catch { throw new Error(`Request failed (HTTP ${response.status}).`); }
+    try { result = await response.json(); } catch { throw failure(`Request failed (HTTP ${response.status}).`); }
     if (!response.ok) {
-        if (response.status === 401) {
-            unlocked = false; needsUnlock = true; el('unlock').hidden = false; el('manager').hidden = true;
-            setText('status', 'Locked'); el('status').dataset.state = 'locked'; updateControls();
-        }
-        throw new Error(result.error || 'Request failed.');
+        if (response.status === 401 && auth === authGen && !authorizing) lock();
+        throw failure(result.error || 'Request failed.');
     }
     return result;
 }
@@ -362,17 +369,26 @@ function render(state) {
 
 // Results from a status request that started before a mutation are discarded and fetched again.
 async function refresh() {
-    if (document.hidden) return;
+    if (document.hidden || authorizing) return;
     if (pending) { queued = true; return; }
     pending = true;
-    const started = epoch;
+    const started = epoch, auth = authGen;
     try {
         const state = await api('status');
-        if (started === epoch) render(state); else queued = true;
-        errors.poll = ''; showErrors();
-        if (unlocked) catalog();
-    } catch (error) { errors.poll = error.message; showErrors(); }
-    finally { pending = false; if (queued) { queued = false; if (!needsUnlock) refresh(); } }
+        if (auth !== authGen) queued = true;
+        else {
+            if (started === epoch) render(state); else queued = true;
+            // An open manager makes a temporary key-check failure moot.
+            if (unlocked && authError) { if (errors.action === authError) errors.action = ''; authError = ''; }
+            errors.poll = ''; showErrors();
+            if (unlocked) catalog();
+        }
+    } catch (error) {
+        if (auth !== authGen) queued = true;
+        // The key-check message already explains a lock that follows it.
+        else { errors.poll = error.status === 401 && authError && errors.action === authError ? '' : error.message; showErrors(); }
+    }
+    finally { pending = false; if (queued) { queued = false; if (!needsUnlock && !authorizing) refresh(); } }
 }
 
 async function submit(action, data) {
@@ -402,10 +418,18 @@ async function catalog() {
 }
 
 // The key is sent once; afterwards status polling opens the manager and loads the download list.
+// A rejected key locks. A temporary failure falls back to status, which still opens a valid or local session.
 async function unlock(token) {
-    try { await api('authorize', {token}); }
-    catch (error) { needsUnlock = true; report(error); el('unlock').hidden = false; return; }
-    el('token').value = ''; needsUnlock = false; errors.poll = ''; clearReport();
+    if (authorizing) return;
+    authorizing = true; authGen++;
+    try { await api('authorize', {token}); el('token').value = ''; authError = ''; clearReport(); }
+    catch (error) {
+        report(error);
+        if (error.status === 401 || error.status === 403) { authError = ''; errors.poll = ''; showErrors(); lock(); return; }
+        authError = error.message;
+    }
+    finally { authorizing = false; }
+    needsUnlock = false; errors.poll = ''; showErrors();
     await refresh();
 }
 
