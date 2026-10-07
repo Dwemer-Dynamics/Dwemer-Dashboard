@@ -1,12 +1,13 @@
 <?php
 // Keep LM Studio mutations behind a manager session and the restricted WSL helper.
 declare(strict_types=1);
+require_once __DIR__ . '/../lib/lmstudio_access.php';
 session_start();
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 
-function lmstudio_helper(string $command, array $input = []): array
+function lmstudio_helper(string $command, array|stdClass $input = []): array
 {
     $process = proc_open(['sudo', '-n', '-u', 'dwemer', '/usr/local/bin/ddistro_lmstudio', $command],
         [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
@@ -32,7 +33,8 @@ try {
         http_response_code(405);
         throw new RuntimeException('Use POST.');
     }
-    $input = json_decode(file_get_contents('php://input', false, null, 0, 16384), true, 16, JSON_THROW_ON_ERROR);
+    $body = (string) file_get_contents('php://input', false, null, 0, 16384);
+    $input = json_decode($body, true, 16, JSON_THROW_ON_ERROR);
     if (!is_array($input) || !is_string($input['csrf'] ?? null) ||
         !hash_equals($_SESSION['lmstudio_csrf'] ?? '', $input['csrf']) || empty($_SESSION['lmstudio_csrf'])) {
         http_response_code(403);
@@ -52,7 +54,7 @@ try {
         session_regenerate_id(true);
         $_SESSION['lmstudio_until'] = time() + 28800;
     } else {
-        if (($_SESSION['lmstudio_until'] ?? 0) < time()) {
+        if (($_SESSION['lmstudio_until'] ?? 0) < time() && !lmstudio_local_request($_SERVER)) {
             http_response_code(401);
             throw new RuntimeException('Open Manager from the launcher to unlock this page.');
         }
@@ -60,8 +62,10 @@ try {
         if ($action === 'status' || $action === 'catalog') {
             $result = lmstudio_helper($action);
         } elseif (in_array($action, ['start', 'stop', 'restart', 'settings', 'download', 'load', 'unload', 'test', 'model-defaults', 'test-preset'], true)) {
-            unset($input['csrf']);
-            $result = lmstudio_helper('submit', $input);
+            // Forward the object-decoded body so empty settings stay {} instead of becoming [].
+            $payload = json_decode($body, false, 16, JSON_THROW_ON_ERROR);
+            unset($payload->csrf);
+            $result = lmstudio_helper('submit', $payload);
         } else {
             throw new RuntimeException('Unknown action.');
         }
