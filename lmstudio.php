@@ -49,16 +49,20 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
             <div class="activity-head">
                 <strong id="job-title" aria-live="polite"></strong>
                 <span id="job-amount"></span>
-                <button type="button" id="job-dismiss" class="quiet small" hidden>Dismiss</button>
+                <span class="activity-actions">
+                    <button type="button" id="job-next" class="primary small" hidden>Go to Test</button>
+                    <button type="button" id="job-dismiss" class="quiet small" hidden>Dismiss</button>
+                </span>
             </div>
             <progress id="progress" max="100" value="0" aria-labelledby="job-title"></progress>
-            <pre id="job"></pre>
+            <p id="job-detail"></p>
+            <details id="job-log" hidden><summary>Details</summary><pre id="job"></pre></details>
         </div>
 
         <section id="panel-test" class="panel test-panel" role="tabpanel" aria-labelledby="tab-test" hidden>
             <div class="test-input">
                 <div id="test-empty" class="empty">
-                    <p>No model loaded.</p>
+                    <p id="test-empty-text">No model loaded.</p>
                     <button type="button" id="goto-models">Open Models</button>
                 </div>
                 <div id="loaded-row" class="row">
@@ -82,6 +86,13 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
             <div class="block" role="group" aria-labelledby="installed-title">
                 <h2 id="installed-title">Installed</h2>
                 <p id="model-note" class="muted">Start the server to see models.</p>
+                <div id="loaded-note" class="notice" hidden>
+                    <p><b id="loaded-name"></b> is loaded. Unload it to load another model.</p>
+                    <div class="button-group">
+                        <button type="button" id="notice-test" class="small">Test</button>
+                        <button type="button" id="notice-unload" class="small" data-mutation>Unload</button>
+                    </div>
+                </div>
                 <form id="load-form" novalidate hidden>
                     <div class="row">
                         <label>Model<select id="model"></select></label>
@@ -103,7 +114,7 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
                             <button type="button" id="reset-load" class="quiet">Reset</button>
                         </div>
                     </details>
-                    <details><summary>Model details</summary><pre id="model-details"></pre></details>
+                    <details><summary>Technical details</summary><pre id="model-details"></pre></details>
                 </form>
             </div>
             <div class="block" role="group" aria-labelledby="download-title">

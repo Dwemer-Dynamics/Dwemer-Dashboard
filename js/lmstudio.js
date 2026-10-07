@@ -3,7 +3,9 @@ const el = id => document.getElementById(id);
 const csrf = document.querySelector('meta[name="lmstudio-csrf"]').content;
 let unlocked = false, pending = false, queued = false, busy = false, submitting = false;
 let current = null, shownModel = null, engineDirty = false, tabChosen = false, dismissedJob = null, epoch = 0;
-let testRun = null, testFailure = '';
+let testRun = null, testFailure = null, pollError = false, staleBefore = 0, preferLoaded = '';
+// Jobs submitted from this page; only these get a success message.
+const ownJobs = new Map();
 const loadFields = {
     flashAttention: ['Flash Attention', 'bool'], offloadKVCacheToGpu: ['Offload KV cache to GPU', 'bool'],
     gpuStrictVramCap: ['Strict GPU memory limit', 'bool'], keepModelInMemory: ['Keep model in RAM', 'bool'],
@@ -18,6 +20,14 @@ const jobNames = {start: 'Starting server', stop: 'Stopping server', restart: 'R
     download: 'Downloading', load: 'Loading model', unload: 'Unloading model', test: 'Testing', 'model-defaults': 'Saving defaults'};
 const failNames = {start: 'Start failed', stop: 'Stop failed', restart: 'Restart failed', settings: 'Save failed',
     download: 'Download failed', load: 'Load failed', unload: 'Unload failed', test: 'Test failed', 'model-defaults': 'Save failed'};
+const doneNames = {load: 'Model loaded', unload: 'Model unloaded', download: 'Download complete', settings: 'Settings saved', 'model-defaults': 'Defaults saved'};
+// Load and download successes lead somewhere next, so they stay until dismissed; saves fade after a few seconds.
+const lastingDone = new Set(['load', 'download']);
+// The helper may report an optional job phase. Only transfer phases show a percentage.
+const transferPhases = new Set(['download', 'downloading', 'transfer', 'resume', 'resuming']);
+const phaseNames = {download: 'Downloading', downloading: 'Downloading', transfer: 'Downloading', resume: 'Resuming download',
+    resuming: 'Resuming download', verify: 'Verifying download', verifying: 'Verifying download', import: 'Importing model',
+    importing: 'Importing model', retry: 'Retrying', retrying: 'Retrying'};
 const tabs = [...document.querySelectorAll('[role=tab]')];
 
 // Keep optional values empty so engine defaults remain available for every model.
@@ -86,9 +96,10 @@ function updateControls() {
     toggle.classList.toggle('primary', !running);
     toggle.disabled = locked || !unlocked || !current || !installed;
     el('restart').disabled = locked || !installed || !running;
-    el('load-button').disabled = locked || !running || !el('model').value;
+    // The helper refuses a second load, so Load stays off while any model is loaded.
+    el('load-button').disabled = locked || !running || !el('model').value || hasLoaded();
     el('save-defaults').disabled = locked || !el('model').value;
-    el('unload').disabled = locked || !el('loaded').value;
+    el('unload').disabled = el('notice-unload').disabled = locked || !el('loaded').value;
     ['save-engine', 'preset-download', 'custom-download'].forEach(id => { el(id).disabled = locked; });
     el('run-test').disabled = locked || !el('loaded').value || Boolean(testRun);
 }
@@ -99,40 +110,86 @@ function renderTest(state) {
     const running = job.action === 'test' && job.state === 'running';
     if (testRun && running) testRun.seen = true;
     if (testRun && !testRun.sending && !running && (last.updated !== testRun.updated || testRun.seen || JSON.stringify(job) !== testRun.job)) {
-        if (last.updated === testRun.updated) testFailure = job.message || 'No response was returned.';
+        if (last.updated === testRun.updated) testFailure = {model: testRun.model, message: job.message || 'No response was returned.'};
         testRun = null;
     }
+    // A result belongs to the selected model and must be newer than its last load or unload.
+    const selected = el('loaded').value, fresh = Boolean(selected) && last.model === selected && (last.updated || 0) > staleBefore;
+    const failure = !running && !testRun && testFailure?.model === selected ? testFailure.message : '';
     let output = '', stats = '', note = '';
     if (running) { output = job.output || ''; note = 'Generating…'; }
     else if (testRun) note = 'Sending…';
-    else if (testFailure) note = `Test failed: ${testFailure}`;
-    else if (last.output) { output = last.output; stats = last.elapsedSeconds ? `Response time: ${Number(last.elapsedSeconds).toFixed(1)} s` : ''; }
-    else if (last.updated) note = 'The model returned an empty response.';
+    else if (failure) note = `Test failed: ${failure}`;
+    else if (fresh && last.output) { output = last.output; stats = last.elapsedSeconds ? `Response time: ${Number(last.elapsedSeconds).toFixed(1)} s` : ''; }
+    else if (fresh && last.updated) note = 'The model returned an empty response.';
     else note = 'No response yet.';
     if (running && output) stats = 'Generating…';
     setText('output', output); setText('test-stats', output ? stats : '');
     setText('response-placeholder', note); el('response-placeholder').hidden = Boolean(output) || !note;
-    el('response-placeholder').dataset.state = testFailure && !running && !testRun ? 'failed' : '';
-    const loaded = Boolean(el('loaded').value);
-    el('test-empty').hidden = loaded; el('loaded-row').hidden = !loaded;
+    el('response-placeholder').dataset.state = failure ? 'failed' : '';
+    el('test-empty').hidden = Boolean(selected); el('loaded-row').hidden = !selected;
+    setText('test-empty-text', !current || current.running ? 'No model loaded.' : 'Server stopped.');
     updateControls();
 }
 
 function gb(bytes) { return (bytes / 1073741824).toFixed(1); }
 
-// Show running jobs and keep failures visible until another job starts or the user dismisses them.
+function modelName(key) { return current?.models.find(m => m.key === key)?.display_name || key; }
+
+function hasLoaded() { return el('loaded').options.length > 0; }
+
+function presetName(id) { return [...el('preset').options].find(o => o.value === id)?.textContent.split(' · ')[0] || ''; }
+
+function phaseOf(job) { return typeof job.phase === 'string' ? job.phase.toLowerCase() : ''; }
+
+// Titles name the model the user picked; jobs started elsewhere keep generic titles.
+function jobTitle(job, own) {
+    const name = own?.model ? modelName(own.model) : own?.preset ? presetName(own.preset) : '', phase = phaseOf(job);
+    if (job.state === 'failed') return failNames[job.action] || 'Operation failed';
+    if (job.state === 'completed') return job.action === 'load' && name ? `${name} loaded` : doneNames[job.action] || 'Done';
+    if (phase) {
+        const title = phaseNames[phase] || phase.charAt(0).toUpperCase() + phase.slice(1).replace(/[-_]/g, ' ');
+        return name && transferPhases.has(phase) ? `${title} ${name}` : title;
+    }
+    if (name && job.action === 'load') return `Loading ${name}`;
+    if (name && job.action === 'download') return `Downloading ${name}`;
+    return jobNames[job.action] || 'Working';
+}
+
+// Long CLI or engine output stays one click away; the card shows only its last meaningful line.
+function jobSummary(message) {
+    const lines = String(message || '').split('\n').map(line => line.trim()).filter(Boolean);
+    const last = lines[lines.length - 1] || '';
+    const line = /^(starting|done)\.*$/i.test(last) ? '' : last.length > 160 ? `${last.slice(0, 157)}…` : last;
+    return {line, more: lines.length > 1 || last.length > 160};
+}
+
+// Show running jobs, failures until dismissed, and brief success for jobs started on this page.
 function renderActivity(job) {
-    const key = job.id || `${job.action}:${job.updated}`;
-    const show = job.state === 'running' || (job.state === 'failed' && dismissedJob !== key);
+    const key = job.id || `${job.action}:${job.updated}`, own = ownJobs.get(job.id);
+    const failed = job.state === 'failed', running = job.state === 'running';
+    const done = job.state === 'completed' && Boolean(own) && job.action in doneNames;
+    if (done) own.finished ??= Date.now();
+    const faded = done && !lastingDone.has(job.action) && Date.now() - own.finished > 4000;
+    const show = dismissedJob !== key && (running || failed || (done && !faded));
     el('activity').hidden = !show;
     if (!show) return;
-    const failed = job.state === 'failed';
-    el('activity').dataset.state = failed ? 'failed' : 'running';
-    setText('job-title', failed ? failNames[job.action] || 'Operation failed' : jobNames[job.action] || 'Working');
-    setText('job', job.message || '');
-    el('job-dismiss').hidden = !failed; el('job-dismiss').dataset.job = key;
-    el('progress').hidden = failed;
-    if (job.total) {
+    el('activity').dataset.state = failed ? 'failed' : done ? 'done' : 'running';
+    setText('job-title', jobTitle(job, own));
+    const message = done ? '' : String(job.message || ''), summary = jobSummary(message);
+    // Short failures stay fully visible; long ones keep their last line visible and the full text below.
+    const shortFailure = failed && message.length <= 400 && message.trim().split('\n').length <= 3;
+    setText('job-detail', shortFailure ? message.trim() : summary.line);
+    setText('job', message);
+    el('job-log').hidden = shortFailure || !summary.more;
+    el('job-dismiss').hidden = running; el('job-dismiss').dataset.job = key;
+    el('job-next').hidden = !(done && job.action === 'load'); el('job-next').dataset.model = own?.model || '';
+    // Percentages describe bytes transferred only; verifying and importing stay indeterminate.
+    const phase = phaseOf(job);
+    const transfer = running && job.total > 0 && (phase ? transferPhases.has(phase) : job.downloaded < job.total);
+    el('progress').hidden = !running;
+    el('job-detail').hidden = transfer || !el('job-detail').textContent;
+    if (transfer) {
         el('progress').value = job.downloaded * 100 / job.total;
         setText('job-amount', `${Math.floor(job.downloaded * 100 / job.total)}% · ${gb(job.downloaded)} of ${gb(job.total)} GB`);
     } else { el('progress').removeAttribute('value'); setText('job-amount', ''); }
@@ -153,7 +210,7 @@ async function api(action, data = {}) {
     return result;
 }
 
-function report(error) { el('error').textContent = error.message; el('error').hidden = false; }
+function report(error) { el('error').textContent = error.message; el('error').hidden = false; pollError = false; }
 
 function options(id, models, key, title) {
     const select = el(id), selected = select.value;
@@ -173,7 +230,14 @@ function render(state) {
     el('endpoint').value = state.endpoint; el('chatUrl').value = state.chatUrl;
     const llms = state.models.filter(m => m.type === 'llm');
     options('model', llms, 'key', 'display_name');
-    options('loaded', state.models.flatMap(m => m.loaded_instances || []), 'id', 'id');
+    // Friendly names in normal flow; the raw instance id stays available through Copy ID.
+    const instances = state.models.flatMap(m => (m.loaded_instances || []).map(i => ({id: i.id, model: m.key, name: m.display_name || i.id})));
+    const named = instances.map(i => i.name);
+    instances.forEach(i => { if (named.filter(name => name === i.name).length > 1) i.name = `${i.name} (${i.id})`; });
+    options('loaded', instances, 'id', 'name');
+    const preferred = preferLoaded && instances.find(i => i.model === preferLoaded);
+    if (preferred) { el('loaded').value = preferred.id; preferLoaded = ''; }
+    if (['load', 'unload'].includes(state.job.action)) staleBefore = Math.max(staleBefore, state.job.updated || 0);
     const startupModels = [{key: '', display_name: 'None'}, ...llms];
     if (state.settings.startupModel && !startupModels.some(m => m.key === state.settings.startupModel)) startupModels.push({key: state.settings.startupModel});
     options('startup-model', startupModels, 'key', 'display_name');
@@ -187,6 +251,8 @@ function render(state) {
     const listed = state.running && llms.length > 0;
     setText('model-note', state.running ? 'No models yet.' : 'Start the server to see models.');
     el('model-note').hidden = listed; el('load-form').hidden = !listed;
+    el('loaded-note').hidden = !state.running || !instances.length;
+    setText('loaded-name', instances.length > 1 ? `${instances.length} models` : instances[0]?.name || '');
     busy = state.job.state === 'running';
     if (!tabChosen) selectTab(el('loaded').value ? 'test' : 'models');
     renderActivity(state.job);
@@ -202,13 +268,15 @@ async function refresh() {
     try {
         const state = await api('status');
         if (started === epoch) render(state); else queued = true;
-    } catch (error) { report(error); }
+        if (pollError) { el('error').hidden = true; pollError = false; }
+    } catch (error) { report(error); pollError = true; }
     finally { pending = false; if (queued) { queued = false; if (unlocked) refresh(); } }
 }
 
 async function submit(action, data) {
     const job = await api(action, data);
     epoch++;
+    if (job?.id) ownJobs.set(job.id, {model: data.model, preset: data.preset});
     if (job?.id && current) { busy = job.state === 'running'; current = {...current, job}; renderActivity(job); }
 }
 
@@ -241,6 +309,19 @@ const vertical = matchMedia('(min-width: 761px)');
 const orient = () => document.querySelector('[role=tablist]').setAttribute('aria-orientation', vertical.matches ? 'vertical' : 'horizontal');
 orient(); vertical.addEventListener('change', orient);
 el('goto-models').addEventListener('click', () => selectTab('models', true));
+// Explicit next step after a load; polling never switches tabs on its own.
+function gotoTest(model) {
+    const instance = model && current?.models.find(m => m.key === model)?.loaded_instances?.[0];
+    if (instance) el('loaded').value = instance.id; else if (model) preferLoaded = model;
+    selectTab('test');
+    renderTest(current);
+    (el('run-test').disabled ? el('tab-test') : el('run-test')).focus();
+}
+el('job-next').addEventListener('click', () => {
+    dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true; gotoTest(el('job-next').dataset.model);
+});
+el('notice-test').addEventListener('click', () => gotoTest(''));
+el('notice-unload').addEventListener('click', () => act('unload', {model: el('loaded').value}));
 el('engine-toggle').addEventListener('click', () => { if (current) act(current.running ? 'stop' : 'start'); });
 document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => act(button.dataset.action)));
 document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
@@ -268,18 +349,19 @@ el('model').addEventListener('change', () => { selectModel(); updateControls(); 
 el('reset-load').addEventListener('click', () => selectModel(true));
 el('save-defaults').addEventListener('click', () => { if (!validLoad()) return; try { act('model-defaults', loadValues()); } catch (error) { report(error); } });
 el('unload').addEventListener('click', () => act('unload', {model: el('loaded').value}));
+el('loaded').addEventListener('change', () => { if (current) renderTest(current); });
 el('test-form').addEventListener('submit', async event => {
     event.preventDefault();
     if (busy || submitting || testRun) return;
     const model = el('loaded').value, prompt = el('prompt').value.trim();
     if (!model) { report(new Error('Load a model before running the test.')); return; }
     if (!prompt) { report(new Error('Enter a test prompt.')); return; }
-    el('error').hidden = true; testFailure = '';
-    testRun = {updated: current.lastTest?.updated, job: JSON.stringify(current.job || {}), seen: false, sending: true};
+    el('error').hidden = true; testFailure = null;
+    testRun = {model, updated: current.lastTest?.updated, job: JSON.stringify(current.job || {}), seen: false, sending: true};
     submitting = true;
     renderTest(current);
     try { await submit('test', {model, prompt, generation: {system_prompt: testSystemPrompt}}); }
-    catch (error) { submitting = false; testRun = null; testFailure = error.message; report(error); renderTest(current); return; }
+    catch (error) { submitting = false; testRun = null; testFailure = {model, message: error.message}; report(error); renderTest(current); return; }
     submitting = false; testRun.sending = false;
     await refresh();
 });
