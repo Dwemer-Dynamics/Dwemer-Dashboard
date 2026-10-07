@@ -4,10 +4,10 @@ const csrf = document.querySelector('meta[name="lmstudio-csrf"]').content;
 let unlocked = false, pending = false, queued = false, busy = false, submitting = false;
 let current = null, shownModel = null, engineDirty = false, tabChosen = false, dismissedJob = null, epoch = 0;
 let testRun = null, testFailure = null, pollError = false, staleBefore = 0, preferLoaded = '';
-// Loaded instances seen by the previous poll, and a last-load record known to describe an earlier load.
-let seenInstances = null, seenLoadJob = '', staleLoad = '';
-// Saved defaults the form was filled from, the form as filled, and the last defaults this page saved.
-let savedBase = '', filledForm = '', ownSaved = '';
+// Loaded instances seen by the previous poll, the latest test result seen, and a last-load record known to describe an earlier load.
+let seenInstances = null, seenTest = null, seenLoadJob = '', staleLoad = '';
+// Saved defaults the form was filled from, the form as filled, and the model and defaults this page last saved.
+let savedBase = '', filledForm = '', ownSaved = null;
 // Jobs submitted from this page; only these get a success message.
 const ownJobs = new Map();
 const loadFields = {
@@ -101,7 +101,7 @@ function syncDefaults() {
         if (form === filledForm) selectModel();
         else if (form === latest) { savedBase = latest; filledForm = form; }
         // This page's own save landed while the user kept editing; those edits stay unsaved, not in conflict.
-        else if (latest === ownSaved) savedBase = latest;
+        else if (ownSaved?.model === el('model').value && latest === ownSaved.snapshot) { savedBase = latest; ownSaved = null; }
     }
 }
 
@@ -128,7 +128,12 @@ function updateControls() {
     el('restart').disabled = locked || !installed || !running;
     // The helper refuses a second load, so Load stays off while any model is loaded.
     el('load-button').disabled = locked || !running || !el('model').value || hasLoaded();
-    setText('load-button', basicLoad() ? 'Load basic' : 'Load');
+    // The SDK note and Load label describe the same form, so Reset and model changes update both at once.
+    const basic = basicLoad();
+    setText('load-button', basic ? 'Load basic' : 'Load');
+    if (current && !current.advancedAvailable) setText('sdk-note', basic ?
+        'Advanced loading is unavailable. Load basic skips these settings; your saved values are kept.' :
+        'Reinstall the LLM Studio component to enable advanced loading.');
     el('save-defaults').disabled = locked || !el('model').value || !el('defaults-conflict').hidden;
     el('unload').disabled = el('notice-unload').disabled = locked || !el('loaded').value;
     ['save-engine', 'preset-download', 'custom-download'].forEach(id => { el(id).disabled = locked; });
@@ -141,9 +146,11 @@ function renderTest(state) {
     const running = job.action === 'test' && job.state === 'running';
     if (testRun && running) testRun.seen = true;
     if (testRun && !testRun.sending && !running && (last.updated !== testRun.updated || testRun.seen || JSON.stringify(job) !== testRun.job)) {
-        if (last.updated === testRun.updated) testFailure = {model: testRun.model, message: job.message || 'No response was returned.'};
+        if (last.updated === testRun.updated) testFailure = {model: testRun.model, message: job.message || 'No response was returned.', after: last.updated || 0};
         testRun = null;
     }
+    // A newer result for the failed instance, such as another session's test, replaces the failure.
+    if (testFailure && last.model === testFailure.model && (last.updated || 0) > testFailure.after) testFailure = null;
     // A result belongs to the selected model and must be newer than its last load or unload.
     const selected = el('loaded').value, fresh = Boolean(selected) && last.model === selected && (last.updated || 0) > staleBefore;
     const failure = !running && !testRun && testFailure?.model === selected ? testFailure.message : '';
@@ -276,7 +283,8 @@ function render(state) {
     if (!engineDirty) el('autostart').checked = state.settings.autostart;
     el('endpoint').value = state.endpoint; el('chatUrl').value = state.chatUrl;
     const llms = state.models.filter(m => m.type === 'llm');
-    options('model', llms, 'key', 'display_name');
+    // A stopped or restarting server lists no models; keep the choice and unsaved form until a real list returns.
+    if (llms.length) options('model', llms, 'key', 'display_name');
     // Friendly names in normal flow; the raw instance id stays available through Copy ID.
     const instances = state.models.flatMap(m => (m.loaded_instances || []).map(i => ({id: i.id, model: m.key, name: m.display_name || i.id})));
     const named = instances.map(i => i.name);
@@ -291,21 +299,26 @@ function render(state) {
     // Only an advanced load writes a new record; a basic load leaves the previous one behind.
     const loadJob = state.job.action === 'load' && state.job.state === 'completed' ? `${state.job.id}:${state.job.updated}` : '';
     if (loadJob && loadJob !== seenLoadJob) { seenLoadJob = loadJob; staleLoad = state.job.appliedConfig ? '' : loadRecord; }
+    // A result or failure is history once its instance leaves the list; other models loading or unloading leave it valid.
+    if (state.lastTest?.model) seenTest = state.lastTest;
+    if (seenTest && !instances.some(i => i.id === seenTest.model)) staleBefore = Math.max(staleBefore, seenTest.updated || 0);
+    if (testFailure && !instances.some(i => i.id === testFailure.model)) testFailure = null;
     if (seenInstances !== null && seenInstances !== instanceIds) {
-        staleBefore = Math.max(staleBefore, state.lastTest?.updated || 0); testFailure = null;
         // Applied settings of an unloaded model no longer describe whatever loads next.
         if (!instances.some(i => i.model === state.lastLoad?.model)) staleLoad = loadRecord;
     }
     seenInstances = instanceIds;
     const startupModels = [{key: '', display_name: 'None'}, ...llms];
-    if (state.settings.startupModel && !startupModels.some(m => m.key === state.settings.startupModel)) startupModels.push({key: state.settings.startupModel});
+    // Keep the saved choice and any unsaved choice listed, with their names, while the server lists no models.
+    const startup = el('startup-model'), keep = [state.settings.startupModel, engineDirty ? startup.value : ''];
+    for (const key of keep) {
+        const name = [...startup.options].find(o => o.value === key)?.textContent;
+        if (key && !startupModels.some(m => m.key === key)) startupModels.push({key, display_name: name});
+    }
     options('startup-model', startupModels, 'key', 'display_name');
     if (!engineDirty) el('startup-model').value = state.settings.startupModel || '';
     if (shownModel !== el('model').value) selectModel(); else syncDefaults();
     el('defaults-conflict').hidden = savedSnapshot(el('model').value) === savedBase;
-    setText('sdk-note', state.advancedAvailable ? '' : basicLoad() ?
-        'Advanced loading is unavailable. Load basic skips these settings; your saved values are kept.' :
-        'Reinstall the LLM Studio component to enable advanced loading.');
     el('sdk-note').hidden = Boolean(state.advancedAvailable);
     el('load-fields').querySelectorAll('input,select').forEach(input => input.disabled = !state.advancedAvailable);
     const limit = lockLimit(state.memoryLockLimit);
@@ -419,7 +432,11 @@ el('use-latest').addEventListener('click', () => { selectModel(); el('defaults-c
 // Unavailable advanced fields keep their saved values, so saving other settings never erases them.
 el('save-defaults').addEventListener('click', () => {
     if (!validLoad() || !el('defaults-conflict').hidden) return;
-    try { const values = loadValues(); ownSaved = snapshotOf(values); act('model-defaults', values); } catch (error) { report(error); }
+    try {
+        const values = loadValues(), saving = {model: values.model, snapshot: snapshotOf(values)};
+        ownSaved = saving;
+        act('model-defaults', values).then(ok => { if (!ok && ownSaved === saving) ownSaved = null; });
+    } catch (error) { report(error); }
 });
 el('unload').addEventListener('click', () => act('unload', {model: el('loaded').value}));
 el('loaded').addEventListener('change', () => { if (current) renderTest(current); });
@@ -434,7 +451,7 @@ el('test-form').addEventListener('submit', async event => {
     submitting = true;
     renderTest(current);
     try { await submit('test', {model, prompt, generation: {system_prompt: testSystemPrompt}}); }
-    catch (error) { submitting = false; testRun = null; testFailure = {model, message: error.message}; report(error); renderTest(current); return; }
+    catch (error) { submitting = false; testRun = null; testFailure = {model, message: error.message, after: current.lastTest?.updated || 0}; report(error); renderTest(current); return; }
     submitting = false; testRun.sending = false;
     await refresh();
 });
