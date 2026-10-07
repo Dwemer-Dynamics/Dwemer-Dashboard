@@ -397,6 +397,8 @@ $storageMods = [
     ['key' => 'dialectic', 'label' => 'DIALECTIC', 'installed' => $dialecticRoot !== ''],
     ['key' => 'stobe', 'label' => 'STOBE', 'installed' => $stobeRoot !== ''],
 ];
+require_once(__DIR__ . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'custom_mods.php');
+$customMods = dashboard_custom_mods(DASHBOARD_CUSTOM_MOD_REGISTRY);
 
 $normalizePatronName = static function (string $name): string {
     $normalized = trim(preg_replace('/\s+/', ' ', $name) ?? '');
@@ -1587,6 +1589,46 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .home-storage-manage:hover { color: #ffffff; border-color: #ffad61; background: rgba(255, 173, 97, 0.12); }
         .home-storage-manage:focus-visible { outline: 2px solid #ffad61; outline-offset: 3px; }
 
+        .home-custom-mods {
+            margin-top: 12px;
+            padding: 12px 22px 14px;
+            border: 1px solid rgba(138, 155, 182, 0.2);
+            border-radius: 12px;
+            background: linear-gradient(180deg, rgba(34, 40, 52, 0.72), rgba(24, 28, 37, 0.72));
+            text-align: left;
+        }
+
+        .home-custom-mods .home-storage-note { display: block; margin: 6px 0 0; }
+
+        .home-custom-mods-list {
+            list-style: none;
+            margin: 8px 0 0;
+            padding: 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+            gap: 8px;
+        }
+
+        .home-custom-mod {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 44px;
+            padding: 7px 12px;
+            border: 1px solid rgba(138, 155, 182, 0.18);
+            border-radius: 8px;
+            color: #f2f5f9;
+            text-decoration: none;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+
+        .home-custom-mod:hover { border-color: #ffad61; background: rgba(255, 173, 97, 0.08); }
+        .home-custom-mod:focus-visible { outline: 2px solid #ffad61; outline-offset: 2px; }
+        .home-custom-mod-icon { flex: none; width: 28px; height: 28px; object-fit: contain; }
+        .home-custom-mod-text { display: flex; flex-direction: column; min-width: 0; }
+        .home-custom-mod-name { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .home-custom-mod-description { font-size: 12px; color: #9cadc3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
         @media (max-width: 900px) {
             .home-storage { gap: 12px 20px; padding: 14px 18px; }
             .home-storage-mods { padding-left: 20px; }
@@ -1641,7 +1683,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .home-storage-manage { transition: none; }
+            .home-storage-manage, .home-custom-mod { transition: none; }
         }
 
         .dashboard-status {
@@ -1746,6 +1788,30 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 </ul>
                 <a class="home-storage-manage" href="data_manager.php?mod=all&amp;view=overview">Manage storage<span aria-hidden="true">&rarr;</span></a>
                 <noscript><span class="home-storage-note">Enable JavaScript to measure storage.</span></noscript>
+            </section>
+            <section class="home-custom-mods" aria-labelledby="home-custom-mods-title">
+                <h2 class="home-storage-title" id="home-custom-mods-title">Custom mods</h2>
+                <?php if ($customMods['mods'] === []): ?>
+                    <p class="home-storage-note"><?= $customMods['readable'] ? 'No custom mods installed.' : 'No custom mods yet.' ?> Add one in the launcher under Mods &gt; Custom mods.</p>
+                <?php else: ?>
+                    <ul class="home-custom-mods-list">
+                        <?php foreach ($customMods['mods'] as $customMod): ?>
+                            <li>
+                                <a class="home-custom-mod" href="<?= htmlspecialchars($customMod['url'], ENT_QUOTES, 'UTF-8') ?>" aria-label="Open <?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?>">
+                                    <?php if ($customMod['icon'] !== ''): ?>
+                                        <img class="home-custom-mod-icon" src="<?= htmlspecialchars($customMod['icon'], ENT_QUOTES, 'UTF-8') ?>" alt="" width="28" height="28">
+                                    <?php endif; ?>
+                                    <span class="home-custom-mod-text">
+                                        <span class="home-custom-mod-name"><?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?></span>
+                                        <?php if ($customMod['description'] !== ''): ?>
+                                            <span class="home-custom-mod-description" title="<?= htmlspecialchars($customMod['description'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($customMod['description'], ENT_QUOTES, 'UTF-8') ?></span>
+                                        <?php endif; ?>
+                                    </span>
+                                </a>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
             </section>
             <div class="dashboard-status">
                 <?php foreach ($dbUpdateLines as $line): ?>
