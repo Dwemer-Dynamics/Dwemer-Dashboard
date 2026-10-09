@@ -61,7 +61,7 @@ try {
         session_write_close();
         if ($action === 'status' || $action === 'catalog') {
             $result = lmstudio_helper($action);
-        } elseif (in_array($action, ['start', 'stop', 'restart', 'settings', 'download', 'load', 'unload', 'test', 'model-defaults', 'test-preset'], true)) {
+        } elseif (in_array($action, ['start', 'stop', 'restart', 'settings', 'download', 'import', 'load', 'unload', 'test', 'model-defaults', 'test-preset'], true)) {
             // Forward the object-decoded body so empty settings stay {} instead of becoming [].
             $payload = json_decode($body, false, 16, JSON_THROW_ON_ERROR);
             unset($payload->csrf);

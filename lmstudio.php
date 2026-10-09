@@ -136,6 +136,14 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
                         <button id="custom-download" data-mutation>Download</button>
                     </form>
                 </details>
+                <details><summary>Import local model</summary>
+                    <p class="muted">Copies a standalone <code>.gguf</code> file already on the PC running DwemerDistro; nothing is uploaded from this browser. Paste its full path; the original stays in place. DwemerDistro needs free space for one copy, or two if LM Studio’s model folder is on another drive.</p>
+                    <form id="import-form" class="row">
+                        <label>Path on this PC<input id="local-path" placeholder="C:\Models\model.gguf" required maxlength="1024" autocomplete="off" spellcheck="false"></label>
+                        <button id="local-import" data-mutation>Import</button>
+                    </form>
+                    <p class="muted">Ollama models are stored as managed blobs, not ordinary GGUF files, so they can’t be imported. Connect CHIM to Ollama instead. Split GGUF sets aren’t supported.</p>
+                </details>
             </div>
         </section>
 
