@@ -391,6 +391,12 @@ $modCards = [
 $distroDebuggerUrl = 'distro_debugger.php';
 $databaseManagerUrl = 'data_manager.php?mod=all&view=playthroughs';
 $databaseManagerLabel = 'Playthrough Saves';
+// Sizes load in the browser after page load from the read-only Playthrough Saves APIs.
+$storageMods = [
+    ['key' => 'chim', 'label' => 'CHIM', 'installed' => $herikaRoot !== ''],
+    ['key' => 'dialectic', 'label' => 'DIALECTIC', 'installed' => $dialecticRoot !== ''],
+    ['key' => 'stobe', 'label' => 'STOBE', 'installed' => $stobeRoot !== ''],
+];
 
 $normalizePatronName = static function (string $name): string {
     $normalized = trim(preg_replace('/\s+/', ' ', $name) ?? '');
@@ -974,6 +980,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
     <title><?= htmlspecialchars($TITLE, ENT_QUOTES, 'UTF-8') ?></title>
     <link rel="icon" type="image/x-icon" href="images/favicon.ico">
     <link rel="stylesheet" href="css/main.css">
+    <script src="js/home_storage.js?v=<?= (int) filemtime(__DIR__ . '/js/home_storage.js') ?>" defer></script>
     <style>
         @font-face {
             font-family: 'MagicCards';
@@ -1451,6 +1458,192 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             letter-spacing: 0.4px;
         }
 
+        .home-storage {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            grid-template-areas: "summary mods manage";
+            align-items: center;
+            gap: 12px 28px;
+            margin-top: 22px;
+            padding: 14px 22px;
+            border: 1px solid rgba(138, 155, 182, 0.2);
+            border-radius: 12px;
+            background: linear-gradient(180deg, rgba(34, 40, 52, 0.72), rgba(24, 28, 37, 0.72));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            text-align: left;
+            color: #c7d0dd;
+            font-size: 14px;
+        }
+
+        .home-storage-summary {
+            grid-area: summary;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+
+        .home-storage-title {
+            margin: 0;
+            font-size: 11px;
+            font-weight: 700;
+            color: #e6b76c;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+        }
+
+        .home-storage-total {
+            font-size: 24px;
+            line-height: 1.15;
+            font-weight: 700;
+            color: #ffffff;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .home-storage[aria-busy="true"] .home-storage-total,
+        .home-storage[aria-busy="true"] .home-storage-mod-size { color: #8391a6; }
+
+        .home-storage-note {
+            color: #9cadc3;
+            font-size: 12px;
+        }
+
+        .home-storage-note:empty { display: none; }
+        .home-storage > noscript { grid-column: 1 / -1; }
+
+        .home-storage-mods {
+            grid-area: mods;
+            list-style: none;
+            margin: 0;
+            padding: 0 0 0 28px;
+            border-left: 1px solid rgba(138, 155, 182, 0.18);
+            display: flex;
+            gap: 0;
+        }
+
+        .home-storage-mod {
+            --storage-mod-accent: #8a9bb6;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            padding: 0 24px;
+            white-space: nowrap;
+        }
+
+        .home-storage-mod:first-child { padding-left: 0; }
+        .home-storage-mod + .home-storage-mod { border-left: 1px solid rgba(138, 155, 182, 0.12); }
+        .home-storage-mod-chim { --storage-mod-accent: #f27c11; }
+        .home-storage-mod-dialectic { --storage-mod-accent: #ffb641; }
+        .home-storage-mod-stobe { --storage-mod-accent: #e6b76c; }
+        .home-storage-mod.is-absent { opacity: 0.5; }
+
+        .home-storage-mod-name {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #9cadc3;
+            letter-spacing: 1px;
+        }
+
+        .home-storage-mod-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--storage-mod-accent);
+            box-shadow: 0 0 6px color-mix(in srgb, var(--storage-mod-accent) 45%, transparent);
+        }
+
+        .home-storage-mod.is-absent .home-storage-mod-dot { background: transparent; box-shadow: inset 0 0 0 1px #8a9bb6; }
+
+        .home-storage-mod-size {
+            font-size: 15px;
+            font-weight: 600;
+            color: #f2f5f9;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .home-storage-mod.is-absent .home-storage-mod-size { font-size: 13px; font-weight: 400; color: #9cadc3; }
+        .home-storage-mod.is-error .home-storage-mod-size { color: #ef6b6b; }
+
+        .home-storage-manage {
+            grid-area: manage;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 14px;
+            border: 1px solid rgba(255, 173, 97, 0.35);
+            border-radius: 999px;
+            color: #ffd2a6;
+            font-size: 13px;
+            font-weight: 700;
+            text-decoration: none;
+            white-space: nowrap;
+            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+
+        .home-storage-manage:hover { color: #ffffff; border-color: #ffad61; background: rgba(255, 173, 97, 0.12); }
+        .home-storage-manage:focus-visible { outline: 2px solid #ffad61; outline-offset: 3px; }
+
+        @media (max-width: 900px) {
+            .home-storage { gap: 12px 20px; padding: 14px 18px; }
+            .home-storage-mods { padding-left: 20px; }
+            .home-storage-mod { padding: 0 16px; }
+        }
+
+        @media (max-width: 720px) {
+            .home-storage {
+                grid-template-columns: minmax(0, 1fr) auto;
+                grid-template-areas: "summary manage" "mods mods";
+                gap: 14px 16px;
+                padding: 16px;
+            }
+
+            .home-storage-mods {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                padding: 14px 0 0;
+                border-left: 0;
+                border-top: 1px solid rgba(138, 155, 182, 0.18);
+            }
+
+            .home-storage-mod { padding: 0 12px; white-space: normal; min-width: 0; }
+        }
+
+        @media (max-width: 420px) {
+            .home-storage {
+                grid-template-columns: minmax(0, 1fr);
+                grid-template-areas: "summary" "manage" "mods";
+                gap: 12px;
+            }
+
+            .home-storage-manage { justify-self: start; }
+
+            .home-storage-mods {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 8px;
+                padding-top: 12px;
+            }
+
+            .home-storage-mod,
+            .home-storage-mod:first-child {
+                flex-direction: row;
+                align-items: baseline;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 0;
+            }
+
+            .home-storage-mod + .home-storage-mod { border-left: 0; }
+            .home-storage-mod-size { white-space: nowrap; text-align: right; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .home-storage-manage { transition: none; }
+        }
+
         .dashboard-status {
             margin-top: 20px;
             font-size: 14px;
@@ -1536,6 +1729,24 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                     </span>
                 </a>
             </div>
+            <section class="home-storage" id="home-storage" aria-labelledby="home-storage-title" aria-busy="true"
+                data-mods="<?= htmlspecialchars(json_encode($storageMods), ENT_QUOTES, 'UTF-8') ?>">
+                <div class="home-storage-summary">
+                    <h2 class="home-storage-title" id="home-storage-title">Database storage</h2>
+                    <strong class="home-storage-total" data-storage-total>Measuring…</strong>
+                    <span class="home-storage-note" data-storage-note></span>
+                </div>
+                <ul class="home-storage-mods" aria-label="Database size by mod">
+                    <?php foreach ($storageMods as $storageMod): ?>
+                        <li class="home-storage-mod home-storage-mod-<?= htmlspecialchars($storageMod['key'], ENT_QUOTES, 'UTF-8') ?><?= $storageMod['installed'] ? '' : ' is-absent' ?>" data-mod="<?= htmlspecialchars($storageMod['key'], ENT_QUOTES, 'UTF-8') ?>">
+                            <span class="home-storage-mod-name"><span class="home-storage-mod-dot" aria-hidden="true"></span><?= htmlspecialchars($storageMod['label'], ENT_QUOTES, 'UTF-8') ?></span>
+                            <span class="home-storage-mod-size"><?= $storageMod['installed'] ? 'Measuring…' : 'Not installed' ?></span>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+                <a class="home-storage-manage" href="data_manager.php?mod=all&amp;view=overview">Manage storage<span aria-hidden="true">&rarr;</span></a>
+                <noscript><span class="home-storage-note">Enable JavaScript to measure storage.</span></noscript>
+            </section>
             <div class="dashboard-status">
                 <?php foreach ($dbUpdateLines as $line): ?>
                     <span class="dashboard-status-line <?= htmlspecialchars((string)$line['status'], ENT_QUOTES, 'UTF-8') ?>">
