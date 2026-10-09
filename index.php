@@ -1762,9 +1762,9 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             </div>
             <section class="home-custom-mods" aria-labelledby="home-custom-mods-title">
                 <h2 class="home-storage-title" id="home-custom-mods-title">Custom mods</h2>
-                <?php if ($customMods['mods'] === []): ?>
+                <?php if ($customMods['mods'] === [] && $customMods['unavailable'] === 0): ?>
                     <p class="home-storage-note"><?= $customMods['readable'] ? 'No custom mods installed.' : 'No custom mods yet.' ?> Add one in the launcher under Mods &gt; Custom mods.</p>
-                <?php else: ?>
+                <?php elseif ($customMods['mods'] !== []): ?>
                     <ul class="home-custom-mods-list">
                         <?php foreach ($customMods['mods'] as $customMod): ?>
                             <li>
@@ -1782,6 +1782,9 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                             </li>
                         <?php endforeach; ?>
                     </ul>
+                <?php endif; ?>
+                <?php if ($customMods['unavailable'] > 0): ?>
+                    <p class="home-storage-note">Unavailable or needing attention: <?= (int) $customMods['unavailable'] ?>. Manage custom mods in the launcher under Mods &gt; Custom mods.</p>
                 <?php endif; ?>
             </section>
             <div class="dashboard-actions dashboard-actions-secondary">
