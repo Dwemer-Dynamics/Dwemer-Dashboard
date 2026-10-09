@@ -27,16 +27,16 @@ const loadFields = {
 // Matches the CHIM connector greeting test; the helper applies its own generation defaults.
 const testSystemPrompt = 'This is an isolated connection test, not a game scene. Respond with a short greeting. Do not request any action.';
 const jobNames = {start: 'Starting server', stop: 'Stopping server', restart: 'Restarting server', settings: 'Saving settings',
-    download: 'Downloading', load: 'Loading model', unload: 'Unloading model', test: 'Testing', 'model-defaults': 'Saving defaults'};
+    download: 'Downloading', import: 'Importing model', load: 'Loading model', unload: 'Unloading model', test: 'Testing', 'model-defaults': 'Saving defaults'};
 const failNames = {start: 'Start failed', stop: 'Stop failed', restart: 'Restart failed', settings: 'Save failed',
-    download: 'Download failed', load: 'Load failed', unload: 'Unload failed', test: 'Test failed', 'model-defaults': 'Save failed'};
-const doneNames = {load: 'Model loaded', unload: 'Model unloaded', download: 'Download complete', settings: 'Settings saved', 'model-defaults': 'Defaults saved'};
+    download: 'Download failed', import: 'Import failed', load: 'Load failed', unload: 'Unload failed', test: 'Test failed', 'model-defaults': 'Save failed'};
+const doneNames = {load: 'Model loaded', unload: 'Model unloaded', download: 'Download complete', import: 'Model imported', settings: 'Settings saved', 'model-defaults': 'Defaults saved'};
 // Load and download successes lead somewhere next, so they stay until dismissed; saves fade after a few seconds.
-const lastingDone = new Set(['load', 'download']);
+const lastingDone = new Set(['load', 'download', 'import']);
 // The helper may report an optional job phase. Only transfer phases show a percentage.
-const transferPhases = new Set(['download', 'downloading', 'transfer', 'resume', 'resuming']);
+const transferPhases = new Set(['download', 'downloading', 'transfer', 'resume', 'resuming', 'copy']);
 const phaseNames = {download: 'Downloading', downloading: 'Downloading', transfer: 'Downloading', resume: 'Resuming download',
-    resuming: 'Resuming download', verify: 'Verifying download', verifying: 'Verifying download', import: 'Importing model',
+    resuming: 'Resuming download', copy: 'Copying model', verify: 'Verifying download', verifying: 'Verifying download', import: 'Importing model',
     importing: 'Importing model', retry: 'Retrying', retrying: 'Retrying'};
 const tabs = [...document.querySelectorAll('[role=tab]')];
 
@@ -143,7 +143,7 @@ function updateControls() {
         'Reinstall the LLM Studio component to enable advanced loading.');
     el('save-defaults').disabled = locked || !el('model').value || !el('defaults-conflict').hidden;
     el('unload').disabled = el('notice-unload').disabled = locked || !el('loaded').value;
-    ['save-engine', 'custom-download'].forEach(id => { el(id).disabled = locked; });
+    ['save-engine', 'custom-download', 'local-import'].forEach(id => { el(id).disabled = locked; });
     el('preset-download').disabled = locked || !el('preset').value;
     el('run-test').disabled = locked || !el('loaded').value || Boolean(testRun);
 }
@@ -481,6 +481,7 @@ el('save-engine').addEventListener('click', async () => {
 });
 el('preset-form').addEventListener('submit', event => { event.preventDefault(); if (el('preset').value) act('download', {preset: el('preset').value}); });
 el('custom-form').addEventListener('submit', event => { event.preventDefault(); act('download', {source: el('source').value.trim()}); });
+el('import-form').addEventListener('submit', event => { event.preventDefault(); act('import', {source: el('local-path').value.trim()}); });
 el('load-form').addEventListener('submit', event => {
     event.preventDefault(); if (!validLoad()) return;
     try { const values = loadValues(); if (basicLoad()) values.advanced = {}; act('load', values); } catch (error) { report(error); }
