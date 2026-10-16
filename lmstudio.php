@@ -69,9 +69,14 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
         <div class="layout">
             <section id="library-section" class="panel library" aria-labelledby="library-title">
                 <div class="panel-head">
-                    <h2 id="library-title">Installed models</h2>
+                    <h2 id="library-title">Models</h2>
                     <span id="library-count" class="count"></span>
                 </div>
+                <div class="tabs" role="tablist" aria-label="Models">
+                    <button type="button" role="tab" id="tab-installed" aria-controls="installed-panel" aria-selected="true">Installed</button>
+                    <button type="button" role="tab" id="tab-recommended" aria-controls="recommended-panel" aria-selected="false" tabindex="-1">Recommended</button>
+                </div>
+                <div id="installed-panel" role="tabpanel" aria-labelledby="tab-installed">
                 <div id="library-note" class="note">
                     <p id="library-text" role="status">Connecting…</p>
                     <button type="button" id="open-add" class="small" hidden>Add models</button>
@@ -109,6 +114,16 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
                     </div>
                     <details><summary>Technical details</summary><pre id="model-details"></pre></details>
                 </form>
+                </div>
+                <div id="recommended-panel" role="tabpanel" aria-labelledby="tab-recommended" hidden>
+                    <div class="recommend-head">
+                        <p class="muted">Community candidates, not game-tested. VRAM is a rough estimate for the model alone at 4K context.</p>
+                        <button type="button" id="open-search" class="small">Search Hugging Face</button>
+                    </div>
+                    <p id="recommended-note" class="note" role="status" hidden></p>
+                    <ul id="recommended" class="cards"></ul>
+                    <p class="muted more-models"><button type="button" id="open-more" class="link">More models, custom references and local import...</button> Downloading never loads a model.</p>
+                </div>
             </section>
 
             <section id="slots-section" class="panel slots" aria-labelledby="slots-title">
@@ -170,5 +185,33 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
         </div>
     </div>
 </main>
+<dialog id="hf-dialog" class="hf-dialog" aria-labelledby="hf-title">
+    <div class="dialog-head">
+        <h2 id="hf-title">Search Hugging Face</h2>
+        <button type="button" id="hf-close" class="quiet small">Close</button>
+    </div>
+    <form id="hf-form" class="row" role="search" novalidate>
+        <label>Model name, creator or repository URL<input id="hf-query" maxlength="300" autocomplete="off" spellcheck="false" placeholder="Lumimaid or https://huggingface.co/owner/model-GGUF"></label>
+        <button id="hf-submit" class="primary">Search</button>
+    </form>
+    <p id="hf-error" class="inline-error" role="alert" hidden></p>
+    <p id="hf-status" class="muted" role="status"></p>
+    <div id="hf-results-view">
+        <ul id="hf-results" class="hf-results" aria-label="GGUF repositories"></ul>
+        <button type="button" id="hf-more" class="small" hidden>Show more</button>
+    </div>
+    <div id="hf-files-view" hidden>
+        <div class="files-head">
+            <button type="button" id="hf-back" class="quiet small">← Results</button>
+            <h3 id="hf-repo"></h3>
+            <a id="hf-link" target="_blank" rel="noopener noreferrer">View on Hugging Face</a>
+        </div>
+        <fieldset id="hf-files" class="file-list"><legend class="sr-only">Choose a standalone GGUF file</legend></fieldset>
+        <div class="button-group">
+            <button type="button" id="hf-download" class="primary" data-mutation>Download selected file</button>
+            <span id="hf-download-note" class="muted">VRAM use is unknown for searched files. Downloading never loads the model.</span>
+        </div>
+    </div>
+</dialog>
 </body>
 </html>

@@ -61,6 +61,11 @@ try {
         session_write_close();
         if ($action === 'status' || $action === 'catalog') {
             $result = lmstudio_helper($action);
+        } elseif ($action === 'search' || $action === 'files') {
+            // Read-only Hugging Face lookups; the helper validates names, caches results and limits request rate.
+            $result = lmstudio_helper($action, $action === 'search'
+                ? ['query' => $input['query'] ?? null, 'page' => $input['page'] ?? 1]
+                : ['repo' => $input['repo'] ?? null]);
         } elseif (in_array($action, ['start', 'stop', 'restart', 'settings', 'download', 'import', 'load', 'unload', 'test', 'model-defaults', 'test-preset'], true)) {
             // Forward the object-decoded body so empty settings stay {} instead of becoming [].
             $payload = json_decode($body, false, 16, JSON_THROW_ON_ERROR);

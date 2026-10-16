@@ -16,6 +16,10 @@ let seenInstances = null, seenTest = null, seenLoadJob = '', staleLoad = '';
 let savedBase = '', filledForm = '', ownSaved = null;
 // Jobs submitted from this page; only these get a success message.
 const ownJobs = new Map();
+// Every catalog entry by id, and the completed download that last refreshed their Installed state.
+let catalogModels = [], catalogJob = '';
+// Hugging Face search: only the latest request may render; closing the dialog aborts it.
+const hf = {seq: 0, controller: null, page: 1, files: null, opener: null};
 const loadFields = {
     flashAttention: ['Flash Attention', 'bool'], offloadKVCacheToGpu: ['Offload KV cache to GPU', 'bool'],
     gpuStrictVramCap: ['Strict GPU memory limit', 'bool'], keepModelInMemory: ['Keep model in memory', 'bool'],
@@ -145,6 +149,11 @@ function updateControls() {
     el('save-defaults').disabled = locked || !el('model').value || !el('defaults-conflict').hidden;
     el('slots').querySelectorAll('[data-slot-action=unload]').forEach(button => { button.disabled = locked; });
     ['save-engine', 'custom-download', 'local-import'].forEach(id => { el(id).disabled = locked; });
+    el('recommended').querySelectorAll('button[data-preset]').forEach(button => { button.disabled = locked; });
+    el('hf-download').disabled = locked || !unlocked || !el('hf-files').querySelector('input:checked');
+    // Only a running job is another operation; a locked key or a pending submit keeps the usual note.
+    setText('hf-download-note', unlocked && busy ? 'Another operation is running. Wait for it to finish.' :
+        'VRAM use is unknown for searched files. Downloading never loads the model.');
     el('preset-download').disabled = locked || !el('preset').value;
     el('run-test').disabled = locked || !el('loaded').value || Boolean(testRun);
 }
@@ -368,13 +377,13 @@ function renderStartupSummary() {
     setText('startup-summary', text);
 }
 
-function presetName(id) { return [...el('preset').options].find(o => o.value === id)?.textContent.split(' · ')[0] || ''; }
+function presetName(id) { return catalogModels.find(m => m.id === id)?.name?.split(' · ')[0] || ''; }
 
 function phaseOf(job) { return typeof job.phase === 'string' ? job.phase.toLowerCase() : ''; }
 
 // Titles name the model the user picked; jobs started elsewhere keep generic titles.
 function jobTitle(job, own) {
-    const name = own?.model ? modelName(own.model) : own?.preset ? presetName(own.preset) : '', phase = phaseOf(job);
+    const name = own?.model ? modelName(own.model) : own?.preset ? presetName(own.preset) : own?.file || '', phase = phaseOf(job);
     if (job.state === 'failed') return failNames[job.action] || 'Operation failed';
     if (job.state === 'completed') return job.action === 'load' && name ? `${name} loaded` : doneNames[job.action] || 'Done';
     if (phase) {
@@ -438,10 +447,10 @@ function lock() {
     setText('status', 'Locked'); el('status').dataset.state = 'locked'; updateControls();
 }
 
-async function api(action, data = {}) {
+async function api(action, data = {}, signal = undefined) {
     const auth = authGen;
     const response = await fetch('api/lmstudio.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({...data, action, csrf}), cache: 'no-store'});
+        body: JSON.stringify({...data, action, csrf}), cache: 'no-store', signal});
     // The HTTP status rides on the error so callers can tell a rejected key from a temporary failure.
     const failure = message => Object.assign(new Error(message), {status: response.status});
     let result;
@@ -524,6 +533,8 @@ function render(state) {
     renderSlots(state, instances);
     renderStartupSummary();
     busy = state.job.state === 'running';
+    // A finished download may have installed a recommended model, so its card is checked again.
+    if (state.job.action === 'download' && state.job.state === 'completed' && state.job.id !== catalogJob) { catalogJob = state.job.id; catalogReady = false; }
     renderActivity(state.job);
     renderTest(state);
 }
@@ -555,7 +566,7 @@ async function refresh() {
 async function submit(action, data) {
     const job = await api(action, data);
     epoch++;
-    if (job?.id) ownJobs.set(job.id, {model: data.model, preset: data.preset});
+    if (job?.id) ownJobs.set(job.id, {model: data.model, preset: data.preset, file: data.file});
     if (job?.id && current) { busy = job.state === 'running'; current = {...current, job}; renderActivity(job); }
 }
 
@@ -572,10 +583,122 @@ async function catalog() {
     catalogPending = true;
     try {
         const result = await api('catalog'); options('preset', result.models, 'id', 'name');
+        const recommended = Array.isArray(result.recommended) ? result.recommended : [];
+        catalogModels = [...result.models, ...recommended]; renderRecommended(recommended);
         catalogReady = true; setText('preset-note', result.models.length ? '' : 'No suggested models. Use a custom model below.');
+        setText('recommended-note', recommended.length ? '' : 'No recommended models in this DwemerDistro version. Update Distro or search Hugging Face.');
     } catch (error) {
         catalogRetryAt = Date.now() + 15000; setText('preset-note', `Suggested models unavailable: ${error.message}`);
-    } finally { catalogPending = false; el('preset-note').hidden = !el('preset-note').textContent; updateControls(); }
+        setText('recommended-note', `Recommended models unavailable: ${error.message}`);
+    } finally {
+        catalogPending = false; el('preset-note').hidden = !el('preset-note').textContent;
+        el('recommended-note').hidden = !el('recommended-note').textContent; updateControls();
+    }
+}
+
+// Download sizes use decimal GB, as Hugging Face lists them.
+function downloadSize(value) { return Number.isInteger(value) && value > 0 ? `${(value / 1e9).toFixed(value < 1e10 ? 2 : 1)} GB` : 'Size unknown'; }
+
+function span(className, text) { const node = document.createElement('span'); node.className = className; node.textContent = text; return node; }
+
+// Cards say Installed only when the helper found the exact pinned file; otherwise Download stays explicit.
+function renderRecommended(models) {
+    const list = el('recommended'), focused = list.contains(document.activeElement) ? document.activeElement.dataset.preset : '';
+    list.replaceChildren(...models.map(model => {
+        const item = document.createElement('li'), title = document.createElement('h3'), purpose = document.createElement('p');
+        item.className = 'card'; title.textContent = model.name; purpose.textContent = model.purpose || '';
+        const [low, high] = Array.isArray(model.vramGB) ? model.vramGB : [];
+        const vram = Number.isFinite(low) && Number.isFinite(high) ? `~${low}–${high} GB VRAM, estimated at 4K` : 'VRAM unknown';
+        item.append(span('tier', model.tier || ''), title, purpose,
+            span('card-facts', `${model.quant || ''} · ${downloadSize(model.bytes)} download`), span('card-facts', vram));
+        if (model.installed === true) item.append(span('badge', 'Installed'));
+        else {
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'primary small';
+            button.textContent = 'Download'; button.dataset.preset = model.id; button.setAttribute('aria-label', `Download ${model.name}`);
+            item.append(button);
+        }
+        return item;
+    }));
+    if (focused) list.querySelector(`[data-preset="${CSS.escape(focused)}"]`)?.focus();
+}
+
+function showTab(name, focus = false) {
+    for (const tab of ['installed', 'recommended']) {
+        const button = el(`tab-${tab}`), selected = tab === name;
+        button.setAttribute('aria-selected', String(selected)); button.tabIndex = selected ? 0 : -1;
+        el(`${tab}-panel`).hidden = !selected;
+    }
+    if (focus) el(`tab-${name}`).focus();
+}
+
+function hfMessage(status, error = '') {
+    setText('hf-status', status); setText('hf-error', error); el('hf-error').hidden = !error;
+}
+
+// Abort any earlier lookup; a response is used only if no newer lookup, Back or close happened meanwhile.
+async function hfRequest(action, data) {
+    hf.controller?.abort();
+    const controller = new AbortController(), seq = ++hf.seq;
+    hf.controller = controller;
+    try {
+        const result = await api(action, data, controller.signal);
+        return seq === hf.seq ? result : null;
+    } catch (error) {
+        if (seq === hf.seq && error.name !== 'AbortError') hfMessage('', error.message);
+        return null;
+    } finally { if (hf.controller === controller) hf.controller = null; }
+}
+
+function hfCancel() { if (hf.controller) hfMessage(''); hf.controller?.abort(); hf.seq++; }
+
+function hfView(files) { el('hf-results-view').hidden = files; el('hf-files-view').hidden = !files; }
+
+async function hfSearch(page = 1) {
+    const query = el('hf-query').value.trim();
+    if (/^https?:\/\//i.test(query)) { hfOpen(query); return; }
+    if (query.length < 2) { hfMessage('', 'Enter at least 2 characters, or paste a https://huggingface.co/ repository URL.'); el('hf-query').focus(); return; }
+    hf.page = page; hfView(false); hfMessage('Searching…'); el('hf-more').hidden = true;
+    if (page === 1) el('hf-results').replaceChildren();
+    const result = await hfRequest('search', {query, page});
+    if (!result) return;
+    const format = new Intl.NumberFormat(undefined, {notation: 'compact'});
+    el('hf-results').replaceChildren(...result.results.map(repo => {
+        const item = document.createElement('li'), button = document.createElement('button');
+        button.type = 'button'; button.className = 'hf-repo'; button.dataset.repo = repo.id;
+        const meta = [`${format.format(repo.downloads)} downloads`, `${format.format(repo.likes)} likes`, repo.updated && `updated ${repo.updated}`, repo.gated && 'Gated'];
+        button.append(span('model-name', repo.id), span('model-meta', meta.filter(Boolean).join(' · ')));
+        item.append(button);
+        return item;
+    }));
+    el('hf-more').hidden = !result.more;
+    const count = result.results.length;
+    hfMessage(count ? `${count} GGUF ${count === 1 ? 'repository' : 'repositories'}. Choose one to see its files.` : 'No GGUF repositories found. Try another name or creator.');
+    if (page > 1) el('hf-results').children[(page - 1) * 20]?.querySelector('button')?.focus();
+}
+
+// Only standalone GGUF files can be chosen; split parts, projectors and gated files say why not.
+async function hfOpen(repo) {
+    hf.files = null; hfView(true); hfMessage('Loading files…'); el('hf-back').focus();
+    setText('hf-repo', repo.replace(/^https:\/\/huggingface\.co\//i, '')); el('hf-link').hidden = true;
+    el('hf-files').querySelectorAll('.file-row').forEach(row => row.remove()); updateControls();
+    const result = await hfRequest('files', {repo});
+    if (!result) return;
+    hf.files = result; setText('hf-repo', result.repo);
+    el('hf-link').href = `https://huggingface.co/${result.repo.split('/').map(encodeURIComponent).join('/')}`; el('hf-link').hidden = false;
+    el('hf-files').append(...result.files.map(file => {
+        const row = document.createElement('label'); row.className = 'model-row file-row';
+        const radio = document.createElement('input'); radio.type = 'radio'; radio.name = 'hf-file'; radio.value = file.name;
+        radio.disabled = !file.selectable || file.installed;
+        const details = [file.quant || 'Quant unknown', downloadSize(file.size), file.selectable ? 'VRAM Unknown' : file.reason];
+        row.append(radio, span('model-name', file.name), span('model-meta', details.join(' · ')));
+        if (file.installed) row.append(span('badge', 'Installed'));
+        if (radio.disabled) row.setAttribute('aria-disabled', 'true');
+        return row;
+    }));
+    const usable = result.files.filter(file => file.selectable).length;
+    hfMessage(!result.files.length ? 'This repository has no GGUF files.' : !usable ? 'No standalone GGUF file here can be downloaded. Choose another repository.' :
+        `${usable} standalone GGUF ${usable === 1 ? 'file' : 'files'} at revision ${result.revision.slice(0, 7)}.${result.truncated ? ' Only the first 300 files are listed.' : ''}`);
+    updateControls();
 }
 
 // The key is sent once; afterwards status polling opens the manager and loads the download list.
@@ -630,7 +753,43 @@ el('library').addEventListener('change', event => {
     el('model').value = event.target.value;
     selectModel(); if (current) renderConfig(libraryOf(current)); updateControls(); refresh();
 });
-el('open-add').addEventListener('click', () => { el('add-models').open = true; el('add-models').querySelector('summary').focus(); });
+el('open-add').addEventListener('click', () => showTab('recommended', true));
+el('open-more').addEventListener('click', () => { el('add-models').open = true; el('add-models').querySelector('summary').focus(); });
+document.querySelectorAll('[role=tab]').forEach(tab => {
+    tab.addEventListener('click', () => showTab(tab.id.slice(4)));
+    tab.addEventListener('keydown', event => {
+        const tabs = ['installed', 'recommended'], index = tabs.indexOf(tab.id.slice(4));
+        const next = {ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: tabs.length - 1}[event.key];
+        if (next === undefined) return;
+        event.preventDefault(); showTab(tabs[(next + tabs.length) % tabs.length], true);
+    });
+});
+el('recommended').addEventListener('click', event => {
+    const button = event.target.closest('button[data-preset]');
+    if (button) act('download', {preset: button.dataset.preset});
+});
+// The native modal dialog keeps focus inside, closes on Escape and returns focus to the button that opened it.
+el('open-search').addEventListener('click', () => {
+    hf.opener = document.activeElement; el('hf-dialog').showModal(); el('hf-query').focus(); updateControls();
+});
+el('hf-close').addEventListener('click', () => el('hf-dialog').close());
+el('hf-dialog').addEventListener('close', () => { hfCancel(); hf.opener?.focus(); });
+el('hf-form').addEventListener('submit', event => { event.preventDefault(); hfSearch(1); });
+el('hf-more').addEventListener('click', () => hfSearch(hf.page + 1));
+el('hf-results').addEventListener('click', event => { const button = event.target.closest('button[data-repo]'); if (button) hfOpen(button.dataset.repo); });
+el('hf-back').addEventListener('click', () => {
+    const repo = hf.files?.repo || el('hf-repo').textContent;
+    hfCancel(); hfView(false);
+    hfMessage(el('hf-results').children.length ? 'Choose a repository to see its files.' : '');
+    (el('hf-results').querySelector(`[data-repo="${CSS.escape(repo)}"]`) || el('hf-query')).focus();
+});
+el('hf-files').addEventListener('change', updateControls);
+el('hf-download').addEventListener('click', async () => {
+    const file = el('hf-files').querySelector('input:checked')?.value;
+    if (!file || !hf.files) return;
+    if (await act('download', {repo: hf.files.repo, file})) el('hf-dialog').close();
+    else if (errors.action) hfMessage('', errors.action);
+});
 el('job-dismiss').addEventListener('click', () => { dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true; el('workspace').focus(); });
 el('unlock-form').addEventListener('submit', event => { event.preventDefault(); unlock(el('token').value); });
 el('autostart').addEventListener('change', () => { engineDirty = true; renderStartupSummary(); });
