@@ -18,8 +18,10 @@ let savedBase = '', filledForm = '', ownSaved = null;
 const ownJobs = new Map();
 // Every catalog entry by id, and the completed download that last refreshed their Installed state.
 let catalogModels = [], catalogJob = '';
-// Hugging Face search: only the latest request may render; closing the install dialog aborts it.
-const hf = {seq: 0, controller: null, page: 1, files: null};
+// Hugging Face browser: only the latest request may render; closing the install dialog aborts it. state is the
+// committed search the shown results came from; Show more reuses it with the cursor the helper returned.
+const hf = {seq: 0, controller: null, files: null, state: null, cursor: null, ids: new Set(), first: new Map(), scroll: 0};
+const hfSorts = {trending: 'Trending', downloads: 'Most downloaded', likes: 'Most liked', updated: 'Recently updated', newest: 'Newest'};
 // The button that opened the install dialog gets focus back when it closes.
 let installOpener = null;
 const loadFields = {
@@ -634,10 +636,18 @@ function showTab(name, focus = false) {
         el(`${tab}-panel`).hidden = !selected;
     }
     if (focus) el(`tab-${name}`).focus();
+    // Browsing starts the first time the tab is shown, never when the dialog opens on Recommended.
+    if (name === 'search' && !hf.state && !hf.controller && el('hf-files-view').hidden) hfSearch();
 }
 
 function hfMessage(status, error = '') {
-    setText('hf-status', status); setText('hf-error', error); el('hf-error').hidden = !error;
+    setText(el('hf-files-view').hidden ? 'hf-status' : 'hf-files-status', status); setText('hf-error', error); el('hf-error').hidden = !error;
+}
+
+// Earlier results stay visible but marked busy while a lookup runs; Show more waits for it.
+function hfBusy(on) {
+    ['hf-results', 'hf-files'].forEach(id => el(id).setAttribute('aria-busy', String(on)));
+    el('hf-more').disabled = on;
 }
 
 // Abort any earlier lookup; a response is used only if no newer lookup, Back or close happened meanwhile.
@@ -651,59 +661,129 @@ async function hfRequest(action, data) {
     } catch (error) {
         if (seq === hf.seq && error.name !== 'AbortError') hfMessage('', error.message);
         return null;
-    } finally { if (hf.controller === controller) hf.controller = null; }
+    } finally {
+        if (hf.controller === controller) hf.controller = null;
+        if (seq === hf.seq) hfBusy(false);
+    }
 }
 
-function hfCancel() { if (hf.controller) hfMessage(''); hf.controller?.abort(); hf.seq++; }
+function hfCancel() { if (hf.controller) hfMessage(''); hf.controller?.abort(); hf.seq++; hfBusy(false); }
 
 function hfView(files) { el('hf-results-view').hidden = files; el('hf-files-view').hidden = !files; }
 
-async function hfSearch(page = 1) {
-    const query = el('hf-query').value.trim();
-    if (/^https?:\/\//i.test(query)) { hfOpen(query); return; }
-    if (query.length < 2) { hfMessage('', 'Enter at least 2 characters, or paste a https://huggingface.co/ repository URL.'); el('hf-query').focus(); return; }
-    hf.page = page; hfView(false); hfMessage('Searching…'); el('hf-more').hidden = true;
-    if (page === 1) el('hf-results').replaceChildren();
-    const result = await hfRequest('search', {query, page});
-    if (!result) return;
-    const format = new Intl.NumberFormat(undefined, {notation: 'compact'});
-    el('hf-results').replaceChildren(...result.results.map(repo => {
-        const item = document.createElement('li'), button = document.createElement('button');
-        button.type = 'button'; button.className = 'hf-repo'; button.dataset.repo = repo.id;
-        const meta = [`${format.format(repo.downloads)} downloads`, `${format.format(repo.likes)} likes`, repo.updated && `updated ${repo.updated}`, repo.gated && 'Gated'];
-        button.append(span('model-name', repo.id), span('model-meta', meta.filter(Boolean).join(' · ')));
-        item.append(button);
-        return item;
-    }));
-    el('hf-more').hidden = !result.more;
-    const count = result.results.length;
-    hfMessage(count ? `${count} GGUF ${count === 1 ? 'repository' : 'repositories'}. Choose one to see its files.` : 'No GGUF repositories found. Try another name or creator.');
-    if (page > 1) el('hf-results').children[(page - 1) * 20]?.querySelector('button')?.focus();
+function hfForm() {
+    return {query: el('hf-query').value.trim(), author: el('hf-author').value.trim(), size: el('hf-size').value,
+        task: el('hf-task').value, sort: el('hf-sort').value};
 }
+
+function hfSummary() {
+    if (!hf.state) return '';
+    const count = hf.ids.size, what = hf.state.query ? `GGUF results for “${hf.state.query}”` : `${hfSorts[hf.state.sort]} GGUF repositories`;
+    if (!count) return 'No GGUF repositories match. Try another name or creator, or reset filters.';
+    return `${what}: ${count} shown${hf.cursor ? ', more available' : ''}. Choose one to see its files.`;
+}
+
+// Parameters, architecture and context come only from Hugging Face's GGUF metadata; anything unknown is left out.
+function hfItem(repo) {
+    const format = new Intl.NumberFormat(undefined, {notation: 'compact'});
+    const params = !Number.isInteger(repo.params) ? '' : repo.params >= 1e9 ?
+        `${(repo.params / 1e9).toFixed(repo.params < 1e10 ? 1 : 0)}B params` : `${Math.max(1, Math.round(repo.params / 1e6))}M params`;
+    const facts = [params, repo.architecture, Number.isInteger(repo.context) && `${Math.round(repo.context / 1024)}K context`];
+    const meta = [`${format.format(repo.downloads)} downloads`, `${format.format(repo.likes)} likes`, repo.updated && `updated ${repo.updated}`, repo.gated && 'Gated'];
+    const item = document.createElement('li'), button = document.createElement('button');
+    button.type = 'button'; button.className = 'hf-repo'; button.dataset.repo = repo.id;
+    button.append(span('model-name', repo.id), span('model-meta', facts.filter(Boolean).join(' · ')), span('model-meta', meta.filter(Boolean).join(' · ')));
+    item.append(button);
+    return item;
+}
+
+// New searches replace the list; Show more appends the next cursor page and skips repositories already shown.
+function hfRender(state, result, append) {
+    if (!append) { hf.ids = new Set(); el('hf-results').replaceChildren(); }
+    hf.state = state; hf.cursor = typeof result.cursor === 'string' ? result.cursor : null;
+    const fresh = result.results.filter(repo => !hf.ids.has(repo.id));
+    fresh.forEach(repo => hf.ids.add(repo.id));
+    const items = fresh.map(hfItem);
+    el('hf-results').append(...items);
+    el('hf-more').hidden = !hf.cursor;
+    hfMessage(hfSummary());
+    if (append) items[0]?.querySelector('button').focus();
+}
+
+// Text is applied by Search; dropdowns apply at once. First pages are kept for ten minutes per filter state.
+async function hfSearch(more = false) {
+    const state = more ? hf.state : hfForm();
+    if (more && (!state || !hf.cursor)) return;
+    if (!more && /^https?:\/\//i.test(state.query)) { hfOpen(state.query); return; }
+    if (state.query.length === 1) { hfMessage('', 'Enter at least 2 characters, or leave the search empty to browse.'); el('hf-query').focus(); return; }
+    const key = JSON.stringify(state), saved = !more && hf.first.get(key);
+    hfView(false);
+    if (saved && Date.now() - saved.at < 600000) { hfCancel(); hfRender(state, saved.result, false); return; }
+    hfMessage(more ? 'Loading more…' : 'Searching…');
+    const request = hfRequest('search', more ? {...state, cursor: hf.cursor} : state);
+    hfBusy(true);
+    const result = await request;
+    if (!result) return;
+    if (!more) {
+        hf.first.delete(key); hf.first.set(key, {at: Date.now(), result});
+        if (hf.first.size > 20) hf.first.delete(hf.first.keys().next().value);
+    }
+    hfRender(state, result, more);
+}
+
+// File filters narrow only this repository's listed files; a hidden choice is cleared so it cannot be downloaded.
+function hfApplyFiles() {
+    if (!hf.files) return;
+    const quant = el('hf-quant').value, sort = el('hf-file-sort').value, max = Number(el('hf-max').value);
+    const limit = el('hf-max').value && max > 0 ? max * 1e9 : Infinity;
+    const size = file => file.size ?? Infinity, byName = (a, b) => a.file.name.localeCompare(b.file.name);
+    const order = {name: byName, 'size-desc': (a, b) => (b.file.size ?? -1) - (a.file.size ?? -1) || byName(a, b),
+        size: (a, b) => size(a.file) - size(b.file) || byName(a, b)}[sort] || byName;
+    let shown = 0;
+    for (const row of [...el('hf-files').querySelectorAll('.file-row')].sort(order)) {
+        row.hidden = !((!quant || row.file.quant === quant) && (limit === Infinity || size(row.file) <= limit));
+        if (row.hidden) row.querySelector('input').checked = false; else shown++;
+        el('hf-files').append(row);
+    }
+    const files = hf.files.files, usable = files.filter(file => file.selectable).length;
+    let message = `Showing ${shown} of ${files.length} GGUF files in this repository; ${usable} standalone at revision ${hf.files.revision.slice(0, 7)}.`;
+    if (!files.length) message = 'This repository has no GGUF files.';
+    else if (!usable) message = 'No standalone GGUF file here can be downloaded. Choose another repository.';
+    else if (!shown) message = 'No files in this repository match these file filters. Reset file filters.';
+    hfMessage(message + (files.length && hf.files.truncated ? ' Only the first 300 files are listed.' : ''));
+    updateControls();
+}
+
+function hfResetFiles() { el('hf-quant').value = ''; el('hf-max').value = ''; el('hf-file-sort').value = 'size'; }
 
 // Only standalone GGUF files can be chosen; split parts, projectors and gated files say why not.
 async function hfOpen(repo) {
+    if (!el('hf-results-view').hidden) hf.scroll = el('install-dialog').scrollTop;
     hf.files = null; hfView(true); hfMessage('Loading files…'); el('hf-back').focus();
     setText('hf-repo', repo.replace(/^https:\/\/huggingface\.co\//i, '')); el('hf-link').hidden = true;
-    el('hf-files').querySelectorAll('.file-row').forEach(row => row.remove()); updateControls();
-    const result = await hfRequest('files', {repo});
+    el('hf-files').querySelectorAll('.file-row').forEach(row => row.remove()); el('hf-file-filters').hidden = true;
+    el('hf-quant').replaceChildren(new Option('All', '')); hfResetFiles(); updateControls();
+    const request = hfRequest('files', {repo});
+    hfBusy(true);
+    const result = await request;
     if (!result) return;
     hf.files = result; setText('hf-repo', result.repo);
     el('hf-link').href = `https://huggingface.co/${result.repo.split('/').map(encodeURIComponent).join('/')}`; el('hf-link').hidden = false;
     el('hf-files').append(...result.files.map(file => {
-        const row = document.createElement('label'); row.className = 'model-row file-row';
+        const row = document.createElement('label'); row.className = 'model-row file-row'; row.file = file;
         const radio = document.createElement('input'); radio.type = 'radio'; radio.name = 'hf-file'; radio.value = file.name;
         radio.disabled = !file.selectable || file.installed;
         const details = [file.quant || 'Quant unknown', downloadSize(file.size), file.selectable ? 'VRAM Unknown' : file.reason];
         row.append(radio, span('model-name', file.name), span('model-meta', details.join(' · ')));
+        if (Number.isInteger(file.size)) row.title = `${file.size.toLocaleString()} bytes`;
         if (file.installed) row.append(span('badge', 'Installed'));
         if (radio.disabled) row.setAttribute('aria-disabled', 'true');
         return row;
     }));
-    const usable = result.files.filter(file => file.selectable).length;
-    hfMessage(!result.files.length ? 'This repository has no GGUF files.' : !usable ? 'No standalone GGUF file here can be downloaded. Choose another repository.' :
-        `${usable} standalone GGUF ${usable === 1 ? 'file' : 'files'} at revision ${result.revision.slice(0, 7)}.${result.truncated ? ' Only the first 300 files are listed.' : ''}`);
-    updateControls();
+    const quants = [...new Set(result.files.map(file => file.quant).filter(Boolean))].sort();
+    el('hf-quant').append(...quants.map(quant => new Option(quant, quant)));
+    el('hf-file-filters').hidden = result.files.length < 2;
+    hfApplyFiles();
 }
 
 // The key is sent once; afterwards status polling opens the manager and loads the download list.
@@ -778,6 +858,8 @@ el('install-close').addEventListener('click', () => el('install-dialog').close()
 // Focus returns to the opener, or to Install models when the opener has since been hidden.
 el('install-dialog').addEventListener('close', () => {
     hfCancel();
+    // A repository whose files never loaded is not kept; the next visit returns to the results.
+    if (!hf.files && !el('hf-files-view').hidden) { hfView(false); hfMessage(hfSummary()); }
     (installOpener?.isConnected && !installOpener.hidden ? installOpener : el('open-install')).focus();
     installOpener = null;
 });
@@ -794,15 +876,23 @@ el('recommended').addEventListener('click', event => {
     const button = event.target.closest('button[data-preset]');
     if (button) install('download', {preset: button.dataset.preset});
 });
-el('hf-form').addEventListener('submit', event => { event.preventDefault(); hfSearch(1); });
-el('hf-more').addEventListener('click', () => hfSearch(hf.page + 1));
+el('hf-form').addEventListener('submit', event => { event.preventDefault(); hfSearch(); });
+['hf-size', 'hf-task', 'hf-sort'].forEach(id => el(id).addEventListener('change', () => hfSearch()));
+el('hf-reset').addEventListener('click', () => {
+    el('hf-author').value = ''; el('hf-size').value = ''; el('hf-task').value = ''; el('hf-sort').value = 'trending'; hfSearch();
+});
+el('hf-more').addEventListener('click', () => hfSearch(true));
 el('hf-results').addEventListener('click', event => { const button = event.target.closest('button[data-repo]'); if (button) hfOpen(button.dataset.repo); });
+// Back keeps the results, filters and scroll position; it browses only if no results were ever shown.
 el('hf-back').addEventListener('click', () => {
     const repo = hf.files?.repo || el('hf-repo').textContent;
-    hfCancel(); hfView(false);
-    hfMessage(el('hf-results').children.length ? 'Choose a repository to see its files.' : '');
-    (el('hf-results').querySelector(`[data-repo="${CSS.escape(repo)}"]`) || el('hf-query')).focus();
+    hfCancel(); hfView(false); el('install-dialog').scrollTop = hf.scroll;
+    if (!hf.state && !/^https?:\/\//i.test(el('hf-query').value.trim())) hfSearch(); else hfMessage(hfSummary());
+    (el('hf-results').querySelector(`[data-repo="${CSS.escape(repo)}"]`) || el('hf-query')).focus({preventScroll: true});
 });
+['hf-quant', 'hf-file-sort'].forEach(id => el(id).addEventListener('change', hfApplyFiles));
+el('hf-max').addEventListener('input', hfApplyFiles);
+el('hf-file-reset').addEventListener('click', () => { hfResetFiles(); hfApplyFiles(); });
 el('hf-files').addEventListener('change', updateControls);
 el('hf-download').addEventListener('click', async () => {
     const file = el('hf-files').querySelector('input:checked')?.value;

@@ -188,13 +188,31 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
         </details>
     </div>
     <div id="search-panel" role="tabpanel" aria-labelledby="tab-search" hidden>
-    <form id="hf-form" class="row" role="search" novalidate>
-        <label>Model name, creator or repository URL<input id="hf-query" maxlength="300" autocomplete="off" spellcheck="false" placeholder="Lumimaid or https://huggingface.co/owner/model-GGUF"></label>
-        <button id="hf-submit" class="primary">Search</button>
-    </form>
     <p id="hf-error" class="inline-error" role="alert" hidden></p>
-    <p id="hf-status" class="muted" role="status"></p>
     <div id="hf-results-view">
+        <form id="hf-form" role="search" novalidate>
+            <div class="row">
+                <label>Model name or repository URL<input id="hf-query" maxlength="300" autocomplete="off" spellcheck="false" placeholder="Lumimaid or https://huggingface.co/owner/model-GGUF"></label>
+                <button id="hf-submit" class="primary">Search</button>
+            </div>
+            <div class="hf-filters">
+                <label>Creator<input id="hf-author" maxlength="96" autocomplete="off" spellcheck="false" placeholder="Any, e.g. bartowski"></label>
+                <label>Model size<select id="hf-size">
+                    <option value="">Any</option><option value="0-4">Up to 4B</option><option value="4-9">4–9B</option>
+                    <option value="9-15">9–15B</option><option value="15-35">15–35B</option><option value="35-">35B and up</option>
+                </select></label>
+                <label>Task<select id="hf-task">
+                    <option value="">Any GGUF</option><option value="text-generation">Text generation</option><option value="image-text-to-text">Image and text</option>
+                </select></label>
+                <label>Sort<select id="hf-sort">
+                    <option value="trending">Trending</option><option value="downloads">Downloads</option><option value="likes">Likes</option>
+                    <option value="updated">Recently updated</option><option value="newest">Newest</option>
+                </select></label>
+                <button type="button" id="hf-reset" class="quiet small">Reset filters</button>
+            </div>
+        </form>
+        <p class="muted">Public, non-gated GGUF repositories. Size and task come from Hugging Face metadata, which some repositories lack.</p>
+        <p id="hf-status" class="muted" role="status"></p>
         <ul id="hf-results" class="hf-results" aria-label="GGUF repositories"></ul>
         <button type="button" id="hf-more" class="small" hidden>Show more</button>
     </div>
@@ -203,6 +221,15 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
             <button type="button" id="hf-back" class="quiet small">← Results</button>
             <h3 id="hf-repo"></h3>
             <a id="hf-link" target="_blank" rel="noopener noreferrer">View on Hugging Face</a>
+        </div>
+        <p id="hf-files-status" class="muted" role="status"></p>
+        <div id="hf-file-filters" class="hf-filters" role="group" aria-label="Filter this repository’s files" hidden>
+            <label>Quantization<select id="hf-quant"><option value="">All</option></select></label>
+            <label>Max download (GB)<input id="hf-max" type="number" min="0.1" step="0.1" inputmode="decimal" placeholder="Any"></label>
+            <label>Sort files<select id="hf-file-sort">
+                <option value="size">Size, smallest first</option><option value="size-desc">Size, largest first</option><option value="name">Name</option>
+            </select></label>
+            <button type="button" id="hf-file-reset" class="quiet small">Reset file filters</button>
         </div>
         <fieldset id="hf-files" class="file-list"><legend class="sr-only">Choose a standalone GGUF file</legend></fieldset>
         <div class="button-group">
