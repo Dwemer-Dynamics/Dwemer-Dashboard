@@ -26,6 +26,8 @@ const hfSorts = {trending: 'Trending', downloads: 'Most downloaded', likes: 'Mos
 let installOpener = null;
 // A download or import finished on this page and the exact model key the helper reported for it, if any.
 let handoff = null;
+// A model the user picked in Models that is not loaded yet; it leads the guide until it loads.
+let chosen = '';
 const loadFields = {
     flashAttention: ['Flash Attention', 'bool'], offloadKVCacheToGpu: ['Offload KV cache to GPU', 'bool'],
     gpuStrictVramCap: ['Strict GPU memory limit', 'bool'], keepModelInMemory: ['Keep model in memory', 'bool'],
@@ -193,6 +195,13 @@ function nextStep(state) {
         if (handoff.selected && el('model').value === handoff.key) return {step: 'load', head: `Load ${name}.`, detail: 'Check its settings, then press Load.', action: 'configure'};
         return {step: 'load', head: `${name} is installed.`, detail: 'Select it in Models, then press Load.', action: 'select'};
     }
+    // A picked model that is not loaded comes before testing another one; nothing unloads automatically.
+    if (state.running && chosen && el('model').value === chosen && list.some(m => m.key === chosen) && !loadedModel(chosen)) {
+        const name = modelName(chosen);
+        if (instances.length >= maxLoaded()) return {step: 'load', head: `${name} isn’t loaded.`,
+            detail: maxLoaded() > 1 ? 'Both positions are in use. Unload one in Loaded, then load it.' : 'A model is already loaded. Unload it in Loaded, then load this one.'};
+        return {step: 'load', head: `Load ${name}.`, detail: 'Check its settings, then press Load.', action: 'configure'};
+    }
     if (!instances.length) {
         const memory = 'It shares your PC’s memory and graphics memory with the game.';
         if (!list.length) return {step: 'model', head: 'Choose a model.', detail: state.running ? memory : `${memory} Already have models? Start the server to list them.`, action: 'choose'};
@@ -252,6 +261,18 @@ function trackHandoff(state, list) {
     if (handoff.key && !handoff.selected && list.some(m => m.key === handoff.key) && formSnapshot() === filledForm) {
         handoff.selected = true; el('model').value = handoff.key;
     }
+}
+
+// This page's finished load selects its new instance in Test once, while it is the latest job; later choices stay.
+// A failed load, or a completion without exactly one new instance of its model, selects nothing.
+function targetOwnLoad(state, instances) {
+    const job = state.job || {}, own = ownJobs.get(job.id);
+    if (!own || own.targeted || job.action !== 'load' || job.state === 'running') return;
+    if (job.state !== 'completed') { own.targeted = true; return; }
+    const fresh = instances.filter(i => i.model === own.model && !(own.before || []).includes(i.id));
+    if (!fresh.length) return;
+    own.targeted = true;
+    if (fresh.length === 1) { own.instance = fresh[0].id; el('loaded').value = own.instance; }
 }
 
 // Show only output from the current or latest finished test, never an older result as a new one.
@@ -526,6 +547,7 @@ function renderActivity(job) {
     el('job-log').hidden = shortFailure || !summary.more;
     el('job-dismiss').hidden = running; el('job-dismiss').dataset.job = key;
     el('job-next').hidden = !(done && job.action === 'load'); el('job-next').dataset.model = own?.model || '';
+    el('job-next').dataset.instance = own?.instance || '';
     // Percentages describe bytes transferred only; verifying and importing stay indeterminate.
     const phase = phaseOf(job);
     const transfer = running && job.total > 0 && (phase ? transferPhases.has(phase) : job.downloaded < job.total);
@@ -593,6 +615,8 @@ function render(state) {
     options('loaded', instances, 'id', 'name');
     const preferred = preferLoaded && instances.find(i => i.model === preferLoaded);
     if (preferred) { el('loaded').value = preferred.id; preferLoaded = ''; }
+    targetOwnLoad(state, instances);
+    if (chosen && loadedModel(chosen)) chosen = '';
     // Results older than the latest model load, unload or idle unload belong to an earlier instance, even after a reload.
     if (['load', 'unload'].includes(state.job.action)) staleBefore = Math.max(staleBefore, state.job.updated || 0);
     if (typeof state.modelStateChangedAt === 'number') staleBefore = Math.max(staleBefore, state.modelStateChangedAt);
@@ -662,9 +686,11 @@ async function refresh() {
 }
 
 async function submit(action, data) {
+    // A load remembers the instances loaded before it was sent so its own new instance can be told apart.
+    const before = action === 'load' && current?.running ? instancesOf(current).map(i => i.id) : [];
     const job = await api(action, data);
     epoch++;
-    if (job?.id) ownJobs.set(job.id, {model: data.model, preset: data.preset, file: data.file});
+    if (job?.id) ownJobs.set(job.id, {model: data.model, preset: data.preset, file: data.file, before});
     if (['download', 'import'].includes(action)) handoff = null;
     if (job?.id && current) { busy = job.state === 'running'; current = {...current, job}; renderActivity(job); }
 }
@@ -906,7 +932,7 @@ function gotoTest(model, instanceId = '') {
     (el('run-test').disabled ? el('prompt') : el('run-test')).focus();
 }
 el('job-next').addEventListener('click', () => {
-    dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true; gotoTest(el('job-next').dataset.model);
+    dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true; gotoTest(el('job-next').dataset.model, el('job-next').dataset.instance);
 });
 el('engine-toggle').addEventListener('click', () => { if (current) act(current.running ? 'stop' : 'start'); });
 document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => act(button.dataset.action)));
@@ -931,7 +957,7 @@ el('slots').addEventListener('click', event => {
 // Choosing a model only fills its settings; nothing loads until Load is pressed.
 el('library').addEventListener('change', event => {
     if (event.target.name !== 'library-model') return;
-    el('model').value = event.target.value; handoff = null;
+    el('model').value = event.target.value; handoff = null; chosen = loadedModel(event.target.value) ? '' : event.target.value;
     selectModel(); if (current) renderConfig(libraryOf(current)); updateControls(); refresh();
 });
 function installMessage(error) { setText('install-error', error); el('install-error').hidden = !error; }
