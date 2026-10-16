@@ -71,15 +71,12 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
                 <div class="panel-head">
                     <h2 id="library-title">Models</h2>
                     <span id="library-count" class="count"></span>
+                    <button type="button" id="open-install" class="primary small" aria-haspopup="dialog">Install models</button>
                 </div>
-                <div class="tabs" role="tablist" aria-label="Models">
-                    <button type="button" role="tab" id="tab-installed" aria-controls="installed-panel" aria-selected="true">Installed</button>
-                    <button type="button" role="tab" id="tab-recommended" aria-controls="recommended-panel" aria-selected="false" tabindex="-1">Recommended</button>
-                </div>
-                <div id="installed-panel" role="tabpanel" aria-labelledby="tab-installed">
+                <div id="installed-panel">
                 <div id="library-note" class="note">
                     <p id="library-text" role="status">Connecting…</p>
-                    <button type="button" id="open-add" class="small" hidden>Add models</button>
+                    <button type="button" id="open-add" class="small" aria-haspopup="dialog" hidden>Add models</button>
                 </div>
                 <fieldset id="library" class="library-list" hidden><legend class="sr-only">Choose a model to configure or load</legend></fieldset>
                 <input type="hidden" id="model">
@@ -115,15 +112,6 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
                     <details><summary>Technical details</summary><pre id="model-details"></pre></details>
                 </form>
                 </div>
-                <div id="recommended-panel" role="tabpanel" aria-labelledby="tab-recommended" hidden>
-                    <div class="recommend-head">
-                        <p class="muted">Community candidates, not game-tested. VRAM is a rough estimate for the model alone at 4K context.</p>
-                        <button type="button" id="open-search" class="small">Search Hugging Face</button>
-                    </div>
-                    <p id="recommended-note" class="note" role="status" hidden></p>
-                    <ul id="recommended" class="cards"></ul>
-                    <p class="muted more-models"><button type="button" id="open-more" class="link">More models, custom references and local import...</button> Downloading never loads a model.</p>
-                </div>
             </section>
 
             <section id="slots-section" class="panel slots" aria-labelledby="slots-title">
@@ -152,28 +140,6 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
         </div>
 
         <div class="extras">
-            <details id="add-models" class="panel">
-                <summary>Add models <span class="muted">Download or import a GGUF</span></summary>
-                <div class="extras-body">
-                    <p id="preset-note" class="muted" role="status" hidden></p>
-                    <form id="preset-form" class="row">
-                        <label>Suggested model<select id="preset"></select></label>
-                        <button id="preset-download" class="primary" data-mutation>Download</button>
-                    </form>
-                    <form id="custom-form" class="row">
-                        <label>Custom Hugging Face URL or model reference<input id="source" placeholder="owner/model-GGUF@Q4_K_M" required maxlength="500"></label>
-                        <button id="custom-download" data-mutation>Download</button>
-                    </form>
-                    <form id="import-form" class="row">
-                        <label>Import local model: path on this PC<input id="local-path" placeholder="C:\Models\model.gguf" required maxlength="1024" autocomplete="off" spellcheck="false" aria-describedby="import-help"></label>
-                        <button id="local-import" data-mutation>Import</button>
-                    </form>
-                    <div id="import-help" class="muted">
-                        <p>Import copies a standalone <code>.gguf</code> file already on the PC running DwemerDistro; nothing is uploaded from this browser. Paste its full path; the original stays in place. DwemerDistro needs free space for one copy, or two if LM Studio’s model folder is on another drive.</p>
-                        <p>Ollama models are stored as managed blobs, not ordinary GGUF files, so they can’t be imported. Connect CHIM to Ollama instead. Split GGUF sets aren’t supported.</p>
-                    </div>
-                </div>
-            </details>
             <details id="server-settings" class="panel">
                 <summary>Startup <span id="startup-summary" class="muted"></span></summary>
                 <div class="extras-body">
@@ -185,11 +151,43 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
         </div>
     </div>
 </main>
-<dialog id="hf-dialog" class="hf-dialog" aria-labelledby="hf-title">
+<dialog id="install-dialog" class="install-dialog" aria-labelledby="install-title">
     <div class="dialog-head">
-        <h2 id="hf-title">Search Hugging Face</h2>
-        <button type="button" id="hf-close" class="quiet small">Close</button>
+        <h2 id="install-title">Install models</h2>
+        <button type="button" id="install-close" class="quiet small">Close</button>
     </div>
+    <div class="tabs" role="tablist" aria-label="Install models from">
+        <button type="button" role="tab" id="tab-recommended" aria-controls="recommended-panel" aria-selected="true">Recommended</button>
+        <button type="button" role="tab" id="tab-search" aria-controls="search-panel" aria-selected="false" tabindex="-1">Hugging Face</button>
+    </div>
+    <div id="recommended-panel" role="tabpanel" aria-labelledby="tab-recommended">
+        <p class="muted">Community candidates, not game-tested. VRAM is a rough estimate for the model alone at 4K context. Downloading never loads a model.</p>
+        <p id="install-error" class="inline-error" role="alert" hidden></p>
+        <p id="install-busy" class="muted" role="status" hidden>Another operation is running. Wait for it to finish.</p>
+        <p id="recommended-note" class="note" role="status" hidden></p>
+        <ul id="recommended" class="cards"></ul>
+        <details id="add-models">
+            <summary>More options <span class="muted">Other suggested models, custom reference or local import</span></summary>
+            <p id="preset-note" class="muted" role="status" hidden></p>
+            <form id="preset-form" class="row">
+                <label>Suggested model<select id="preset"></select></label>
+                <button id="preset-download" class="primary" data-mutation>Download</button>
+            </form>
+            <form id="custom-form" class="row">
+                <label>Custom Hugging Face URL or model reference<input id="source" placeholder="owner/model-GGUF@Q4_K_M" required maxlength="500"></label>
+                <button id="custom-download" data-mutation>Download</button>
+            </form>
+            <form id="import-form" class="row">
+                <label>Import local model: path on this PC<input id="local-path" placeholder="C:\Models\model.gguf" required maxlength="1024" autocomplete="off" spellcheck="false" aria-describedby="import-help"></label>
+                <button id="local-import" data-mutation>Import</button>
+            </form>
+            <div id="import-help" class="muted">
+                <p>Import copies a standalone <code>.gguf</code> file already on the PC running DwemerDistro; nothing is uploaded from this browser. Paste its full path; the original stays in place. DwemerDistro needs free space for one copy, or two if LM Studio’s model folder is on another drive.</p>
+                <p>Ollama models are stored as managed blobs, not ordinary GGUF files, so they can’t be imported. Connect CHIM to Ollama instead. Split GGUF sets aren’t supported.</p>
+            </div>
+        </details>
+    </div>
+    <div id="search-panel" role="tabpanel" aria-labelledby="tab-search" hidden>
     <form id="hf-form" class="row" role="search" novalidate>
         <label>Model name, creator or repository URL<input id="hf-query" maxlength="300" autocomplete="off" spellcheck="false" placeholder="Lumimaid or https://huggingface.co/owner/model-GGUF"></label>
         <button id="hf-submit" class="primary">Search</button>
@@ -211,6 +209,7 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
             <button type="button" id="hf-download" class="primary" data-mutation>Download selected file</button>
             <span id="hf-download-note" class="muted">VRAM use is unknown for searched files. Downloading never loads the model.</span>
         </div>
+    </div>
     </div>
 </dialog>
 </body>

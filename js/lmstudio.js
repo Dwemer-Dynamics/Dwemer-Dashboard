@@ -18,8 +18,10 @@ let savedBase = '', filledForm = '', ownSaved = null;
 const ownJobs = new Map();
 // Every catalog entry by id, and the completed download that last refreshed their Installed state.
 let catalogModels = [], catalogJob = '';
-// Hugging Face search: only the latest request may render; closing the dialog aborts it.
-const hf = {seq: 0, controller: null, page: 1, files: null, opener: null};
+// Hugging Face search: only the latest request may render; closing the install dialog aborts it.
+const hf = {seq: 0, controller: null, page: 1, files: null};
+// The button that opened the install dialog gets focus back when it closes.
+let installOpener = null;
 const loadFields = {
     flashAttention: ['Flash Attention', 'bool'], offloadKVCacheToGpu: ['Offload KV cache to GPU', 'bool'],
     gpuStrictVramCap: ['Strict GPU memory limit', 'bool'], keepModelInMemory: ['Keep model in memory', 'bool'],
@@ -154,6 +156,7 @@ function updateControls() {
     // Only a running job is another operation; a locked key or a pending submit keeps the usual note.
     setText('hf-download-note', unlocked && busy ? 'Another operation is running. Wait for it to finish.' :
         'VRAM use is unknown for searched files. Downloading never loads the model.');
+    el('install-busy').hidden = !(unlocked && busy);
     el('preset-download').disabled = locked || !el('preset').value;
     el('run-test').disabled = locked || !el('loaded').value || Boolean(testRun);
 }
@@ -622,8 +625,10 @@ function renderRecommended(models) {
     if (focused) list.querySelector(`[data-preset="${CSS.escape(focused)}"]`)?.focus();
 }
 
+const installTabs = ['recommended', 'search'];
+
 function showTab(name, focus = false) {
-    for (const tab of ['installed', 'recommended']) {
+    for (const tab of installTabs) {
         const button = el(`tab-${tab}`), selected = tab === name;
         button.setAttribute('aria-selected', String(selected)); button.tabIndex = selected ? 0 : -1;
         el(`${tab}-panel`).hidden = !selected;
@@ -753,27 +758,42 @@ el('library').addEventListener('change', event => {
     el('model').value = event.target.value;
     selectModel(); if (current) renderConfig(libraryOf(current)); updateControls(); refresh();
 });
-el('open-add').addEventListener('click', () => showTab('recommended', true));
-el('open-more').addEventListener('click', () => { el('add-models').open = true; el('add-models').querySelector('summary').focus(); });
-document.querySelectorAll('[role=tab]').forEach(tab => {
+function installMessage(error) { setText('install-error', error); el('install-error').hidden = !error; }
+
+// The native modal dialog keeps focus inside and closes on Escape. Every opening starts on Recommended.
+function openInstall(opener) {
+    installOpener = opener; installMessage('');
+    showTab('recommended'); el('install-dialog').showModal(); el('tab-recommended').focus(); updateControls();
+}
+
+// An accepted job closes the dialog so its progress shows on the page; a refusal stays here with its reason and the input kept.
+async function install(action, data, showError = installMessage) {
+    showError('');
+    if (await act(action, data)) el('install-dialog').close();
+    else if (errors.action) showError(errors.action);
+}
+el('open-install').addEventListener('click', () => openInstall(el('open-install')));
+el('open-add').addEventListener('click', () => openInstall(el('open-add')));
+el('install-close').addEventListener('click', () => el('install-dialog').close());
+// Focus returns to the opener, or to Install models when the opener has since been hidden.
+el('install-dialog').addEventListener('close', () => {
+    hfCancel();
+    (installOpener?.isConnected && !installOpener.hidden ? installOpener : el('open-install')).focus();
+    installOpener = null;
+});
+document.querySelectorAll('#install-dialog [role=tab]').forEach(tab => {
     tab.addEventListener('click', () => showTab(tab.id.slice(4)));
     tab.addEventListener('keydown', event => {
-        const tabs = ['installed', 'recommended'], index = tabs.indexOf(tab.id.slice(4));
-        const next = {ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: tabs.length - 1}[event.key];
+        const index = installTabs.indexOf(tab.id.slice(4));
+        const next = {ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: installTabs.length - 1}[event.key];
         if (next === undefined) return;
-        event.preventDefault(); showTab(tabs[(next + tabs.length) % tabs.length], true);
+        event.preventDefault(); showTab(installTabs[(next + installTabs.length) % installTabs.length], true);
     });
 });
 el('recommended').addEventListener('click', event => {
     const button = event.target.closest('button[data-preset]');
-    if (button) act('download', {preset: button.dataset.preset});
+    if (button) install('download', {preset: button.dataset.preset});
 });
-// The native modal dialog keeps focus inside, closes on Escape and returns focus to the button that opened it.
-el('open-search').addEventListener('click', () => {
-    hf.opener = document.activeElement; el('hf-dialog').showModal(); el('hf-query').focus(); updateControls();
-});
-el('hf-close').addEventListener('click', () => el('hf-dialog').close());
-el('hf-dialog').addEventListener('close', () => { hfCancel(); hf.opener?.focus(); });
 el('hf-form').addEventListener('submit', event => { event.preventDefault(); hfSearch(1); });
 el('hf-more').addEventListener('click', () => hfSearch(hf.page + 1));
 el('hf-results').addEventListener('click', event => { const button = event.target.closest('button[data-repo]'); if (button) hfOpen(button.dataset.repo); });
@@ -787,8 +807,7 @@ el('hf-files').addEventListener('change', updateControls);
 el('hf-download').addEventListener('click', async () => {
     const file = el('hf-files').querySelector('input:checked')?.value;
     if (!file || !hf.files) return;
-    if (await act('download', {repo: hf.files.repo, file})) el('hf-dialog').close();
-    else if (errors.action) hfMessage('', errors.action);
+    install('download', {repo: hf.files.repo, file}, error => { setText('hf-error', error); el('hf-error').hidden = !error; });
 });
 el('job-dismiss').addEventListener('click', () => { dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true; el('workspace').focus(); });
 el('unlock-form').addEventListener('submit', event => { event.preventDefault(); unlock(el('token').value); });
@@ -799,9 +818,9 @@ el('save-engine').addEventListener('click', async () => {
     const saved = {autostart: el('autostart').checked, startupModel: el('startup-model').value};
     if (await act('settings', saved) && el('autostart').checked === saved.autostart && el('startup-model').value === saved.startupModel) engineDirty = false;
 });
-el('preset-form').addEventListener('submit', event => { event.preventDefault(); if (el('preset').value) act('download', {preset: el('preset').value}); });
-el('custom-form').addEventListener('submit', event => { event.preventDefault(); act('download', {source: el('source').value.trim()}); });
-el('import-form').addEventListener('submit', event => { event.preventDefault(); act('import', {source: el('local-path').value.trim()}); });
+el('preset-form').addEventListener('submit', event => { event.preventDefault(); if (el('preset').value) install('download', {preset: el('preset').value}); });
+el('custom-form').addEventListener('submit', event => { event.preventDefault(); install('download', {source: el('source').value.trim()}); });
+el('import-form').addEventListener('submit', event => { event.preventDefault(); install('import', {source: el('local-path').value.trim()}); });
 el('load-form').addEventListener('submit', event => {
     event.preventDefault(); if (!validLoad()) return;
     try { const values = loadValues(); if (basicLoad()) values.advanced = {}; act('load', values); } catch (error) { report(error); }
