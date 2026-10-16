@@ -2,7 +2,7 @@
 const el = id => document.getElementById(id);
 const csrf = document.querySelector('meta[name="lmstudio-csrf"]').content;
 let unlocked = false, pending = false, queued = false, busy = false, submitting = false;
-let current = null, shownModel = null, engineDirty = false, tabChosen = false, dismissedJob = null, epoch = 0;
+let current = null, shownModel = null, engineDirty = false, dismissedJob = null, epoch = 0;
 let testRun = null, testFailure = null, staleBefore = 0, preferLoaded = '';
 // Polling stops only when the session needs unlocking; transient status failures keep retrying.
 let needsUnlock = false, catalogReady = false, catalogPending = false, catalogRetryAt = 0;
@@ -38,7 +38,6 @@ const transferPhases = new Set(['download', 'downloading', 'transfer', 'resume',
 const phaseNames = {download: 'Downloading', downloading: 'Downloading', transfer: 'Downloading', resume: 'Resuming download',
     resuming: 'Resuming download', copy: 'Copying model', verify: 'Verifying download', verifying: 'Verifying download', import: 'Importing model',
     importing: 'Importing model', retry: 'Retrying', retrying: 'Retrying'};
-const tabs = [...document.querySelectorAll('[role=tab]')];
 
 // Keep optional values empty so engine defaults remain available for every model.
 function buildFields(container, fields) {
@@ -111,18 +110,16 @@ function syncDefaults() {
     }
 }
 
-function selectTab(name, focus = false) {
-    tabChosen = true;
-    for (const tab of tabs) {
-        const selected = tab.dataset.tab === name;
-        tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1;
-        el(tab.getAttribute('aria-controls')).hidden = !selected;
-        if (selected && focus) tab.focus();
-    }
-    if (current) renderActivity(current.job);
-}
-
 function setText(id, text) { if (el(id).textContent !== text) el(id).textContent = text; }
+
+// Why Load is off, shown beside it; a running job explains itself on the activity card instead.
+function loadReason(running, model, full) {
+    if (!current?.installed || !model) return '';
+    if (!running) return 'Start the server to load this model. You can still edit and save its defaults.';
+    if (loadedModel(model)) return 'This model is already loaded.';
+    if (full) return maxLoaded() > 1 ? 'Both positions are in use. Unload one first.' : 'A model is already loaded. Unload it first.';
+    return '';
+}
 
 // Mutations stay disabled while a request or job runs; navigation, disclosures and copy stay usable.
 function updateControls() {
@@ -132,9 +129,13 @@ function updateControls() {
     toggle.setAttribute('aria-label', running ? 'Stop server' : 'Start server');
     toggle.classList.toggle('primary', !running);
     toggle.disabled = locked || !unlocked || !current || !installed;
+    el('restart').hidden = !running;
     el('restart').disabled = locked || !installed || !running;
-    // The helper refuses a second load, so Load stays off while any model is loaded.
-    el('load-button').disabled = locked || !running || !el('model').value || hasLoaded();
+    // The helper refuses a loaded model and loads beyond its limit, so Load stays off for those.
+    const model = el('model').value, full = el('loaded').options.length >= maxLoaded();
+    el('load-button').disabled = locked || !running || !model || loadedModel(model) || full;
+    const reason = loadReason(running, model, full);
+    setText('load-reason', reason); el('load-reason').hidden = !reason;
     // The SDK note and Load label describe the same form, so Reset and model changes update both at once.
     const basic = basicLoad();
     setText('load-button', basic ? 'Load basic' : 'Load');
@@ -142,7 +143,7 @@ function updateControls() {
         'Advanced loading is unavailable. Load basic skips these settings; your saved values are kept.' :
         'Reinstall the LLM Studio component to enable advanced loading.');
     el('save-defaults').disabled = locked || !el('model').value || !el('defaults-conflict').hidden;
-    el('unload').disabled = el('notice-unload').disabled = locked || !el('loaded').value;
+    el('slots').querySelectorAll('[data-slot-action=unload]').forEach(button => { button.disabled = locked; });
     ['save-engine', 'custom-download', 'local-import'].forEach(id => { el(id).disabled = locked; });
     el('preset-download').disabled = locked || !el('preset').value;
     el('run-test').disabled = locked || !el('loaded').value || Boolean(testRun);
@@ -162,19 +163,23 @@ function renderTest(state) {
     // A result belongs to the selected model and must be newer than its last load or unload.
     const selected = el('loaded').value, fresh = Boolean(selected) && last.model === selected && (last.updated || 0) > staleBefore;
     const failure = !running && !testRun && testFailure?.model === selected ? testFailure.message : '';
+    // With two models loaded, a test in progress shows only under the model it tests.
+    const tested = (running && job.model) || testRun?.model || '', here = !tested || tested === selected;
     let output = '', stats = '', note = '';
-    if (running) { output = job.output || ''; note = 'Generating…'; }
-    else if (testRun) note = 'Sending…';
+    if (running && here) { output = job.output || ''; note = 'Generating…'; }
+    else if (testRun && here) note = 'Sending…';
+    else if (running || testRun) note = 'Another loaded model is being tested.';
     else if (failure) note = `Test failed: ${failure}`;
     else if (fresh && last.output) { output = last.output; stats = last.elapsedSeconds ? `Response time: ${Number(last.elapsedSeconds).toFixed(1)} s` : ''; }
     else if (fresh && last.updated) note = emptyNote(job, last);
     else note = 'No response yet.';
-    if (running && output) stats = 'Generating…';
+    if (running && here && output) stats = 'Generating…';
     setText('output', output); setText('test-stats', output ? stats : '');
     setText('response-placeholder', note); el('response-placeholder').hidden = Boolean(output) || !note;
     el('response-placeholder').dataset.state = failure ? 'failed' : '';
     el('test-empty').hidden = Boolean(selected); el('loaded-row').hidden = !selected;
-    setText('test-empty-text', !current || current.running ? 'No model loaded.' : 'Server stopped.');
+    setText('test-empty-text', !current || current.running ? 'No model loaded. Load one from Installed models to test it.' : 'Server stopped. Start it and load a model to test.');
+    renderSlotTarget();
     updateControls();
 }
 
@@ -196,11 +201,172 @@ function lockLimit(bytes) {
     return `${Math.floor(bytes / 1024)} KiB`;
 }
 
-function modelName(key) { return current?.models.find(m => m.key === key)?.display_name || key; }
+// The library lists live models while running. Stopped, it lists the last confirmed inventory, which never says what is loaded.
+function libraryOf(state) {
+    if (!state) return [];
+    if (state.running) return (state.models || []).filter(m => m.type === 'llm');
+    return (Array.isArray(state.inventory) ? state.inventory : []).filter(m => m && m.key && (!m.type || m.type === 'llm'));
+}
 
-function hasLoaded() { return el('loaded').options.length > 0; }
+function modelName(key) { return libraryOf(current).find(m => m.key === key)?.display_name || key; }
 
-function loadedModel(key) { return Boolean(key) && Boolean(current?.models.find(m => m.key === key)?.loaded_instances?.length); }
+// Use binary units consistently for model sizes and reported memory; empty when unknown.
+function bytes(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return '';
+    if (value === 0) return '0 MiB';
+    return value >= 1073741824 ? `${gb(value)} GiB` : `${Math.max(1, Math.round(value / 1048576))} MiB`;
+}
+
+// Optional metadata the engine reports; missing fields are skipped.
+function modelMeta(model) {
+    const quant = typeof model?.quantization === 'string' ? model.quantization : model?.quantization?.name;
+    return [model?.publisher, bytes(model?.size_bytes), model?.params_string, quant].filter(v => typeof v === 'string' && v).join(' · ');
+}
+
+function checkedAgo(seconds) {
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return '';
+    const age = Math.max(0, Date.now() / 1000 - seconds);
+    if (age < 60) return 'just now';
+    if (age < 3600) return `${Math.floor(age / 60)} min ago`;
+    if (age < 86400) return `${Math.floor(age / 3600)} h ago`;
+    return `on ${new Date(seconds * 1000).toLocaleDateString()}`;
+}
+
+// An older helper omits maxLoaded and refuses any second load, so the manager then assumes one model.
+function maxLoaded() { const max = current?.maxLoaded; return Number.isInteger(max) && max > 0 ? max : 1; }
+
+// Friendly names in normal flow; the raw instance id stays available through Copy ID. Only the live list has instances.
+function instancesOf(state) {
+    const instances = (state.models || []).flatMap(m => (m.loaded_instances || []).map(i => ({id: i.id, model: m.key, name: m.display_name || i.id, config: i.config})));
+    const named = instances.map(i => i.name);
+    instances.forEach(i => { if (named.filter(name => name === i.name).length > 1) i.name = `${i.name} (${i.id})`; });
+    return instances;
+}
+
+function instanceCount(key) { return current?.running ? current.models?.find(m => m.key === key)?.loaded_instances?.length || 0 : 0; }
+
+function loadedModel(key) { return Boolean(key) && instanceCount(key) > 0; }
+
+function setNodeText(node, text) { if (node.textContent !== text) node.textContent = text; }
+
+function renderResources(resources) {
+    const r = resources || {}, ram = bytes(r.ramAvailable), total = bytes(r.ramTotal);
+    const stats = {'stat-ram': ram && total ? `${ram} of ${total}` : ram, 'stat-vram': bytes(r.vramFree)};
+    for (const [id, text] of Object.entries(stats)) { setText(id, text || '—'); el(id).title = text ? '' : 'Not reported'; }
+}
+
+function libraryText(state, list) {
+    if (!state.installed) return 'LLM Studio is not installed.';
+    if (state.running) return list.length ? '' : 'No models installed yet. Download or import one to get started.';
+    if (!list.length) return 'Start the server to discover installed models.';
+    const ago = checkedAgo(state.inventoryUpdatedAt);
+    return `${ago ? `Last checked ${ago}. ` : ''}Saved list from when the server last ran. Start the server to confirm it and load a model.`;
+}
+
+function modelRow(model) {
+    const row = document.createElement('label'); row.className = 'model-row';
+    const radio = document.createElement('input'); radio.type = 'radio'; radio.name = 'library-model'; radio.value = model.key;
+    const name = document.createElement('span'); name.className = 'model-name'; name.textContent = model.display_name || model.key;
+    const meta = document.createElement('span'); meta.className = 'model-meta'; meta.textContent = modelMeta(model);
+    const badge = document.createElement('span'); badge.className = 'badge'; badge.hidden = true;
+    row.append(radio, name, meta, badge);
+    return row;
+}
+
+// Rows rebuild only when the list changes, so polling never steals focus or a choice; badges and checks update in place.
+function renderLibrary(state, list) {
+    const library = el('library'), signature = JSON.stringify(list.map(m => [m.key, m.display_name, modelMeta(m)]));
+    if (library.dataset.signature !== signature) {
+        const focused = library.contains(document.activeElement) ? document.activeElement.value : null;
+        library.querySelectorAll('.model-row').forEach(row => row.remove());
+        library.append(...list.map(modelRow));
+        library.dataset.signature = signature;
+        if (focused) [...library.querySelectorAll('input')].find(radio => radio.value === focused)?.focus();
+    }
+    // A missing choice moves to a loaded model, else the first; an empty list keeps the choice and its unsaved form.
+    if (list.length && !list.some(m => m.key === el('model').value)) el('model').value = (list.find(m => loadedModel(m.key)) || list[0]).key;
+    library.querySelectorAll('.model-row').forEach(row => {
+        const radio = row.querySelector('input'), badge = row.querySelector('.badge'), count = instanceCount(radio.value);
+        radio.checked = radio.value === el('model').value;
+        badge.hidden = !count; setNodeText(badge, count > 1 ? `Loaded ×${count}` : 'Loaded');
+    });
+    library.hidden = !list.length;
+    const text = libraryText(state, list);
+    setText('library-text', text); el('library-note').hidden = !text;
+    el('library-note').dataset.state = !state.running && list.length ? 'cached' : '';
+    el('open-add').hidden = !(state.installed && state.running && !list.length);
+    setText('library-count', list.length ? `${list.length} ${state.running ? 'installed' : 'last seen'}` : '');
+}
+
+// The chosen model's heading and form; settings stay editable while stopped when the model is in the saved list.
+function renderConfig(list) {
+    const model = list.find(m => m.key === el('model').value);
+    el('load-form').hidden = !model;
+    if (!model) return;
+    setText('config-title', model.display_name || model.key);
+    const max = Number.isInteger(model.max_context_length) ? `up to ${model.max_context_length.toLocaleString()} context tokens` : '';
+    setText('config-meta', [modelMeta(model), max].filter(Boolean).join(' · '));
+}
+
+function slotButton(action, label, instance, style = '') {
+    const button = document.createElement('button'); button.type = 'button'; button.className = `small ${style}`.trim();
+    button.textContent = label; button.dataset.slotAction = action; button.dataset.instance = instance.id;
+    button.setAttribute('aria-label', `${label} ${instance.name}`);
+    return button;
+}
+
+function slotItem(instance, state) {
+    const item = document.createElement('li'), body = document.createElement('div'), title = document.createElement('strong');
+    item.className = 'slot'; body.className = 'slot-body';
+    if (!instance) {
+        item.classList.add('empty'); title.textContent = 'Empty';
+        const hint = document.createElement('span'); hint.className = 'muted';
+        hint.textContent = state.running ? 'Choose a model and Load.' : 'Server stopped.';
+        body.append(title, hint); item.append(body);
+        return item;
+    }
+    item.dataset.instance = instance.id; title.textContent = instance.name;
+    const id = document.createElement('code'); id.textContent = instance.id;
+    const context = instance.config?.context_length ?? instance.config?.contextLength;
+    const meta = [modelMeta(state.models.find(m => m.key === instance.model)), Number.isInteger(context) ? `${context.toLocaleString()} context` : ''].filter(Boolean).join(' · ');
+    body.append(title, id);
+    if (meta) { const span = document.createElement('span'); span.className = 'muted'; span.textContent = meta; body.append(span); }
+    const actions = document.createElement('div'); actions.className = 'slot-actions';
+    actions.append(slotButton('test', 'Test', instance), slotButton('unload', 'Unload', instance), slotButton('copy', 'Copy ID', instance, 'quiet'));
+    item.append(body, actions);
+    return item;
+}
+
+// Positions show live instances only; a stopped server has none, whatever the saved list says.
+function renderSlots(state, instances) {
+    const max = maxLoaded(), list = el('slots');
+    setText('slots-count', `${instances.length}/${max}`);
+    const signature = JSON.stringify([max, state.running, instances.map(i => [i.id, i.name, i.model, i.config?.context_length ?? i.config?.contextLength ?? null])]);
+    if (list.dataset.signature !== signature) {
+        const focused = list.contains(document.activeElement) ? document.activeElement.dataset : null;
+        list.replaceChildren(...Array.from({length: Math.max(max, instances.length)}, (_, index) => slotItem(instances[index], state)));
+        list.dataset.signature = signature;
+        if (focused) [...list.querySelectorAll('button')].find(b => b.dataset.instance === focused.instance && b.dataset.slotAction === focused.slotAction)?.focus();
+    }
+    el('multi-note').hidden = max < 2;
+    renderSlotTarget();
+}
+
+// The position whose model the Test panel targets is marked, so per-position Test and the Test model select agree.
+function renderSlotTarget() {
+    el('slots').querySelectorAll('.slot').forEach(item => {
+        const target = Boolean(item.dataset.instance) && item.dataset.instance === el('loaded').value;
+        item.classList.toggle('target', target);
+        item.querySelector('[data-slot-action=test]')?.setAttribute('aria-pressed', String(target));
+    });
+}
+
+function renderStartupSummary() {
+    const startup = el('startup-model'), name = startup.value ? startup.selectedOptions[0]?.textContent || startup.value : '';
+    let text = el('autostart').checked ? `Starts with DwemerDistro${name ? ` · loads ${name}` : ''}` : 'Manual start';
+    if (engineDirty) text += ' · unsaved';
+    setText('startup-summary', text);
+}
 
 function presetName(id) { return [...el('preset').options].find(o => o.value === id)?.textContent.split(' · ')[0] || ''; }
 
@@ -239,8 +405,8 @@ function renderActivity(job) {
     if (loadDone) { if (loadedModel(own.model)) own.seenLoaded = true; else if (own.seenLoaded) own.gone = true; }
     const gone = loadDone && (own.gone || !loadedModel(own.model));
     const faded = gone || (done && !lastingDone.has(job.action) && Date.now() - own.finished > 4000);
-    // The Test tab's response pane already shows a running test, so the card would only repeat it there.
-    const shownInPane = running && job.action === 'test' && !el('panel-test').hidden;
+    // The Test response pane already shows a running test of its model, so the card would only repeat it there.
+    const shownInPane = running && job.action === 'test' && (!job.model || job.model === el('loaded').value);
     const show = dismissedJob !== key && !shownInPane && (running || failed || (done && !faded));
     el('activity').hidden = !show;
     if (!show) return;
@@ -312,13 +478,11 @@ function render(state) {
     el('status').dataset.state = state.running ? 'running' : state.installed ? 'stopped' : 'missing';
     if (!engineDirty) el('autostart').checked = state.settings.autostart;
     el('endpoint').value = state.endpoint; el('chatUrl').value = state.chatUrl;
-    const llms = state.models.filter(m => m.type === 'llm');
-    // A stopped or restarting server lists no models; keep the choice and unsaved form until a real list returns.
-    if (llms.length) options('model', llms, 'key', 'display_name');
-    // Friendly names in normal flow; the raw instance id stays available through Copy ID.
-    const instances = state.models.flatMap(m => (m.loaded_instances || []).map(i => ({id: i.id, model: m.key, name: m.display_name || i.id})));
-    const named = instances.map(i => i.name);
-    instances.forEach(i => { if (named.filter(name => name === i.name).length > 1) i.name = `${i.name} (${i.id})`; });
+    renderResources(state.resources);
+    // A restarting server or an older helper lists no models; the choice and unsaved form stay until a list returns.
+    const llms = libraryOf(state);
+    renderLibrary(state, llms);
+    const instances = state.running ? instancesOf(state) : [];
     options('loaded', instances, 'id', 'name');
     const preferred = preferLoaded && instances.find(i => i.model === preferLoaded);
     if (preferred) { el('loaded').value = preferred.id; preferLoaded = ''; }
@@ -354,15 +518,12 @@ function render(state) {
     const limit = lockLimit(state.memoryLockLimit);
     setText('memlock-note', limit ? `Keep model in memory can lock at most ${limit} on this system.` : ''); el('memlock-note').hidden = !limit;
     const applied = state.lastLoad?.model === el('model').value && loadedModel(el('model').value) && loadRecord !== staleLoad;
-    setText('model-details', JSON.stringify({model: state.models.find(m => m.key === el('model').value),
+    setText('model-details', JSON.stringify({model: llms.find(m => m.key === el('model').value),
         lastAdvancedLoad: applied ? state.lastLoad.appliedConfig : undefined, memoryLockWarning: applied ? state.lastLoad.memoryLockWarning : undefined}, null, 2));
-    const listed = state.running && llms.length > 0;
-    setText('model-note', state.running ? 'No models yet.' : 'Start the server to see models.');
-    el('model-note').hidden = listed; el('load-form').hidden = !listed;
-    el('loaded-note').hidden = !state.running || !instances.length;
-    setText('loaded-name', instances.length > 1 ? `${instances.length} models` : instances[0]?.name || '');
+    renderConfig(llms);
+    renderSlots(state, instances);
+    renderStartupSummary();
     busy = state.job.state === 'running';
-    if (!tabChosen) selectTab(el('loaded').value ? 'test' : 'models');
     renderActivity(state.job);
     renderTest(state);
 }
@@ -433,47 +594,47 @@ async function unlock(token) {
     await refresh();
 }
 
-tabs.forEach((tab, index) => {
-    tab.addEventListener('click', () => selectTab(tab.dataset.tab));
-    tab.addEventListener('keydown', event => {
-        const keys = {ArrowLeft: index - 1, ArrowUp: index - 1, ArrowRight: index + 1, ArrowDown: index + 1, Home: 0, End: tabs.length - 1};
-        if (!(event.key in keys)) return;
-        event.preventDefault();
-        selectTab(tabs[(keys[event.key] + tabs.length) % tabs.length].dataset.tab, true);
-    });
-});
-const vertical = matchMedia('(min-width: 761px)');
-const orient = () => document.querySelector('[role=tablist]').setAttribute('aria-orientation', vertical.matches ? 'vertical' : 'horizontal');
-orient(); vertical.addEventListener('change', orient);
-el('goto-models').addEventListener('click', () => selectTab('models', true));
-// Explicit next step after a load; polling never switches tabs on its own.
-function gotoTest(model) {
-    const instance = model && current?.models.find(m => m.key === model)?.loaded_instances?.[0];
-    if (instance) el('loaded').value = instance.id; else if (model) preferLoaded = model;
-    selectTab('test');
-    renderTest(current);
-    (el('run-test').disabled ? el('tab-test') : el('run-test')).focus();
+// Explicit next step after a load or a position's Test; polling never moves focus on its own.
+function gotoTest(model, instanceId = '') {
+    const instance = instanceId || (model && current?.models.find(m => m.key === model)?.loaded_instances?.[0]?.id);
+    if (instance) el('loaded').value = instance; else if (model) preferLoaded = model;
+    if (current) { renderActivity(current.job); renderTest(current); }
+    (el('run-test').disabled ? el('prompt') : el('run-test')).focus();
 }
 el('job-next').addEventListener('click', () => {
     dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true; gotoTest(el('job-next').dataset.model);
 });
-el('notice-test').addEventListener('click', () => gotoTest(''));
-el('notice-unload').addEventListener('click', () => act('unload', {model: el('loaded').value}));
 el('engine-toggle').addEventListener('click', () => { if (current) act(current.running ? 'stop' : 'start'); });
 document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => act(button.dataset.action)));
-document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
+async function copyText(text, button) {
     try {
-        const input = el(button.dataset.copy);
-        if (navigator.clipboard) await navigator.clipboard.writeText(input.value);
-        else { const copy = document.createElement('textarea'); copy.value = input.value; document.body.append(copy); copy.select(); document.execCommand('copy'); copy.remove(); }
+        if (navigator.clipboard) await navigator.clipboard.writeText(text);
+        else { const copy = document.createElement('textarea'); copy.value = text; document.body.append(copy); copy.select(); document.execCommand('copy'); copy.remove(); }
         button.dataset.label ??= button.textContent; button.textContent = 'Copied';
         clearTimeout(button.copyTimer); button.copyTimer = setTimeout(() => { button.textContent = button.dataset.label; }, 1500);
     } catch (error) { report(error); }
-}));
+}
+document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', () => copyText(el(button.dataset.copy).value, button)));
+// Position buttons carry their own instance id, so Test, Unload and Copy ID act on that instance whichever model is chosen.
+el('slots').addEventListener('click', event => {
+    const button = event.target.closest('button[data-slot-action]');
+    if (!button) return;
+    const instance = button.dataset.instance;
+    if (button.dataset.slotAction === 'test') gotoTest('', instance);
+    else if (button.dataset.slotAction === 'unload') act('unload', {model: instance});
+    else copyText(instance, button);
+});
+// Choosing a model only fills its settings; nothing loads until Load is pressed.
+el('library').addEventListener('change', event => {
+    if (event.target.name !== 'library-model') return;
+    el('model').value = event.target.value;
+    selectModel(); if (current) renderConfig(libraryOf(current)); updateControls(); refresh();
+});
+el('open-add').addEventListener('click', () => { el('add-models').open = true; el('add-models').querySelector('summary').focus(); });
 el('job-dismiss').addEventListener('click', () => { dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true; el('workspace').focus(); });
 el('unlock-form').addEventListener('submit', event => { event.preventDefault(); unlock(el('token').value); });
-el('autostart').addEventListener('change', () => { engineDirty = true; });
-el('startup-model').addEventListener('change', () => { engineDirty = true; });
+el('autostart').addEventListener('change', () => { engineDirty = true; renderStartupSummary(); });
+el('startup-model').addEventListener('change', () => { engineDirty = true; renderStartupSummary(); });
 // Edits made while the save is pending stay dirty so polling does not overwrite them.
 el('save-engine').addEventListener('click', async () => {
     const saved = {autostart: el('autostart').checked, startupModel: el('startup-model').value};
@@ -486,7 +647,6 @@ el('load-form').addEventListener('submit', event => {
     event.preventDefault(); if (!validLoad()) return;
     try { const values = loadValues(); if (basicLoad()) values.advanced = {}; act('load', values); } catch (error) { report(error); }
 });
-el('model').addEventListener('change', () => { selectModel(); updateControls(); refresh(); });
 el('reset-load').addEventListener('click', () => { selectModel(true); updateControls(); });
 el('use-latest').addEventListener('click', () => { selectModel(); el('defaults-conflict').hidden = true; updateControls(); el('save-defaults').focus(); });
 // Unavailable advanced fields keep their saved values, so saving other settings never erases them.
@@ -498,8 +658,7 @@ el('save-defaults').addEventListener('click', () => {
         act('model-defaults', values).then(ok => { if (!ok && ownSaved === saving) ownSaved = null; });
     } catch (error) { report(error); }
 });
-el('unload').addEventListener('click', () => act('unload', {model: el('loaded').value}));
-el('loaded').addEventListener('change', () => { if (current) renderTest(current); });
+el('loaded').addEventListener('change', () => { if (current) { renderActivity(current.job); renderTest(current); } });
 el('test-form').addEventListener('submit', async event => {
     event.preventDefault();
     if (busy || submitting || testRun) return;
