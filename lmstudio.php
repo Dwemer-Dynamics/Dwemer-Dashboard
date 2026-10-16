@@ -26,6 +26,7 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
     </div>
     <div class="engine">
         <span id="status" role="status" data-state="connecting">Connecting…</span>
+        <button type="button" id="restart" class="quiet" data-action="restart" data-mutation hidden>Restart</button>
         <button type="button" id="engine-toggle" class="primary" data-mutation disabled>Start</button>
     </div>
 </header>
@@ -38,19 +39,14 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
         <form id="unlock-form" class="row"><label>Access key<input id="token" type="password" autocomplete="off" required></label><button class="primary">Unlock</button></form>
     </details>
 </section>
-<div id="manager" class="studio" hidden>
-    <div class="rail" role="tablist" aria-label="LLM Studio" aria-orientation="vertical">
-        <button type="button" role="tab" id="tab-test" aria-controls="panel-test" aria-selected="false" tabindex="-1" data-tab="test">Test</button>
-        <button type="button" role="tab" id="tab-models" aria-controls="panel-models" aria-selected="true" tabindex="0" data-tab="models">Models</button>
-        <button type="button" role="tab" id="tab-server" aria-controls="panel-server" aria-selected="false" tabindex="-1" data-tab="server">Server</button>
-    </div>
+<main id="manager" class="studio" hidden>
     <div id="workspace" class="workspace" tabindex="-1">
         <div id="activity" class="activity" data-state="running" hidden>
             <div class="activity-head">
                 <strong id="job-title" aria-live="polite"></strong>
                 <span id="job-amount"></span>
                 <span class="activity-actions">
-                    <button type="button" id="job-next" class="primary small" hidden>Go to Test</button>
+                    <button type="button" id="job-next" class="primary small" hidden>Test it</button>
                     <button type="button" id="job-dismiss" class="quiet small" hidden>Dismiss</button>
                 </span>
             </div>
@@ -59,109 +55,120 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
             <details id="job-log" hidden><summary>Details</summary><pre id="job"></pre></details>
         </div>
 
-        <section id="panel-test" class="panel test-panel" role="tabpanel" aria-labelledby="tab-test" hidden>
-            <div class="test-input">
-                <div id="test-empty" class="empty">
-                    <p id="test-empty-text">No model loaded.</p>
-                    <button type="button" id="goto-models">Open Models</button>
-                </div>
-                <div id="loaded-row" class="row">
-                    <label>Model<select id="loaded"></select></label>
-                    <button type="button" id="unload" data-mutation>Unload</button>
-                    <button type="button" class="quiet" data-copy="loaded">Copy ID</button>
-                </div>
-                <form id="test-form">
-                    <label>Prompt<textarea id="prompt" maxlength="4000" rows="4" required>Reply with Hello.</textarea></label>
-                    <button id="run-test" class="primary">Test</button>
-                </form>
+        <div class="overview" role="group" aria-label="Server resources and access">
+            <dl class="stats">
+                <div><dt>RAM free</dt><dd id="stat-ram">—</dd></div>
+                <div><dt>VRAM free</dt><dd id="stat-vram">—</dd></div>
+            </dl>
+            <div class="endpoints">
+                <div class="copy-field"><label for="endpoint">API base</label><input id="endpoint" readonly><button type="button" class="small" data-copy="endpoint" aria-label="Copy API base">Copy</button></div>
+                <div class="copy-field"><label for="chatUrl">Chat URL</label><input id="chatUrl" readonly><button type="button" class="small" data-copy="chatUrl" aria-label="Copy chat URL">Copy</button></div>
             </div>
-            <div class="response" aria-label="Response">
-                <p id="response-placeholder" class="response-note" role="status"></p>
-                <pre id="output" aria-live="polite"></pre>
-                <p id="test-stats" class="muted"></p>
-            </div>
-        </section>
+        </div>
 
-        <section id="panel-models" class="panel models-panel" role="tabpanel" aria-labelledby="tab-models">
-            <div class="block" role="group" aria-labelledby="installed-title">
-                <h2 id="installed-title">Installed</h2>
-                <p id="model-note" class="muted">Start the server to see models.</p>
-                <div id="loaded-note" class="notice" hidden>
-                    <p><b id="loaded-name"></b> is loaded. Unload it to load another model.</p>
-                    <div class="button-group">
-                        <button type="button" id="notice-test" class="small">Test</button>
-                        <button type="button" id="notice-unload" class="small" data-mutation>Unload</button>
-                    </div>
+        <div class="layout">
+            <section id="library-section" class="panel library" aria-labelledby="library-title">
+                <div class="panel-head">
+                    <h2 id="library-title">Installed models</h2>
+                    <span id="library-count" class="count"></span>
                 </div>
-                <form id="load-form" novalidate hidden>
-                    <div class="row">
-                        <label>Model<select id="model"></select></label>
-                        <button id="load-button" class="primary" data-mutation>Load</button>
+                <div id="library-note" class="note">
+                    <p id="library-text" role="status">Connecting…</p>
+                    <button type="button" id="open-add" class="small" hidden>Add models</button>
+                </div>
+                <fieldset id="library" class="library-list" hidden><legend class="sr-only">Choose a model to configure or load</legend></fieldset>
+                <input type="hidden" id="model">
+                <form id="load-form" class="model-config" novalidate hidden aria-labelledby="config-title">
+                    <div class="config-head">
+                        <div class="config-name">
+                            <h3 id="config-title"></h3>
+                            <p id="config-meta" class="muted"></p>
+                        </div>
+                        <button id="load-button" class="primary" data-mutation aria-describedby="load-reason">Load</button>
                     </div>
+                    <p id="load-reason" class="reason" hidden></p>
                     <p id="sdk-note" class="muted" hidden></p>
-                    <details id="load-settings"><summary>Load settings</summary>
-                        <p class="muted">Changes apply next time you load the model.</p>
-                        <div class="settings-grid load-basics">
-                            <label>Context tokens<input id="context" type="number" min="512" max="131072" value="4096" required></label>
-                            <label>GPU offload %<input id="gpu" type="number" min="0" max="100" value="100" required></label>
-                            <label>Idle unload (s)<input id="ttl" type="number" min="60" max="86400" value="600" required></label>
-                        </div>
-                        <details id="advanced-load"><summary>Advanced</summary>
-                            <p class="muted">Engine default uses LM Studio’s own setting. Quantized V cache needs Flash Attention.</p>
-                            <p id="memlock-note" class="muted" hidden></p>
-                            <div id="load-fields" class="settings-grid"></div>
-                        </details>
-                        <div id="defaults-conflict" class="notice warn" role="status" hidden>
-                            <p>Saved defaults changed in another window. Reload saved replaces your edits.</p>
-                            <button type="button" id="use-latest" class="small">Reload saved</button>
-                        </div>
-                        <div class="button-group">
-                            <button type="button" id="save-defaults" data-mutation>Save defaults</button>
-                            <button type="button" id="reset-load" class="quiet">Reset to built-in</button>
-                        </div>
+                    <div class="settings-grid load-basics">
+                        <label>Context tokens<input id="context" type="number" min="512" max="131072" value="4096" required></label>
+                        <label>GPU offload %<input id="gpu" type="number" min="0" max="100" value="100" required></label>
+                        <label>Idle unload (s)<input id="ttl" type="number" min="60" max="86400" value="600" required></label>
+                    </div>
+                    <details id="advanced-load"><summary>Advanced load settings</summary>
+                        <p class="muted">Engine default uses LM Studio’s own setting. Quantized V cache needs Flash Attention.</p>
+                        <p id="memlock-note" class="muted" hidden></p>
+                        <div id="load-fields" class="settings-grid"></div>
                     </details>
+                    <div id="defaults-conflict" class="notice warn" role="status" hidden>
+                        <p>Saved defaults changed in another window. Reload saved replaces your edits.</p>
+                        <button type="button" id="use-latest" class="small">Reload saved</button>
+                    </div>
+                    <div class="button-group defaults-actions">
+                        <button type="button" id="save-defaults" data-mutation>Save defaults</button>
+                        <button type="button" id="reset-load" class="quiet">Reset to built-in</button>
+                        <span class="muted">Saved for this model and used the next time it loads.</span>
+                    </div>
                     <details><summary>Technical details</summary><pre id="model-details"></pre></details>
                 </form>
-            </div>
-            <div class="block" role="group" aria-labelledby="download-title">
-                <h2 id="download-title">Download</h2>
-                <p id="preset-note" class="muted" role="status" hidden></p>
-                <form id="preset-form" class="row">
-                    <label>Model<select id="preset"></select></label>
-                    <button id="preset-download" class="primary" data-mutation>Download</button>
+            </section>
+
+            <section id="slots-section" class="panel slots" aria-labelledby="slots-title">
+                <div class="panel-head">
+                    <h2 id="slots-title">Loaded</h2>
+                    <span id="slots-count" class="count"></span>
+                </div>
+                <ol id="slots" class="slot-list"></ol>
+                <p id="multi-note" class="muted" hidden>Two different models can stay loaded, for example to serve different purposes; connectors choose one by its model ID. Both share RAM and VRAM, so size context and GPU offload for both.</p>
+            </section>
+
+            <section id="test-section" class="panel test" aria-labelledby="test-title">
+                <h2 id="test-title">Test</h2>
+                <form id="test-form">
+                    <p id="test-empty" class="note"><span id="test-empty-text">No model loaded.</span></p>
+                    <label id="loaded-row">Model<select id="loaded"></select></label>
+                    <label>Prompt<textarea id="prompt" maxlength="4000" rows="3" required>Reply with Hello.</textarea></label>
+                    <button id="run-test" class="primary">Send test</button>
                 </form>
-                <details><summary>Custom Hugging Face model</summary>
+                <div class="response" role="group" aria-label="Response">
+                    <p id="response-placeholder" class="response-note" role="status"></p>
+                    <pre id="output" aria-live="polite"></pre>
+                    <p id="test-stats" class="muted"></p>
+                </div>
+            </section>
+        </div>
+
+        <div class="extras">
+            <details id="add-models" class="panel">
+                <summary>Add models <span class="muted">Download or import a GGUF</span></summary>
+                <div class="extras-body">
+                    <p id="preset-note" class="muted" role="status" hidden></p>
+                    <form id="preset-form" class="row">
+                        <label>Suggested model<select id="preset"></select></label>
+                        <button id="preset-download" class="primary" data-mutation>Download</button>
+                    </form>
                     <form id="custom-form" class="row">
-                        <label>URL or model reference<input id="source" placeholder="owner/model-GGUF@Q4_K_M" required maxlength="500"></label>
+                        <label>Custom Hugging Face URL or model reference<input id="source" placeholder="owner/model-GGUF@Q4_K_M" required maxlength="500"></label>
                         <button id="custom-download" data-mutation>Download</button>
                     </form>
-                </details>
-                <details><summary>Import local model</summary>
-                    <p class="muted">Copies a standalone <code>.gguf</code> file already on the PC running DwemerDistro; nothing is uploaded from this browser. Paste its full path; the original stays in place. DwemerDistro needs free space for one copy, or two if LM Studio’s model folder is on another drive.</p>
                     <form id="import-form" class="row">
-                        <label>Path on this PC<input id="local-path" placeholder="C:\Models\model.gguf" required maxlength="1024" autocomplete="off" spellcheck="false"></label>
+                        <label>Import local model: path on this PC<input id="local-path" placeholder="C:\Models\model.gguf" required maxlength="1024" autocomplete="off" spellcheck="false" aria-describedby="import-help"></label>
                         <button id="local-import" data-mutation>Import</button>
                     </form>
-                    <p class="muted">Ollama models are stored as managed blobs, not ordinary GGUF files, so they can’t be imported. Connect CHIM to Ollama instead. Split GGUF sets aren’t supported.</p>
-                </details>
-            </div>
-        </section>
-
-        <section id="panel-server" class="panel server-panel" role="tabpanel" aria-labelledby="tab-server" hidden>
-            <label class="inline"><input id="autostart" type="checkbox"> Start with DwemerDistro</label>
-            <label>Startup model<select id="startup-model"><option value="">None</option></select></label>
-            <div class="button-group"><button type="button" id="save-engine" data-mutation>Save</button></div>
-            <div class="row">
-                <label>API base<input id="endpoint" readonly></label>
-                <button type="button" data-copy="endpoint">Copy</button>
-            </div>
-            <div class="row">
-                <label>Chat URL<input id="chatUrl" readonly></label>
-                <button type="button" data-copy="chatUrl">Copy</button>
-            </div>
-            <div class="server-actions"><button type="button" id="restart" data-action="restart" data-mutation>Restart</button></div>
-        </section>
+                    <div id="import-help" class="muted">
+                        <p>Import copies a standalone <code>.gguf</code> file already on the PC running DwemerDistro; nothing is uploaded from this browser. Paste its full path; the original stays in place. DwemerDistro needs free space for one copy, or two if LM Studio’s model folder is on another drive.</p>
+                        <p>Ollama models are stored as managed blobs, not ordinary GGUF files, so they can’t be imported. Connect CHIM to Ollama instead. Split GGUF sets aren’t supported.</p>
+                    </div>
+                </div>
+            </details>
+            <details id="server-settings" class="panel">
+                <summary>Startup <span id="startup-summary" class="muted"></span></summary>
+                <div class="extras-body">
+                    <label class="inline"><input id="autostart" type="checkbox"> Start with DwemerDistro</label>
+                    <label>Startup model<select id="startup-model"><option value="">None</option></select></label>
+                    <div class="button-group"><button type="button" id="save-engine" data-mutation>Save</button></div>
+                </div>
+            </details>
+        </div>
     </div>
-</div>
+</main>
 </body>
 </html>
