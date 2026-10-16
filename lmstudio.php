@@ -1,11 +1,20 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/lib/storage_fragment.php';
 session_start();
 $_SESSION['lmstudio_csrf'] ??= bin2hex(random_bytes(32));
 $csrf = $_SESSION['lmstudio_csrf'];
 header('Cache-Control: no-store');
 header('Referrer-Policy: no-referrer');
 header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'");
+// Only CHIM's Quickstart has Local LLM fields so far; STOBE and DIALECTIC links follow when their Quickstarts do.
+// The link uses the shared product routing and appears only when that server is installed.
+$quickstart = null;
+$chim = dm_products()['chim'];
+$chimRoot = dm_server_root($chim['dir']);
+if ($chimRoot !== null && is_file($chimRoot . '/ui/quickstart.php')) {
+    $quickstart = ['label' => $chim['label'], 'url' => dm_url_prefix() . '/' . $chim['dir'] . '/ui/quickstart.php'];
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -41,6 +50,31 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
 </section>
 <main id="manager" class="studio" hidden>
     <div id="workspace" class="workspace" tabindex="-1">
+        <section id="guide" class="guide" aria-label="Next step" hidden>
+            <ol id="guide-steps" class="guide-steps">
+                <li data-step="install">Install</li><li data-step="model">Model</li><li data-step="load">Load</li><li data-step="test">Test</li>
+            </ol>
+            <p class="guide-text" aria-live="polite"><strong id="guide-head"></strong> <span id="guide-detail"></span></p>
+            <button type="button" id="guide-action" class="primary small" hidden></button>
+        </section>
+        <section id="connect" class="panel connect" aria-labelledby="connect-title" hidden>
+            <h2 id="connect-title">Connect a mod</h2>
+            <p class="muted">Copy these into your mod’s Local LLM settings. Nothing here changes game or server settings.</p>
+            <div class="connect-fields">
+                <div class="copy-field"><label for="connect-model">Model name</label><input id="connect-model" readonly><button type="button" class="small" data-copy="connect-model" aria-label="Copy model name">Copy</button></div>
+                <div class="copy-field"><label for="connect-url">Server URL</label><input id="connect-url" readonly><button type="button" class="small" data-copy="connect-url" aria-label="Copy server URL">Copy</button></div>
+            </div>
+            <p class="muted">This address is correct for mods running in DwemerDistro.</p>
+            <details><summary>About the 127.0.0.1 warning and other servers</summary>
+                <p class="muted">CHIM may warn that 127.0.0.1 can’t reach Windows. For this engine, keep the address: it runs inside DwemerDistro beside the mod server.</p>
+                <p class="muted">Using the LM Studio app on Windows or another PC instead? That is a separate server: use its own address and model name.</p>
+            </details>
+            <?php if ($quickstart !== null): ?>
+            <p class="connect-link"><a href="<?= htmlspecialchars($quickstart['url'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer">Open <?= htmlspecialchars($quickstart['label'], ENT_QUOTES, 'UTF-8') ?> Quickstart</a> <span class="muted">Choose Local LLM, paste both values, then press Test connection.</span></p>
+            <?php else: ?>
+            <p class="muted">Paste both values into your mod’s LLM connector, then test the connection there.</p>
+            <?php endif; ?>
+        </section>
         <div id="activity" class="activity" data-state="running" hidden>
             <div class="activity-head">
                 <strong id="job-title" aria-live="polite"></strong>
@@ -76,11 +110,10 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
                 <div id="installed-panel">
                 <div id="library-note" class="note">
                     <p id="library-text" role="status">Connecting…</p>
-                    <button type="button" id="open-add" class="small" aria-haspopup="dialog" hidden>Add models</button>
                 </div>
                 <fieldset id="library" class="library-list" hidden><legend class="sr-only">Choose a model to configure or load</legend></fieldset>
                 <input type="hidden" id="model">
-                <form id="load-form" class="model-config" novalidate hidden aria-labelledby="config-title">
+                <form id="load-form" class="model-config" novalidate hidden aria-labelledby="config-title" tabindex="-1">
                     <div class="config-head">
                         <div class="config-name">
                             <h3 id="config-title"></h3>

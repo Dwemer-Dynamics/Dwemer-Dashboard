@@ -24,6 +24,8 @@ const hf = {seq: 0, controller: null, files: null, state: null, cursor: null, id
 const hfSorts = {trending: 'Trending', downloads: 'Most downloaded', likes: 'Most liked', updated: 'Recently updated', newest: 'Newest'};
 // The button that opened the install dialog gets focus back when it closes.
 let installOpener = null;
+// A download or import finished on this page and the exact model key the helper reported for it, if any.
+let handoff = null;
 const loadFields = {
     flashAttention: ['Flash Attention', 'bool'], offloadKVCacheToGpu: ['Offload KV cache to GPU', 'bool'],
     gpuStrictVramCap: ['Strict GPU memory limit', 'bool'], keepModelInMemory: ['Keep model in memory', 'bool'],
@@ -161,6 +163,95 @@ function updateControls() {
     el('install-busy').hidden = !(unlocked && busy);
     el('preset-download').disabled = locked || !el('preset').value;
     el('run-test').disabled = locked || !el('loaded').value || Boolean(testRun);
+    renderGuide();
+}
+
+// A pass needs a non-empty answer from the selected instance, newer than its load and not followed by a failed test.
+function testPassed(state) {
+    const job = state.job || {}, last = state.lastTest || {}, selected = el('loaded').value;
+    if (!selected || last.model !== selected || (last.updated || 0) <= staleBefore || !String(last.output || '').trim()) return false;
+    if (testRun || (job.action === 'test' && job.state === 'running') || testFailure?.model === selected) return false;
+    return !(job.action === 'test' && job.state === 'failed' && job.model === selected && (job.updated || 0) > last.updated);
+}
+
+// The next step comes from live status only, so it moves back after an idle unload or a stopped server.
+function nextStep(state) {
+    const job = state.job || {}, list = libraryOf(state), instances = state.running ? instancesOf(state) : [];
+    if (!state.installed) return {step: 'install', head: 'LLM Studio isn’t installed.', detail: 'In the launcher, open Components and install LLM Studio.'};
+    if (job.state === 'running' && ['download', 'import'].includes(job.action)) return {step: 'model', head: job.action === 'import' ? 'Importing your model…' : 'Downloading your model…', detail: 'Progress is shown below.'};
+    if (job.state === 'running' && ['start', 'restart', 'load'].includes(job.action)) return {step: 'load', head: job.action === 'load' ? 'Loading the model…' : 'Starting the server…', detail: ''};
+    // A failed load stays the next step until its card is dismissed. Memory advice only for a reported memory error.
+    if (job.action === 'load' && job.state === 'failed' && dismissedJob !== (job.id || `${job.action}:${job.updated}`)) return {step: 'load', head: 'Loading failed.',
+        detail: /memory|\boom\b|alloc/i.test(String(job.message || '')) ? 'The error is shown below. Lower Context tokens or GPU offload %, or choose a smaller model, then press Load.' :
+            'The error is shown below. Check the model and its settings, then press Load.', action: 'configure'};
+    // A model this page just downloaded or imported comes before testing an older one; nothing unloads automatically.
+    if (handoff) {
+        const name = list.some(m => m.key === handoff.key) ? modelName(handoff.key) : handoff.name;
+        if (!state.running) return {step: 'load', head: `${name} is installed.`, detail: 'Start the server to load it.', action: 'start'};
+        if (instances.length >= maxLoaded()) return {step: 'load', head: `${name} is installed.`,
+            detail: maxLoaded() > 1 ? 'Both positions are in use. Unload one in Loaded, then load it.' : 'A model is already loaded. Unload it in Loaded, then load this one.'};
+        if (handoff.selected && el('model').value === handoff.key) return {step: 'load', head: `Load ${name}.`, detail: 'Check its settings, then press Load.', action: 'configure'};
+        return {step: 'load', head: `${name} is installed.`, detail: 'Select it in Models, then press Load.', action: 'select'};
+    }
+    if (!instances.length) {
+        const memory = 'It shares your PC’s memory and graphics memory with the game.';
+        if (!list.length) return {step: 'model', head: 'Choose a model.', detail: state.running ? memory : `${memory} Already have models? Start the server to list them.`, action: 'choose'};
+        if (!state.running) return {step: 'load', head: 'Start the server.', detail: 'Models load only while it runs.', action: 'start'};
+        return {step: 'load', head: 'Load a model.', detail: 'Choose one in Models, check its settings, then press Load.', action: 'configure'};
+    }
+    const instance = instances.find(i => i.id === el('loaded').value) || instances[0];
+    if (testRun || (job.action === 'test' && job.state === 'running')) {
+        const tested = instances.find(i => i.id === (testRun?.model || job.model)) || instance;
+        return {step: 'test', head: `Testing ${tested.name}…`, detail: ''};
+    }
+    if (testPassed(state)) return {step: 'ready', head: 'Ready.', detail: `${instance.name} answered its test.`, action: 'connect'};
+    const failed = testFailure?.model === instance.id ||
+        (job.action === 'test' && job.state === 'failed' && job.model === instance.id && (job.updated || 0) > staleBefore);
+    if (failed) return {step: 'test', head: 'The test failed.', detail: 'See Test for details, then try again.', action: 'test', label: 'Test again'};
+    return {step: 'test', head: `Test ${instance.name}.`, detail: 'Send a short prompt to check it answers.', action: 'test'};
+}
+
+const guideLabels = {choose: 'Choose model', start: 'Start server', configure: 'Configure and load', select: 'Select in Models', test: 'Test it', connect: 'Connect'};
+const guideSteps = ['install', 'model', 'load', 'test'];
+
+// One next action at a time. A finished job card that already offers it keeps the only button.
+function renderGuide() {
+    if (!current || !unlocked) { el('guide').hidden = true; el('connect').hidden = true; document.body.classList.remove('guide-leads'); return; }
+    const next = nextStep(current), ready = next.step === 'ready', button = el('guide-action');
+    el('guide').hidden = false; el('guide').dataset.step = next.step;
+    el('guide-steps').hidden = ready;
+    el('guide-steps').querySelectorAll('li').forEach(item => {
+        const index = guideSteps.indexOf(item.dataset.step), at = guideSteps.indexOf(next.step);
+        item.dataset.state = index < at ? 'done' : index === at ? 'current' : '';
+        if (index === at) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');
+    });
+    setText('guide-head', next.head); setText('guide-detail', next.detail);
+    const label = next.label || guideLabels[next.action] || '';
+    button.hidden = !label || (next.action === 'test' && !el('activity').hidden && !el('job-next').hidden);
+    button.dataset.action = next.action || ''; setText('guide-action', label);
+    button.disabled = next.action === 'start' && (busy || submitting);
+    // While the guide offers the next action, the header Start and Install models look secondary; both stay usable.
+    document.body.classList.toggle('guide-leads', !button.hidden);
+    // Connect details describe only a passed test of the selected instance; anything older closes them.
+    if (ready) { el('connect-model').value = el('loaded').value; el('connect-url').value = current.chatUrl || ''; }
+    else el('connect').hidden = true;
+    if (ready) button.setAttribute('aria-expanded', String(!el('connect').hidden)); else button.removeAttribute('aria-expanded');
+    if (ready) button.setAttribute('aria-controls', 'connect'); else button.removeAttribute('aria-controls');
+}
+
+// Remember the exact key from this page's finished download or import, and select it once while the form is unedited.
+function trackHandoff(state, list) {
+    const job = state.job || {}, own = ownJobs.get(job.id);
+    if (own && !own.handed && ['download', 'import'].includes(job.action) && job.state === 'completed') {
+        own.handed = true;
+        handoff = {job: job.id, key: typeof job.modelKey === 'string' ? job.modelKey : '', selected: false,
+            name: (own.preset && presetName(own.preset)) || own.file || 'The new model'};
+    }
+    if (!handoff) return;
+    if (handoff.key && loadedModel(handoff.key)) { handoff = null; return; }
+    if (handoff.key && !handoff.selected && list.some(m => m.key === handoff.key) && formSnapshot() === filledForm) {
+        handoff.selected = true; el('model').value = handoff.key;
+    }
 }
 
 // Show only output from the current or latest finished test, never an older result as a new one.
@@ -308,7 +399,6 @@ function renderLibrary(state, list) {
     const text = libraryText(state, list);
     setText('library-text', text); el('library-note').hidden = !text;
     el('library-note').dataset.state = !state.running && list.length ? 'cached' : '';
-    el('open-add').hidden = !(state.installed && state.running && !list.length);
     setText('library-count', list.length ? `${list.length} ${state.running ? 'installed' : 'last seen'}` : '');
 }
 
@@ -443,7 +533,9 @@ function renderActivity(job) {
     el('job-detail').hidden = transfer || !el('job-detail').textContent;
     if (transfer) {
         el('progress').value = job.downloaded * 100 / job.total;
-        setText('job-amount', `${Math.floor(job.downloaded * 100 / job.total)}% · ${gb(job.downloaded)} of ${gb(job.total)} GB`);
+        // Decimal GB with the total's precision, so the amounts match the size shown on the model card.
+        const digits = job.total < 1e10 ? 2 : 1;
+        setText('job-amount', `${Math.floor(job.downloaded * 100 / job.total)}% · ${(job.downloaded / 1e9).toFixed(digits)} of ${(job.total / 1e9).toFixed(digits)} GB`);
     } else { el('progress').removeAttribute('value'); setText('job-amount', ''); }
 }
 
@@ -495,6 +587,7 @@ function render(state) {
     renderResources(state.resources);
     // A restarting server or an older helper lists no models; the choice and unsaved form stay until a list returns.
     const llms = libraryOf(state);
+    trackHandoff(state, llms);
     renderLibrary(state, llms);
     const instances = state.running ? instancesOf(state) : [];
     options('loaded', instances, 'id', 'name');
@@ -572,6 +665,7 @@ async function submit(action, data) {
     const job = await api(action, data);
     epoch++;
     if (job?.id) ownJobs.set(job.id, {model: data.model, preset: data.preset, file: data.file});
+    if (['download', 'import'].includes(action)) handoff = null;
     if (job?.id && current) { busy = job.state === 'running'; current = {...current, job}; renderActivity(job); }
 }
 
@@ -802,6 +896,8 @@ async function unlock(token) {
     await refresh();
 }
 
+function focusLibrary() { (el('library').querySelector('input:checked') || el('library').querySelector('input'))?.focus(); }
+
 // Explicit next step after a load or a position's Test; polling never moves focus on its own.
 function gotoTest(model, instanceId = '') {
     const instance = instanceId || (model && current?.models.find(m => m.key === model)?.loaded_instances?.[0]?.id);
@@ -835,7 +931,7 @@ el('slots').addEventListener('click', event => {
 // Choosing a model only fills its settings; nothing loads until Load is pressed.
 el('library').addEventListener('change', event => {
     if (event.target.name !== 'library-model') return;
-    el('model').value = event.target.value;
+    el('model').value = event.target.value; handoff = null;
     selectModel(); if (current) renderConfig(libraryOf(current)); updateControls(); refresh();
 });
 function installMessage(error) { setText('install-error', error); el('install-error').hidden = !error; }
@@ -853,7 +949,6 @@ async function install(action, data, showError = installMessage) {
     else if (errors.action) showError(errors.action);
 }
 el('open-install').addEventListener('click', () => openInstall(el('open-install')));
-el('open-add').addEventListener('click', () => openInstall(el('open-add')));
 el('install-close').addEventListener('click', () => el('install-dialog').close());
 // Focus returns to the opener, or to Install models when the opener has since been hidden.
 el('install-dialog').addEventListener('close', () => {
@@ -899,7 +994,22 @@ el('hf-download').addEventListener('click', async () => {
     if (!file || !hf.files) return;
     install('download', {repo: hf.files.repo, file}, error => { setText('hf-error', error); el('hf-error').hidden = !error; });
 });
-el('job-dismiss').addEventListener('click', () => { dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true; el('workspace').focus(); });
+el('job-dismiss').addEventListener('click', () => {
+    dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true;
+    if (handoff && dismissedJob === handoff.job) handoff = null;
+    if (current) renderGuide();
+    el('workspace').focus();
+});
+// Guide actions only move focus or open the existing dialog; Start server is the one mutation and stays explicit.
+el('guide-action').addEventListener('click', () => {
+    const action = el('guide-action').dataset.action;
+    if (action === 'choose') openInstall(el('guide-action'));
+    else if (action === 'start') act('start');
+    else if (action === 'configure') el('load-form').hidden ? focusLibrary() : el('load-form').focus();
+    else if (action === 'select') focusLibrary();
+    else if (action === 'test') gotoTest('', el('loaded').value);
+    else if (action === 'connect') { el('connect').hidden = !el('connect').hidden; renderGuide(); }
+});
 el('unlock-form').addEventListener('submit', event => { event.preventDefault(); unlock(el('token').value); });
 el('autostart').addEventListener('change', () => { engineDirty = true; renderStartupSummary(); });
 el('startup-model').addEventListener('change', () => { engineDirty = true; renderStartupSummary(); });
