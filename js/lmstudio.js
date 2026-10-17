@@ -21,6 +21,8 @@ let catalogModels = [], catalogJob = '';
 // Hugging Face browser: only the latest request may render; closing the install dialog aborts it. state is the
 // committed search the shown results came from; Show more reuses it with the cursor the helper returned.
 const hf = {seq: 0, controller: null, files: null, state: null, cursor: null, ids: new Set(), first: new Map(), scroll: 0};
+// Exact repository and file pairs this page downloaded successfully; their rows stay Installed when shown again.
+const hfInstalled = new Set();
 const hfSorts = {trending: 'Trending', downloads: 'Most downloaded', likes: 'Most liked', updated: 'Recently updated', newest: 'Newest'};
 // The button that opened the install dialog gets focus back when it closes.
 let installOpener = null;
@@ -656,7 +658,12 @@ function render(state) {
     renderStartupSummary();
     busy = state.job.state === 'running';
     // A finished download may have installed a recommended model, so its card is checked again.
-    if (state.job.action === 'download' && state.job.state === 'completed' && state.job.id !== catalogJob) { catalogJob = state.job.id; catalogReady = false; }
+    if (state.job.action === 'download' && state.job.state === 'completed' && state.job.id !== catalogJob) {
+        catalogJob = state.job.id; catalogReady = false;
+        const own = ownJobs.get(state.job.id);
+        if (own?.repo && own.file) { hfInstalled.add(`${own.repo}
+${own.file}`); hfMarkInstalled(); }
+    }
     renderActivity(state.job);
     renderTest(state);
 }
@@ -690,7 +697,7 @@ async function submit(action, data) {
     const before = action === 'load' && current?.running ? instancesOf(current).map(i => i.id) : [];
     const job = await api(action, data);
     epoch++;
-    if (job?.id) ownJobs.set(job.id, {model: data.model, preset: data.preset, file: data.file, before});
+    if (job?.id) ownJobs.set(job.id, {model: data.model, preset: data.preset, repo: data.repo, file: data.file, before});
     if (['download', 'import'].includes(action)) handoff = null;
     if (job?.id && current) { busy = job.state === 'running'; current = {...current, job}; renderActivity(job); }
 }
@@ -874,6 +881,20 @@ function hfApplyFiles() {
     updateControls();
 }
 
+// Marks the shown repository's files this page installed, clearing a choice that is no longer downloadable.
+function hfMarkInstalled() {
+    if (!hf.files) return;
+    let changed = false;
+    for (const row of el('hf-files').querySelectorAll('.file-row')) {
+        if (row.file.installed || !hfInstalled.has(`${hf.files.repo}
+${row.file.name}`)) continue;
+        row.file.installed = true; changed = true;
+        const radio = row.querySelector('input'); radio.checked = false; radio.disabled = true;
+        row.setAttribute('aria-disabled', 'true'); row.append(span('badge', 'Installed'));
+    }
+    if (changed) updateControls();
+}
+
 function hfResetFiles() { el('hf-quant').value = ''; el('hf-max').value = ''; el('hf-file-sort').value = 'size'; }
 
 // Only standalone GGUF files can be chosen; split parts, projectors and gated files say why not.
@@ -888,6 +909,8 @@ async function hfOpen(repo) {
     const result = await request;
     if (!result) return;
     hf.files = result; setText('hf-repo', result.repo);
+    result.files.forEach(file => { if (hfInstalled.has(`${result.repo}
+${file.name}`)) file.installed = true; });
     el('hf-link').href = `https://huggingface.co/${result.repo.split('/').map(encodeURIComponent).join('/')}`; el('hf-link').hidden = false;
     el('hf-files').append(...result.files.map(file => {
         const row = document.createElement('label'); row.className = 'model-row file-row'; row.file = file;
