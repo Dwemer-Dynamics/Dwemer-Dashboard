@@ -1,7 +1,7 @@
 'use strict';
 const el = id => document.getElementById(id);
 const csrf = document.querySelector('meta[name="lmstudio-csrf"]').content;
-let unlocked = false, pending = false, queued = false, busy = false, submitting = false;
+let unlocked = false, pending = false, queued = false, busy = false, submitting = false, forcing = false;
 let current = null, shownModel = null, engineDirty = false, dismissedJob = null, epoch = 0;
 let testRun = null, testFailure = null, staleBefore = 0, preferLoaded = '';
 // Polling stops only when the session needs unlocking; transient status failures keep retrying.
@@ -16,6 +16,22 @@ let seenInstances = null, seenTest = null, seenLoadJob = '', staleLoad = '';
 let savedBase = '', filledForm = '', ownSaved = null;
 // Jobs submitted from this page; only these get a success message.
 const ownJobs = new Map();
+// Every catalog entry by id, and the completed download that last refreshed their Installed state.
+let catalogModels = [], catalogJob = '';
+// Hugging Face browser: only the latest request may render; closing the install dialog aborts it. state is the
+// committed search the shown results came from; Show more reuses it with the cursor the helper returned.
+const hf = {seq: 0, controller: null, files: null, state: null, cursor: null, ids: new Set(), first: new Map(), scroll: 0};
+// Exact repository and file pairs this page downloaded successfully; their rows stay Installed when shown again.
+const hfInstalled = new Set();
+const hfSorts = {trending: 'Trending', downloads: 'Most downloaded', likes: 'Most liked', updated: 'Recently updated', newest: 'Newest'};
+// The button that opened the install dialog gets focus back when it closes.
+let installOpener = null;
+// A download or import finished on this page and the exact model key the helper reported for it, if any.
+let handoff = null;
+// A model the user picked in Models that is not loaded yet; it leads the guide until it loads.
+let chosen = '';
+// The user's Load into slot choice; until they pick one, it follows the first free slot.
+let slotTouched = false;
 const loadFields = {
     flashAttention: ['Flash Attention', 'bool'], offloadKVCacheToGpu: ['Offload KV cache to GPU', 'bool'],
     gpuStrictVramCap: ['Strict GPU memory limit', 'bool'], keepModelInMemory: ['Keep model in memory', 'bool'],
@@ -113,40 +129,160 @@ function syncDefaults() {
 function setText(id, text) { if (el(id).textContent !== text) el(id).textContent = text; }
 
 // Why Load is off, shown beside it; a running job explains itself on the activity card instead.
-function loadReason(running, model, full) {
+function loadReason(running, model, full, slot) {
     if (!current?.installed || !model) return '';
     if (!running) return 'Start the server to load this model. You can still edit and save its defaults.';
-    if (loadedModel(model)) return 'This model is already loaded.';
-    if (full) return maxLoaded() > 1 ? 'Both positions are in use. Unload one first.' : 'A model is already loaded. Unload it first.';
+    if (loadedModel(model)) return slotOf(model) ? `This model is already loaded in Slot ${slotOf(model)}.` : 'This model is already loaded.';
+    if (full) return maxLoaded() > 1 ? 'Both slots are in use. Unload one in Loaded first.' : 'A model is already loaded. Unload it first.';
+    if (slot && slotHolder(slot)) return `Slot ${slot} holds ${modelName(slotHolder(slot))}. Unload it in Loaded first, or choose another slot. Loading never replaces a model.`;
     return '';
 }
 
 // Mutations stay disabled while a request or job runs; navigation, disclosures and copy stay usable.
 function updateControls() {
-    const locked = busy || submitting, running = Boolean(current?.running), installed = Boolean(current?.installed);
+    const locked = busy || submitting || forcing, running = Boolean(current?.running), installed = Boolean(current?.installed);
     const toggle = el('engine-toggle');
     setText('engine-toggle', running ? 'Stop' : 'Start');
     toggle.setAttribute('aria-label', running ? 'Stop server' : 'Start server');
+    // Start here only starts the engine; the saved startup models load at Distro startup or from the launcher's Start engine.
+    toggle.title = running ? '' : 'Starts the engine without loading the startup models. Load models below, or use Start engine in the launcher.';
     toggle.classList.toggle('primary', !running);
     toggle.disabled = locked || !unlocked || !current || !installed;
     el('restart').hidden = !running;
+    // Force stop is recovery for a hung job, so a running job never disables it.
+    el('force-stop').hidden = !unlocked || !installed; el('force-stop').disabled = forcing;
     el('restart').disabled = locked || !installed || !running;
     // The helper refuses a loaded model and loads beyond its limit, so Load stays off for those.
-    const model = el('model').value, full = el('loaded').options.length >= maxLoaded();
-    el('load-button').disabled = locked || !running || !model || loadedModel(model) || full;
-    const reason = loadReason(running, model, full);
+    // An explicit slot that holds a model keeps Load off; the helper refuses it too and never replaces a model.
+    const model = el('model').value, full = el('loaded').options.length >= maxLoaded(), slot = chosenSlot();
+    el('load-button').disabled = locked || !running || !model || loadedModel(model) || full || Boolean(slot && slotHolder(slot));
+    const reason = loadReason(running, model, full, slot);
     setText('load-reason', reason); el('load-reason').hidden = !reason;
     // The SDK note and Load label describe the same form, so Reset and model changes update both at once.
     const basic = basicLoad();
-    setText('load-button', basic ? 'Load basic' : 'Load');
+    setText('load-button', `${basic ? 'Load basic' : 'Load'}${slot ? ` into Slot ${slot}` : ''}`);
     if (current && !current.advancedAvailable) setText('sdk-note', basic ?
         'Advanced loading is unavailable. Load basic skips these settings; your saved values are kept.' :
         'Reinstall the LLM Studio component to enable advanced loading.');
     el('save-defaults').disabled = locked || !el('model').value || !el('defaults-conflict').hidden;
     el('slots').querySelectorAll('[data-slot-action=unload]').forEach(button => { button.disabled = locked; });
     ['save-engine', 'custom-download', 'local-import'].forEach(id => { el(id).disabled = locked; });
+    el('recommended').querySelectorAll('button[data-preset]').forEach(button => { button.disabled = locked; });
+    el('hf-download').disabled = locked || !unlocked || !el('hf-files').querySelector('input:checked');
+    // Only a running job is another operation; a locked key or a pending submit keeps the usual note.
+    setText('hf-download-note', unlocked && busy ? 'Another operation is running. Wait for it to finish.' :
+        'VRAM use is unknown for searched files. Downloading never loads the model.');
+    el('install-busy').hidden = !(unlocked && busy);
     el('preset-download').disabled = locked || !el('preset').value;
     el('run-test').disabled = locked || !el('loaded').value || Boolean(testRun);
+    renderGuide();
+}
+
+// A pass needs a non-empty answer from the selected instance, newer than its load and not followed by a failed test.
+function testPassed(state) {
+    const job = state.job || {}, last = state.lastTest || {}, selected = el('loaded').value;
+    if (!selected || last.model !== selected || (last.updated || 0) <= staleBefore || !String(last.output || '').trim()) return false;
+    if (testRun || (job.action === 'test' && job.state === 'running') || testFailure?.model === selected) return false;
+    return !(job.action === 'test' && job.state === 'failed' && job.model === selected && (job.updated || 0) > last.updated);
+}
+
+// The next step comes from live status only, so it moves back after an idle unload or a stopped server.
+function nextStep(state) {
+    const job = state.job || {}, list = libraryOf(state), instances = state.running ? instancesOf(state) : [];
+    if (!state.installed) return {step: 'install', head: 'LLM Studio isn’t installed.', detail: 'In the launcher, open Components and install LLM Studio.'};
+    if (job.state === 'running' && ['download', 'import'].includes(job.action)) return {step: 'model', head: job.action === 'import' ? 'Importing your model…' : 'Downloading your model…', detail: 'Progress is shown below.'};
+    if (job.state === 'running' && ['start', 'restart', 'load'].includes(job.action)) return {step: 'load', head: job.action === 'load' ? 'Loading the model…' : 'Starting the server…', detail: ''};
+    // A failed load stays the next step until its card is dismissed. Memory advice only for a reported memory error.
+    if (job.action === 'load' && job.state === 'failed' && dismissedJob !== (job.id || `${job.action}:${job.updated}`)) return {step: 'load', head: 'Loading failed.',
+        detail: /memory|\boom\b|alloc/i.test(String(job.message || '')) ? 'The error is shown below. Lower Context tokens or GPU offload %, or choose a smaller model, then press Load.' :
+            'The error is shown below. Check the model and its settings, then press Load.', action: 'configure'};
+    // A model this page just downloaded or imported comes before testing an older one; nothing unloads automatically.
+    if (handoff) {
+        const name = list.some(m => m.key === handoff.key) ? modelName(handoff.key) : handoff.name;
+        if (!state.running) return {step: 'load', head: `${name} is installed.`, detail: 'Start the server to load it.', action: 'start'};
+        if (instances.length >= maxLoaded()) return {step: 'load', head: `${name} is installed.`,
+            detail: maxLoaded() > 1 ? 'Both slots are in use. Unload one in Loaded, then load it.' : 'A model is already loaded. Unload it in Loaded, then load this one.'};
+        if (handoff.selected && el('model').value === handoff.key) return {step: 'load', head: `Load ${name}.`, detail: 'Check its settings, then press Load.', action: 'configure'};
+        return {step: 'load', head: `${name} is installed.`, detail: 'Select it in Models, then press Load.', action: 'select'};
+    }
+    // A picked model that is not loaded comes before testing another one; nothing unloads automatically.
+    if (state.running && chosen && el('model').value === chosen && list.some(m => m.key === chosen) && !loadedModel(chosen)) {
+        const name = modelName(chosen);
+        if (instances.length >= maxLoaded()) return {step: 'load', head: `${name} isn’t loaded.`,
+            detail: maxLoaded() > 1 ? 'Both slots are in use. Unload one in Loaded, then load it.' : 'A model is already loaded. Unload it in Loaded, then load this one.'};
+        return {step: 'load', head: `Load ${name}.`, detail: 'Check its settings, then press Load.', action: 'configure'};
+    }
+    if (!instances.length) {
+        const memory = 'It shares your PC’s memory and graphics memory with the game.';
+        if (!list.length) return {step: 'model', head: 'Choose a model.', detail: state.running ? memory : `${memory} Already have models? Start the server to list them.`, action: 'choose'};
+        if (!state.running) return {step: 'load', head: 'Start the server.', detail: 'Models load only while it runs.', action: 'start'};
+        return {step: 'load', head: 'Load a model.', detail: 'Choose one in Models, check its settings, then press Load.', action: 'configure'};
+    }
+    const instance = instances.find(i => i.id === el('loaded').value) || instances[0];
+    if (testRun || (job.action === 'test' && job.state === 'running')) {
+        const tested = instances.find(i => i.id === (testRun?.model || job.model)) || instance;
+        return {step: 'test', head: `Testing ${tested.name}…`, detail: ''};
+    }
+    if (testPassed(state)) return {step: 'ready', head: 'Ready.', detail: `${instance.name} answered its test.`, action: 'connect'};
+    const failed = testFailure?.model === instance.id ||
+        (job.action === 'test' && job.state === 'failed' && job.model === instance.id && (job.updated || 0) > staleBefore);
+    if (failed) return {step: 'test', head: 'The test failed.', detail: 'See Test for details, then try again.', action: 'test', label: 'Test again'};
+    return {step: 'test', head: `Test ${instance.name}.`, detail: 'Send a short prompt to check it answers.', action: 'test'};
+}
+
+const guideLabels = {choose: 'Choose model', start: 'Start server', configure: 'Configure and load', select: 'Select in Models', test: 'Test it', connect: 'Connect'};
+const guideSteps = ['install', 'model', 'load', 'test'];
+
+// One next action at a time. A finished job card that already offers it keeps the only button.
+function renderGuide() {
+    if (!current || !unlocked) { el('guide').hidden = true; el('connect').hidden = true; document.body.classList.remove('guide-leads'); return; }
+    const next = nextStep(current), ready = next.step === 'ready', button = el('guide-action');
+    el('guide').hidden = false; el('guide').dataset.step = next.step;
+    el('guide-steps').hidden = ready;
+    el('guide-steps').querySelectorAll('li').forEach(item => {
+        const index = guideSteps.indexOf(item.dataset.step), at = guideSteps.indexOf(next.step);
+        item.dataset.state = index < at ? 'done' : index === at ? 'current' : '';
+        if (index === at) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');
+    });
+    setText('guide-head', next.head); setText('guide-detail', next.detail);
+    const label = next.label || guideLabels[next.action] || '';
+    button.hidden = !label || (next.action === 'test' && !el('activity').hidden && !el('job-next').hidden);
+    button.dataset.action = next.action || ''; setText('guide-action', label);
+    button.disabled = next.action === 'start' && (busy || submitting || forcing);
+    // While the guide offers the next action, the header Start and Install models look secondary; both stay usable.
+    document.body.classList.toggle('guide-leads', !button.hidden);
+    // Connect details describe only a passed test of the selected instance; anything older closes them.
+    if (ready) { el('connect-model').value = el('loaded').value; el('connect-url').value = current.chatUrl || ''; }
+    else el('connect').hidden = true;
+    if (ready) button.setAttribute('aria-expanded', String(!el('connect').hidden)); else button.removeAttribute('aria-expanded');
+    if (ready) button.setAttribute('aria-controls', 'connect'); else button.removeAttribute('aria-controls');
+}
+
+// Remember the exact key from this page's finished download or import, and select it once while the form is unedited.
+function trackHandoff(state, list) {
+    const job = state.job || {}, own = ownJobs.get(job.id);
+    if (own && !own.handed && ['download', 'import'].includes(job.action) && job.state === 'completed') {
+        own.handed = true;
+        handoff = {job: job.id, key: typeof job.modelKey === 'string' ? job.modelKey : '', selected: false,
+            name: (own.preset && presetName(own.preset)) || own.file || 'The new model'};
+    }
+    if (!handoff) return;
+    if (handoff.key && loadedModel(handoff.key)) { handoff = null; return; }
+    if (handoff.key && !handoff.selected && list.some(m => m.key === handoff.key) && formSnapshot() === filledForm) {
+        handoff.selected = true; el('model').value = handoff.key;
+    }
+}
+
+// This page's finished load selects its new instance in Test once, while it is the latest job; later choices stay.
+// A failed load, or a completion without exactly one new instance of its model, selects nothing.
+function targetOwnLoad(state, instances) {
+    const job = state.job || {}, own = ownJobs.get(job.id);
+    if (!own || own.targeted || job.action !== 'load' || job.state === 'running') return;
+    if (job.state !== 'completed') { own.targeted = true; return; }
+    const fresh = instances.filter(i => i.model === own.model && !(own.before || []).includes(i.id));
+    if (!fresh.length) return;
+    own.targeted = true;
+    if (fresh.length === 1) { own.instance = fresh[0].id; el('loaded').value = own.instance; }
 }
 
 // Show only output from the current or latest finished test, never an older result as a new one.
@@ -235,6 +371,26 @@ function checkedAgo(seconds) {
 // An older helper omits maxLoaded and refuses any second load, so the manager then assumes one model.
 function maxLoaded() { const max = current?.maxLoaded; return Number.isInteger(max) && max > 0 ? max : 1; }
 
+// The helper's persisted slot map ({"1": model key}); an older helper omits it and loads keep the old list order.
+function slotsSupported() { const slots = current?.slots; return maxLoaded() > 1 && Boolean(slots) && typeof slots === 'object' && !Array.isArray(slots); }
+function slotHolder(slot) { return current?.running && slotsSupported() ? current.slots[slot] || '' : ''; }
+function slotOf(key) { return current?.running && slotsSupported() ? Object.keys(current.slots).find(slot => current.slots[slot] === key) || '' : ''; }
+function chosenSlot() { return slotsSupported() ? el('load-slot').value : ''; }
+
+// Options update in place so polling never closes the list; an untouched choice moves to the first free slot.
+function renderSlotPick() {
+    const supported = slotsSupported(), select = el('load-slot');
+    el('slot-pick').hidden = !supported;
+    if (!supported) return;
+    const numbers = Array.from({length: maxLoaded()}, (_, index) => String(index + 1));
+    if (select.options.length !== numbers.length) select.replaceChildren(...numbers.map(slot => new Option(`Slot ${slot}`, slot)));
+    numbers.forEach((slot, index) => {
+        const holder = slotHolder(slot);
+        setNodeText(select.options[index], holder ? `Slot ${slot} · ${modelName(holder)} (unload first)` : `Slot ${slot} · Empty`);
+    });
+    if (!slotTouched || !numbers.includes(select.value)) select.value = numbers.find(slot => !slotHolder(slot)) || numbers[0];
+}
+
 // Friendly names in normal flow; the raw instance id stays available through Copy ID. Only the live list has instances.
 function instancesOf(state) {
     const instances = (state.models || []).flatMap(m => (m.loaded_instances || []).map(i => ({id: i.id, model: m.key, name: m.display_name || i.id, config: i.config})));
@@ -288,13 +444,12 @@ function renderLibrary(state, list) {
     library.querySelectorAll('.model-row').forEach(row => {
         const radio = row.querySelector('input'), badge = row.querySelector('.badge'), count = instanceCount(radio.value);
         radio.checked = radio.value === el('model').value;
-        badge.hidden = !count; setNodeText(badge, count > 1 ? `Loaded ×${count}` : 'Loaded');
+        badge.hidden = !count; setNodeText(badge, count > 1 ? `Loaded ×${count}` : slotOf(radio.value) ? `Loaded · Slot ${slotOf(radio.value)}` : 'Loaded');
     });
     library.hidden = !list.length;
     const text = libraryText(state, list);
     setText('library-text', text); el('library-note').hidden = !text;
     el('library-note').dataset.state = !state.running && list.length ? 'cached' : '';
-    el('open-add').hidden = !(state.installed && state.running && !list.length);
     setText('library-count', list.length ? `${list.length} ${state.running ? 'installed' : 'last seen'}` : '');
 }
 
@@ -315,13 +470,14 @@ function slotButton(action, label, instance, style = '') {
     return button;
 }
 
-function slotItem(instance, state) {
+function slotItem(instance, state, label) {
     const item = document.createElement('li'), body = document.createElement('div'), title = document.createElement('strong');
-    item.className = 'slot'; body.className = 'slot-body';
+    const tag = document.createElement('span'); tag.className = 'slot-label'; tag.textContent = label;
+    item.className = 'slot'; body.className = 'slot-body'; item.append(tag);
     if (!instance) {
         item.classList.add('empty'); title.textContent = 'Empty';
         const hint = document.createElement('span'); hint.className = 'muted';
-        hint.textContent = state.running ? 'Choose a model and Load.' : 'Server stopped.';
+        hint.textContent = !state.running ? 'Server stopped.' : slotsSupported() ? `Choose a model, pick ${label} and press Load.` : 'Choose a model and Load.';
         body.append(title, hint); item.append(body);
         return item;
     }
@@ -337,14 +493,24 @@ function slotItem(instance, state) {
     return item;
 }
 
-// Positions show live instances only; a stopped server has none, whatever the saved list says.
+// Slots show live instances only; a stopped server has none, whatever the saved list says. With the helper's slot map
+// each model stays in its own numbered slot across polls and reloads; an older helper keeps the list order.
 function renderSlots(state, instances) {
     const max = maxLoaded(), list = el('slots');
     setText('slots-count', `${instances.length}/${max}`);
-    const signature = JSON.stringify([max, state.running, instances.map(i => [i.id, i.name, i.model, i.config?.context_length ?? i.config?.contextLength ?? null])]);
+    let ordered = instances, labels = instances.map((_, index) => String(index + 1));
+    if (slotsSupported()) {
+        const placed = Array.from({length: max}, (_, index) => instances.find(i => i.model === slotHolder(String(index + 1))));
+        const extra = instances.filter(i => !placed.includes(i));
+        ordered = [...placed, ...extra];
+        labels = [...placed.map((_, index) => `Slot ${index + 1}`), ...extra.map(() => 'No slot')];
+    }
+    const length = Math.max(max, ordered.length);
+    while (labels.length < length) labels.push(String(labels.length + 1));
+    const signature = JSON.stringify([max, state.running, labels, ordered.map(i => i && [i.id, i.name, i.model, i.config?.context_length ?? i.config?.contextLength ?? null])]);
     if (list.dataset.signature !== signature) {
         const focused = list.contains(document.activeElement) ? document.activeElement.dataset : null;
-        list.replaceChildren(...Array.from({length: Math.max(max, instances.length)}, (_, index) => slotItem(instances[index], state)));
+        list.replaceChildren(...Array.from({length}, (_, index) => slotItem(ordered[index], state, labels[index])));
         list.dataset.signature = signature;
         if (focused) [...list.querySelectorAll('button')].find(b => b.dataset.instance === focused.instance && b.dataset.slotAction === focused.slotAction)?.focus();
     }
@@ -362,26 +528,27 @@ function renderSlotTarget() {
 }
 
 function renderStartupSummary() {
-    const startup = el('startup-model'), name = startup.value ? startup.selectedOptions[0]?.textContent || startup.value : '';
-    let text = el('autostart').checked ? `Starts with DwemerDistro${name ? ` · loads ${name}` : ''}` : 'Manual start';
+    const names = ['startup-model', 'startup-decision'].map(el).filter(s => s.value).map(s => s.selectedOptions[0]?.textContent || s.value);
+    let text = el('autostart').checked ? `Starts with DwemerDistro${names.length ? ` · loads ${names.join(' + ')}` : ''}` : 'Manual start';
     if (engineDirty) text += ' · unsaved';
     setText('startup-summary', text);
 }
 
-function presetName(id) { return [...el('preset').options].find(o => o.value === id)?.textContent.split(' · ')[0] || ''; }
+function presetName(id) { return catalogModels.find(m => m.id === id)?.name?.split(' · ')[0] || ''; }
 
 function phaseOf(job) { return typeof job.phase === 'string' ? job.phase.toLowerCase() : ''; }
 
 // Titles name the model the user picked; jobs started elsewhere keep generic titles.
 function jobTitle(job, own) {
-    const name = own?.model ? modelName(own.model) : own?.preset ? presetName(own.preset) : '', phase = phaseOf(job);
+    const name = own?.model ? modelName(own.model) : own?.preset ? presetName(own.preset) : own?.file || '', phase = phaseOf(job);
     if (job.state === 'failed') return failNames[job.action] || 'Operation failed';
-    if (job.state === 'completed') return job.action === 'load' && name ? `${name} loaded` : doneNames[job.action] || 'Done';
+    const slot = job.action === 'load' ? own?.slot || job.slot : '', into = slot ? ` into Slot ${slot}` : '';
+    if (job.state === 'completed') return job.action === 'load' && name ? `${name} loaded${into}` : doneNames[job.action] || 'Done';
     if (phase) {
         const title = phaseNames[phase] || phase.charAt(0).toUpperCase() + phase.slice(1).replace(/[-_]/g, ' ');
         return name && transferPhases.has(phase) ? `${title} ${name}` : title;
     }
-    if (name && job.action === 'load') return `Loading ${name}`;
+    if (name && job.action === 'load') return `Loading ${name}${into}`;
     if (name && job.action === 'download') return `Downloading ${name}`;
     return jobNames[job.action] || 'Working';
 }
@@ -422,6 +589,7 @@ function renderActivity(job) {
     el('job-log').hidden = shortFailure || !summary.more;
     el('job-dismiss').hidden = running; el('job-dismiss').dataset.job = key;
     el('job-next').hidden = !(done && job.action === 'load'); el('job-next').dataset.model = own?.model || '';
+    el('job-next').dataset.instance = own?.instance || '';
     // Percentages describe bytes transferred only; verifying and importing stay indeterminate.
     const phase = phaseOf(job);
     const transfer = running && job.total > 0 && (phase ? transferPhases.has(phase) : job.downloaded < job.total);
@@ -429,7 +597,9 @@ function renderActivity(job) {
     el('job-detail').hidden = transfer || !el('job-detail').textContent;
     if (transfer) {
         el('progress').value = job.downloaded * 100 / job.total;
-        setText('job-amount', `${Math.floor(job.downloaded * 100 / job.total)}% · ${gb(job.downloaded)} of ${gb(job.total)} GB`);
+        // Decimal GB with the total's precision, so the amounts match the size shown on the model card.
+        const digits = job.total < 1e10 ? 2 : 1;
+        setText('job-amount', `${Math.floor(job.downloaded * 100 / job.total)}% · ${(job.downloaded / 1e9).toFixed(digits)} of ${(job.total / 1e9).toFixed(digits)} GB`);
     } else { el('progress').removeAttribute('value'); setText('job-amount', ''); }
 }
 
@@ -438,10 +608,10 @@ function lock() {
     setText('status', 'Locked'); el('status').dataset.state = 'locked'; updateControls();
 }
 
-async function api(action, data = {}) {
+async function api(action, data = {}, signal = undefined) {
     const auth = authGen;
     const response = await fetch('api/lmstudio.php', {method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({...data, action, csrf}), cache: 'no-store'});
+        body: JSON.stringify({...data, action, csrf}), cache: 'no-store', signal});
     // The HTTP status rides on the error so callers can tell a rejected key from a temporary failure.
     const failure = message => Object.assign(new Error(message), {status: response.status});
     let result;
@@ -481,11 +651,14 @@ function render(state) {
     renderResources(state.resources);
     // A restarting server or an older helper lists no models; the choice and unsaved form stay until a list returns.
     const llms = libraryOf(state);
+    trackHandoff(state, llms);
     renderLibrary(state, llms);
     const instances = state.running ? instancesOf(state) : [];
     options('loaded', instances, 'id', 'name');
     const preferred = preferLoaded && instances.find(i => i.model === preferLoaded);
     if (preferred) { el('loaded').value = preferred.id; preferLoaded = ''; }
+    targetOwnLoad(state, instances);
+    if (chosen && loadedModel(chosen)) chosen = '';
     // Results older than the latest model load, unload or idle unload belong to an earlier instance, even after a reload.
     if (['load', 'unload'].includes(state.job.action)) staleBefore = Math.max(staleBefore, state.job.updated || 0);
     if (typeof state.modelStateChangedAt === 'number') staleBefore = Math.max(staleBefore, state.modelStateChangedAt);
@@ -502,15 +675,16 @@ function render(state) {
         if (!instances.some(i => i.model === state.lastLoad?.model)) staleLoad = loadRecord;
     }
     seenInstances = instanceIds;
-    const startupModels = [{key: '', display_name: 'None'}, ...llms];
     // Keep the saved choice and any unsaved choice listed, with their names, while the server lists no models.
-    const startup = el('startup-model'), keep = [state.settings.startupModel, engineDirty ? startup.value : ''];
-    for (const key of keep) {
-        const name = [...startup.options].find(o => o.value === key)?.textContent;
-        if (key && !startupModels.some(m => m.key === key)) startupModels.push({key, display_name: name});
+    for (const [id, setting] of [['startup-model', 'startupModel'], ['startup-decision', 'startupDecisionModel']]) {
+        const startup = el(id), startupModels = [{key: '', display_name: 'None'}, ...llms];
+        for (const key of [state.settings[setting], engineDirty ? startup.value : '']) {
+            const name = [...startup.options].find(o => o.value === key)?.textContent;
+            if (key && !startupModels.some(m => m.key === key)) startupModels.push({key, display_name: name});
+        }
+        options(id, startupModels, 'key', 'display_name');
+        if (!engineDirty) startup.value = state.settings[setting] || '';
     }
-    options('startup-model', startupModels, 'key', 'display_name');
-    if (!engineDirty) el('startup-model').value = state.settings.startupModel || '';
     if (shownModel !== el('model').value) selectModel(); else syncDefaults();
     el('defaults-conflict').hidden = savedSnapshot(el('model').value) === savedBase;
     el('sdk-note').hidden = Boolean(state.advancedAvailable);
@@ -521,9 +695,17 @@ function render(state) {
     setText('model-details', JSON.stringify({model: llms.find(m => m.key === el('model').value),
         lastAdvancedLoad: applied ? state.lastLoad.appliedConfig : undefined, memoryLockWarning: applied ? state.lastLoad.memoryLockWarning : undefined}, null, 2));
     renderConfig(llms);
+    renderSlotPick();
     renderSlots(state, instances);
     renderStartupSummary();
     busy = state.job.state === 'running';
+    // A finished download may have installed a recommended model, so its card is checked again.
+    if (state.job.action === 'download' && state.job.state === 'completed' && state.job.id !== catalogJob) {
+        catalogJob = state.job.id; catalogReady = false;
+        const own = ownJobs.get(state.job.id);
+        if (own?.repo && own.file) { hfInstalled.add(`${own.repo}
+${own.file}`); hfMarkInstalled(); }
+    }
     renderActivity(state.job);
     renderTest(state);
 }
@@ -553,14 +735,17 @@ async function refresh() {
 }
 
 async function submit(action, data) {
+    // A load remembers the instances loaded before it was sent so its own new instance can be told apart.
+    const before = action === 'load' && current?.running ? instancesOf(current).map(i => i.id) : [];
     const job = await api(action, data);
     epoch++;
-    if (job?.id) ownJobs.set(job.id, {model: data.model, preset: data.preset});
+    if (job?.id) ownJobs.set(job.id, {model: data.model, preset: data.preset, repo: data.repo, file: data.file, slot: data.slot, before});
+    if (['download', 'import'].includes(action)) handoff = null;
     if (job?.id && current) { busy = job.state === 'running'; current = {...current, job}; renderActivity(job); }
 }
 
 async function act(action, data = {}) {
-    if (busy || submitting) return false;
+    if (busy || submitting || forcing) return false;
     clearReport(); submitting = true; updateControls();
     try { await submit(action, data); return true; } catch (error) { report(error); return false; }
     finally { submitting = false; updateControls(); await refresh(); }
@@ -572,10 +757,218 @@ async function catalog() {
     catalogPending = true;
     try {
         const result = await api('catalog'); options('preset', result.models, 'id', 'name');
+        const recommended = Array.isArray(result.recommended) ? result.recommended : [];
+        catalogModels = [...result.models, ...recommended]; renderRecommended(recommended);
         catalogReady = true; setText('preset-note', result.models.length ? '' : 'No suggested models. Use a custom model below.');
+        setText('recommended-note', recommended.length ? '' : 'No recommended models in this DwemerDistro version. Update Distro or search Hugging Face.');
     } catch (error) {
         catalogRetryAt = Date.now() + 15000; setText('preset-note', `Suggested models unavailable: ${error.message}`);
-    } finally { catalogPending = false; el('preset-note').hidden = !el('preset-note').textContent; updateControls(); }
+        setText('recommended-note', `Recommended models unavailable: ${error.message}`);
+    } finally {
+        catalogPending = false; el('preset-note').hidden = !el('preset-note').textContent;
+        el('recommended-note').hidden = !el('recommended-note').textContent; updateControls();
+    }
+}
+
+// Download sizes use decimal GB, as Hugging Face lists them.
+function downloadSize(value) { return Number.isInteger(value) && value > 0 ? `${(value / 1e9).toFixed(value < 1e10 ? 2 : 1)} GB` : 'Size unknown'; }
+
+function span(className, text) { const node = document.createElement('span'); node.className = className; node.textContent = text; return node; }
+
+// Cards say Installed only when the helper found the exact pinned file; otherwise Download stays explicit.
+function renderRecommended(models) {
+    const list = el('recommended'), focused = list.contains(document.activeElement) ? document.activeElement.dataset.preset : '';
+    list.replaceChildren(...models.map(model => {
+        const item = document.createElement('li'), title = document.createElement('h3'), purpose = document.createElement('p');
+        item.className = 'card'; title.textContent = model.name; purpose.textContent = model.purpose || '';
+        const [low, high] = Array.isArray(model.vramGB) ? model.vramGB : [];
+        const vram = Number.isFinite(low) && Number.isFinite(high) ? `~${low}–${high} GB VRAM, estimated at 4K` : 'VRAM unknown';
+        item.append(span('tier', model.tier || ''), title, purpose,
+            span('card-facts', `${model.quant || ''} · ${downloadSize(model.bytes)} download`), span('card-facts', vram));
+        if (model.installed === true) item.append(span('badge', 'Installed'));
+        else {
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'primary small';
+            button.textContent = 'Download'; button.dataset.preset = model.id; button.setAttribute('aria-label', `Download ${model.name}`);
+            item.append(button);
+        }
+        return item;
+    }));
+    if (focused) list.querySelector(`[data-preset="${CSS.escape(focused)}"]`)?.focus();
+}
+
+const installTabs = ['recommended', 'search'];
+
+function showTab(name, focus = false) {
+    for (const tab of installTabs) {
+        const button = el(`tab-${tab}`), selected = tab === name;
+        button.setAttribute('aria-selected', String(selected)); button.tabIndex = selected ? 0 : -1;
+        el(`${tab}-panel`).hidden = !selected;
+    }
+    if (focus) el(`tab-${name}`).focus();
+    // Browsing starts the first time the tab is shown, never when the dialog opens on Recommended.
+    if (name === 'search' && !hf.state && !hf.controller && el('hf-files-view').hidden) hfSearch();
+}
+
+function hfMessage(status, error = '') {
+    setText(el('hf-files-view').hidden ? 'hf-status' : 'hf-files-status', status); setText('hf-error', error); el('hf-error').hidden = !error;
+}
+
+// Earlier results stay visible but marked busy while a lookup runs; Show more waits for it.
+function hfBusy(on) {
+    ['hf-results', 'hf-files'].forEach(id => el(id).setAttribute('aria-busy', String(on)));
+    el('hf-more').disabled = on;
+}
+
+// Abort any earlier lookup; a response is used only if no newer lookup, Back or close happened meanwhile.
+async function hfRequest(action, data) {
+    hf.controller?.abort();
+    const controller = new AbortController(), seq = ++hf.seq;
+    hf.controller = controller;
+    try {
+        const result = await api(action, data, controller.signal);
+        return seq === hf.seq ? result : null;
+    } catch (error) {
+        if (seq === hf.seq && error.name !== 'AbortError') hfMessage('', error.message);
+        return null;
+    } finally {
+        if (hf.controller === controller) hf.controller = null;
+        if (seq === hf.seq) hfBusy(false);
+    }
+}
+
+function hfCancel() { if (hf.controller) hfMessage(''); hf.controller?.abort(); hf.seq++; hfBusy(false); }
+
+function hfView(files) { el('hf-results-view').hidden = files; el('hf-files-view').hidden = !files; }
+
+function hfForm() {
+    return {query: el('hf-query').value.trim(), author: el('hf-author').value.trim(), size: el('hf-size').value,
+        task: el('hf-task').value, sort: el('hf-sort').value};
+}
+
+function hfSummary() {
+    if (!hf.state) return '';
+    const count = hf.ids.size, what = hf.state.query ? `GGUF results for “${hf.state.query}”` : `${hfSorts[hf.state.sort]} GGUF repositories`;
+    if (!count) return 'No GGUF repositories match. Try another name or creator, or reset filters.';
+    return `${what}: ${count} shown${hf.cursor ? ', more available' : ''}. Choose one to see its files.`;
+}
+
+// Parameters, architecture and context come only from Hugging Face's GGUF metadata; anything unknown is left out.
+function hfItem(repo) {
+    const format = new Intl.NumberFormat(undefined, {notation: 'compact'});
+    const params = !Number.isInteger(repo.params) ? '' : repo.params >= 1e9 ?
+        `${(repo.params / 1e9).toFixed(repo.params < 1e10 ? 1 : 0)}B params` : `${Math.max(1, Math.round(repo.params / 1e6))}M params`;
+    const facts = [params, repo.architecture, Number.isInteger(repo.context) && `${Math.round(repo.context / 1024)}K context`];
+    const meta = [`${format.format(repo.downloads)} downloads`, `${format.format(repo.likes)} likes`, repo.updated && `updated ${repo.updated}`, repo.gated && 'Gated'];
+    const item = document.createElement('li'), button = document.createElement('button');
+    button.type = 'button'; button.className = 'hf-repo'; button.dataset.repo = repo.id;
+    button.append(span('model-name', repo.id), span('model-meta', facts.filter(Boolean).join(' · ')), span('model-meta', meta.filter(Boolean).join(' · ')));
+    item.append(button);
+    return item;
+}
+
+// New searches replace the list; Show more appends the next cursor page and skips repositories already shown.
+function hfRender(state, result, append) {
+    if (!append) { hf.ids = new Set(); el('hf-results').replaceChildren(); }
+    hf.state = state; hf.cursor = typeof result.cursor === 'string' ? result.cursor : null;
+    const fresh = result.results.filter(repo => !hf.ids.has(repo.id));
+    fresh.forEach(repo => hf.ids.add(repo.id));
+    const items = fresh.map(hfItem);
+    el('hf-results').append(...items);
+    el('hf-more').hidden = !hf.cursor;
+    hfMessage(hfSummary());
+    if (append) items[0]?.querySelector('button').focus();
+}
+
+// Text is applied by Search; dropdowns apply at once. First pages are kept for ten minutes per filter state.
+async function hfSearch(more = false) {
+    const state = more ? hf.state : hfForm();
+    if (more && (!state || !hf.cursor)) return;
+    if (!more && /^https?:\/\//i.test(state.query)) { hfOpen(state.query); return; }
+    if (state.query.length === 1) { hfMessage('', 'Enter at least 2 characters, or leave the search empty to browse.'); el('hf-query').focus(); return; }
+    const key = JSON.stringify(state), saved = !more && hf.first.get(key);
+    hfView(false);
+    if (saved && Date.now() - saved.at < 600000) { hfCancel(); hfRender(state, saved.result, false); return; }
+    hfMessage(more ? 'Loading more…' : 'Searching…');
+    const request = hfRequest('search', more ? {...state, cursor: hf.cursor} : state);
+    hfBusy(true);
+    const result = await request;
+    if (!result) return;
+    if (!more) {
+        hf.first.delete(key); hf.first.set(key, {at: Date.now(), result});
+        if (hf.first.size > 20) hf.first.delete(hf.first.keys().next().value);
+    }
+    hfRender(state, result, more);
+}
+
+// File filters narrow only this repository's listed files; a hidden choice is cleared so it cannot be downloaded.
+function hfApplyFiles() {
+    if (!hf.files) return;
+    const quant = el('hf-quant').value, sort = el('hf-file-sort').value, max = Number(el('hf-max').value);
+    const limit = el('hf-max').value && max > 0 ? max * 1e9 : Infinity;
+    const size = file => file.size ?? Infinity, byName = (a, b) => a.file.name.localeCompare(b.file.name);
+    const order = {name: byName, 'size-desc': (a, b) => (b.file.size ?? -1) - (a.file.size ?? -1) || byName(a, b),
+        size: (a, b) => size(a.file) - size(b.file) || byName(a, b)}[sort] || byName;
+    let shown = 0;
+    for (const row of [...el('hf-files').querySelectorAll('.file-row')].sort(order)) {
+        row.hidden = !((!quant || row.file.quant === quant) && (limit === Infinity || size(row.file) <= limit));
+        if (row.hidden) row.querySelector('input').checked = false; else shown++;
+        el('hf-files').append(row);
+    }
+    const files = hf.files.files, usable = files.filter(file => file.selectable).length;
+    let message = `Showing ${shown} of ${files.length} GGUF files in this repository; ${usable} standalone at revision ${hf.files.revision.slice(0, 7)}.`;
+    if (!files.length) message = 'This repository has no GGUF files.';
+    else if (!usable) message = 'No standalone GGUF file here can be downloaded. Choose another repository.';
+    else if (!shown) message = 'No files in this repository match these file filters. Reset file filters.';
+    hfMessage(message + (files.length && hf.files.truncated ? ' Only the first 300 files are listed.' : ''));
+    updateControls();
+}
+
+// Marks the shown repository's files this page installed, clearing a choice that is no longer downloadable.
+function hfMarkInstalled() {
+    if (!hf.files) return;
+    let changed = false;
+    for (const row of el('hf-files').querySelectorAll('.file-row')) {
+        if (row.file.installed || !hfInstalled.has(`${hf.files.repo}
+${row.file.name}`)) continue;
+        row.file.installed = true; changed = true;
+        const radio = row.querySelector('input'); radio.checked = false; radio.disabled = true;
+        row.setAttribute('aria-disabled', 'true'); row.append(span('badge', 'Installed'));
+    }
+    if (changed) updateControls();
+}
+
+function hfResetFiles() { el('hf-quant').value = ''; el('hf-max').value = ''; el('hf-file-sort').value = 'size'; }
+
+// Only standalone GGUF files can be chosen; split parts, projectors and gated files say why not.
+async function hfOpen(repo) {
+    if (!el('hf-results-view').hidden) hf.scroll = el('install-dialog').scrollTop;
+    hf.files = null; hfView(true); hfMessage('Loading files…'); el('hf-back').focus();
+    setText('hf-repo', repo.replace(/^https:\/\/huggingface\.co\//i, '')); el('hf-link').hidden = true;
+    el('hf-files').querySelectorAll('.file-row').forEach(row => row.remove()); el('hf-file-filters').hidden = true;
+    el('hf-quant').replaceChildren(new Option('All', '')); hfResetFiles(); updateControls();
+    const request = hfRequest('files', {repo});
+    hfBusy(true);
+    const result = await request;
+    if (!result) return;
+    hf.files = result; setText('hf-repo', result.repo);
+    result.files.forEach(file => { if (hfInstalled.has(`${result.repo}
+${file.name}`)) file.installed = true; });
+    el('hf-link').href = `https://huggingface.co/${result.repo.split('/').map(encodeURIComponent).join('/')}`; el('hf-link').hidden = false;
+    el('hf-files').append(...result.files.map(file => {
+        const row = document.createElement('label'); row.className = 'model-row file-row'; row.file = file;
+        const radio = document.createElement('input'); radio.type = 'radio'; radio.name = 'hf-file'; radio.value = file.name;
+        radio.disabled = !file.selectable || file.installed;
+        const details = [file.quant || 'Quant unknown', downloadSize(file.size), file.selectable ? 'VRAM Unknown' : file.reason];
+        row.append(radio, span('model-name', file.name), span('model-meta', details.join(' · ')));
+        if (Number.isInteger(file.size)) row.title = `${file.size.toLocaleString()} bytes`;
+        if (file.installed) row.append(span('badge', 'Installed'));
+        if (radio.disabled) row.setAttribute('aria-disabled', 'true');
+        return row;
+    }));
+    const quants = [...new Set(result.files.map(file => file.quant).filter(Boolean))].sort();
+    el('hf-quant').append(...quants.map(quant => new Option(quant, quant)));
+    el('hf-file-filters').hidden = result.files.length < 2;
+    hfApplyFiles();
 }
 
 // The key is sent once; afterwards status polling opens the manager and loads the download list.
@@ -594,6 +987,8 @@ async function unlock(token) {
     await refresh();
 }
 
+function focusLibrary() { (el('library').querySelector('input:checked') || el('library').querySelector('input'))?.focus(); }
+
 // Explicit next step after a load or a position's Test; polling never moves focus on its own.
 function gotoTest(model, instanceId = '') {
     const instance = instanceId || (model && current?.models.find(m => m.key === model)?.loaded_instances?.[0]?.id);
@@ -602,7 +997,7 @@ function gotoTest(model, instanceId = '') {
     (el('run-test').disabled ? el('prompt') : el('run-test')).focus();
 }
 el('job-next').addEventListener('click', () => {
-    dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true; gotoTest(el('job-next').dataset.model);
+    dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true; gotoTest(el('job-next').dataset.model, el('job-next').dataset.instance);
 });
 el('engine-toggle').addEventListener('click', () => { if (current) act(current.running ? 'stop' : 'start'); });
 document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => act(button.dataset.action)));
@@ -627,26 +1022,115 @@ el('slots').addEventListener('click', event => {
 // Choosing a model only fills its settings; nothing loads until Load is pressed.
 el('library').addEventListener('change', event => {
     if (event.target.name !== 'library-model') return;
-    el('model').value = event.target.value;
+    el('model').value = event.target.value; handoff = null; chosen = loadedModel(event.target.value) ? '' : event.target.value;
     selectModel(); if (current) renderConfig(libraryOf(current)); updateControls(); refresh();
 });
-el('open-add').addEventListener('click', () => { el('add-models').open = true; el('add-models').querySelector('summary').focus(); });
-el('job-dismiss').addEventListener('click', () => { dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true; el('workspace').focus(); });
+function installMessage(error) { setText('install-error', error); el('install-error').hidden = !error; }
+
+// The native modal dialog keeps focus inside and closes on Escape. Every opening starts on Recommended.
+function openInstall(opener) {
+    installOpener = opener; installMessage('');
+    showTab('recommended'); el('install-dialog').showModal(); el('tab-recommended').focus(); updateControls();
+}
+
+// An accepted job closes the dialog so its progress shows on the page; a refusal stays here with its reason and the input kept.
+async function install(action, data, showError = installMessage) {
+    showError('');
+    if (await act(action, data)) el('install-dialog').close();
+    else if (errors.action) showError(errors.action);
+}
+el('open-install').addEventListener('click', () => openInstall(el('open-install')));
+el('install-close').addEventListener('click', () => el('install-dialog').close());
+// Focus returns to the opener, or to Install models when the opener has since been hidden.
+el('install-dialog').addEventListener('close', () => {
+    hfCancel();
+    // A repository whose files never loaded is not kept; the next visit returns to the results.
+    if (!hf.files && !el('hf-files-view').hidden) { hfView(false); hfMessage(hfSummary()); }
+    (installOpener?.isConnected && !installOpener.hidden ? installOpener : el('open-install')).focus();
+    installOpener = null;
+});
+document.querySelectorAll('#install-dialog [role=tab]').forEach(tab => {
+    tab.addEventListener('click', () => showTab(tab.id.slice(4)));
+    tab.addEventListener('keydown', event => {
+        const index = installTabs.indexOf(tab.id.slice(4));
+        const next = {ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: installTabs.length - 1}[event.key];
+        if (next === undefined) return;
+        event.preventDefault(); showTab(installTabs[(next + installTabs.length) % installTabs.length], true);
+    });
+});
+el('recommended').addEventListener('click', event => {
+    const button = event.target.closest('button[data-preset]');
+    if (button) install('download', {preset: button.dataset.preset});
+});
+el('hf-form').addEventListener('submit', event => { event.preventDefault(); hfSearch(); });
+['hf-size', 'hf-task', 'hf-sort'].forEach(id => el(id).addEventListener('change', () => hfSearch()));
+el('hf-reset').addEventListener('click', () => {
+    el('hf-author').value = ''; el('hf-size').value = ''; el('hf-task').value = ''; el('hf-sort').value = 'trending'; hfSearch();
+});
+el('hf-more').addEventListener('click', () => hfSearch(true));
+el('hf-results').addEventListener('click', event => { const button = event.target.closest('button[data-repo]'); if (button) hfOpen(button.dataset.repo); });
+// Back keeps the results, filters and scroll position; it browses only if no results were ever shown.
+el('hf-back').addEventListener('click', () => {
+    const repo = hf.files?.repo || el('hf-repo').textContent;
+    hfCancel(); hfView(false); el('install-dialog').scrollTop = hf.scroll;
+    if (!hf.state && !/^https?:\/\//i.test(el('hf-query').value.trim())) hfSearch(); else hfMessage(hfSummary());
+    (el('hf-results').querySelector(`[data-repo="${CSS.escape(repo)}"]`) || el('hf-query')).focus({preventScroll: true});
+});
+['hf-quant', 'hf-file-sort'].forEach(id => el(id).addEventListener('change', hfApplyFiles));
+el('hf-max').addEventListener('input', hfApplyFiles);
+el('hf-file-reset').addEventListener('click', () => { hfResetFiles(); hfApplyFiles(); });
+el('hf-files').addEventListener('change', updateControls);
+el('hf-download').addEventListener('click', async () => {
+    const file = el('hf-files').querySelector('input:checked')?.value;
+    if (!file || !hf.files) return;
+    install('download', {repo: hf.files.repo, file}, error => { setText('hf-error', error); el('hf-error').hidden = !error; });
+});
+el('job-dismiss').addEventListener('click', () => {
+    dismissedJob = el('job-dismiss').dataset.job; el('activity').hidden = true;
+    if (handoff && dismissedJob === handoff.job) handoff = null;
+    if (current) renderGuide();
+    el('workspace').focus();
+});
+// Guide actions only move focus or open the existing dialog; Start server is the one mutation and stays explicit.
+el('guide-action').addEventListener('click', () => {
+    const action = el('guide-action').dataset.action;
+    if (action === 'choose') openInstall(el('guide-action'));
+    else if (action === 'start') act('start');
+    else if (action === 'configure') el('load-form').hidden ? focusLibrary() : el('load-form').focus();
+    else if (action === 'select') focusLibrary();
+    else if (action === 'test') gotoTest('', el('loaded').value);
+    else if (action === 'connect') { el('connect').hidden = !el('connect').hidden; renderGuide(); }
+});
 el('unlock-form').addEventListener('submit', event => { event.preventDefault(); unlock(el('token').value); });
 el('autostart').addEventListener('change', () => { engineDirty = true; renderStartupSummary(); });
-el('startup-model').addEventListener('change', () => { engineDirty = true; renderStartupSummary(); });
-// Edits made while the save is pending stay dirty so polling does not overwrite them.
+['startup-model', 'startup-decision'].forEach(id => el(id).addEventListener('change', () => { engineDirty = true; renderStartupSummary(); }));
+// Edits made while the save is pending stay dirty so polling does not overwrite them. Saving never loads a model.
 el('save-engine').addEventListener('click', async () => {
-    const saved = {autostart: el('autostart').checked, startupModel: el('startup-model').value};
-    if (await act('settings', saved) && el('autostart').checked === saved.autostart && el('startup-model').value === saved.startupModel) engineDirty = false;
+    const saved = {autostart: el('autostart').checked, startupModel: el('startup-model').value, startupDecisionModel: el('startup-decision').value};
+    if (await act('settings', saved) && el('autostart').checked === saved.autostart && el('startup-model').value === saved.startupModel &&
+        el('startup-decision').value === saved.startupDecisionModel) engineDirty = false;
 });
-el('preset-form').addEventListener('submit', event => { event.preventDefault(); if (el('preset').value) act('download', {preset: el('preset').value}); });
-el('custom-form').addEventListener('submit', event => { event.preventDefault(); act('download', {source: el('source').value.trim()}); });
-el('import-form').addEventListener('submit', event => { event.preventDefault(); act('import', {source: el('local-path').value.trim()}); });
+// Emergency recovery: it bypasses the job queue, so it stays available while a job runs or hangs.
+el('force-stop').addEventListener('click', async () => {
+    if (forcing || !confirm('Force stop LM Studio?\n\nThis immediately ends the engine and interrupts any model load, download, ' +
+        'test or generation in progress. Loaded models are unloaded. Settings, startup models and downloaded models are kept.')) return;
+    clearReport(); forcing = true; updateControls();
+    try { await api('force-stop'); epoch++; } catch (error) { report(error); }
+    finally { forcing = false; updateControls(); await refresh(); }
+});
+el('preset-form').addEventListener('submit', event => { event.preventDefault(); if (el('preset').value) install('download', {preset: el('preset').value}); });
+el('custom-form').addEventListener('submit', event => { event.preventDefault(); install('download', {source: el('source').value.trim()}); });
+el('import-form').addEventListener('submit', event => { event.preventDefault(); install('import', {source: el('local-path').value.trim()}); });
 el('load-form').addEventListener('submit', event => {
     event.preventDefault(); if (!validLoad()) return;
-    try { const values = loadValues(); if (basicLoad()) values.advanced = {}; act('load', values); } catch (error) { report(error); }
+    try {
+        const values = loadValues(); if (basicLoad()) values.advanced = {};
+        // Only a helper with a slot map accepts slot; the next load then starts again from the first free slot.
+        if (chosenSlot()) values.slot = Number(chosenSlot());
+        act('load', values).then(ok => { if (ok) slotTouched = false; });
+    } catch (error) { report(error); }
 });
+el('load-slot').addEventListener('change', () => { slotTouched = true; updateControls(); });
 el('reset-load').addEventListener('click', () => { selectModel(true); updateControls(); });
 el('use-latest').addEventListener('click', () => { selectModel(); el('defaults-conflict').hidden = true; updateControls(); el('save-defaults').focus(); });
 // Unavailable advanced fields keep their saved values, so saving other settings never erases them.
@@ -661,7 +1145,7 @@ el('save-defaults').addEventListener('click', () => {
 el('loaded').addEventListener('change', () => { if (current) { renderActivity(current.job); renderTest(current); } });
 el('test-form').addEventListener('submit', async event => {
     event.preventDefault();
-    if (busy || submitting || testRun) return;
+    if (busy || submitting || forcing || testRun) return;
     const model = el('loaded').value, prompt = el('prompt').value.trim();
     if (!model) { report(new Error('Load a model before running the test.')); return; }
     if (!prompt) { report(new Error('Enter a test prompt.')); return; }

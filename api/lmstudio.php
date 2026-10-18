@@ -25,6 +25,10 @@ function lmstudio_helper(string $command, array|stdClass $input = []): array
     if ($exit !== 0 || !is_array($result)) {
         throw new RuntimeException($result['error'] ?? 'LM Studio helper unavailable. Update Distro and install LM Studio from the launcher.');
     }
+    // The slot map is keyed by slot number; keep it an object so an empty {} does not re-encode as [].
+    if (is_array($result['slots'] ?? null)) {
+        $result['slots'] = (object) $result['slots'];
+    }
     return $result;
 }
 
@@ -59,8 +63,15 @@ try {
             throw new RuntimeException('Open Manager from the launcher to unlock this page.');
         }
         session_write_close();
-        if ($action === 'status' || $action === 'catalog') {
+        // Force stop never queues behind a running job; the helper verifies every process it ends.
+        if ($action === 'status' || $action === 'catalog' || $action === 'force-stop') {
             $result = lmstudio_helper($action);
+        } elseif ($action === 'search' || $action === 'files') {
+            // Read-only Hugging Face lookups; the helper validates names, filters and cursors, caches results and limits request rate.
+            $result = lmstudio_helper($action, $action === 'search'
+                ? ['query' => $input['query'] ?? '', 'author' => $input['author'] ?? '', 'size' => $input['size'] ?? '',
+                    'task' => $input['task'] ?? '', 'sort' => $input['sort'] ?? 'trending', 'cursor' => $input['cursor'] ?? null]
+                : ['repo' => $input['repo'] ?? null]);
         } elseif (in_array($action, ['start', 'stop', 'restart', 'settings', 'download', 'import', 'load', 'unload', 'test', 'model-defaults', 'test-preset'], true)) {
             // Forward the object-decoded body so empty settings stay {} instead of becoming [].
             $payload = json_decode($body, false, 16, JSON_THROW_ON_ERROR);
