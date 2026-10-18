@@ -63,7 +63,8 @@ try {
             throw new RuntimeException('Open Manager from the launcher to unlock this page.');
         }
         session_write_close();
-        if ($action === 'status' || $action === 'catalog') {
+        // Force stop never queues behind a running job; the helper verifies every process it ends.
+        if ($action === 'status' || $action === 'catalog' || $action === 'force-stop') {
             $result = lmstudio_helper($action);
         } elseif ($action === 'search' || $action === 'files') {
             // Read-only Hugging Face lookups; the helper validates names, filters and cursors, caches results and limits request rate.

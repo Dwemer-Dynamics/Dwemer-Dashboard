@@ -37,6 +37,7 @@ if ($chimRoot !== null && is_file($chimRoot . '/ui/quickstart.php')) {
         <span id="status" role="status" data-state="connecting">Connecting…</span>
         <button type="button" id="restart" class="quiet" data-action="restart" data-mutation hidden>Restart</button>
         <button type="button" id="engine-toggle" class="primary" data-mutation disabled>Start</button>
+        <button type="button" id="force-stop" class="quiet danger" hidden title="Emergency stop: ends the engine and any running load, download or test.">Force stop</button>
     </div>
 </header>
 <p id="error" role="alert" hidden></p>
@@ -182,6 +183,7 @@ if ($chimRoot !== null && is_file($chimRoot . '/ui/quickstart.php')) {
                 <div class="extras-body">
                     <label class="inline"><input id="autostart" type="checkbox"> Start with DwemerDistro</label>
                     <label>Startup model<select id="startup-model"><option value="">None</option></select></label>
+                    <label>Decision model<select id="startup-decision"><option value="">None</option></select></label>
                     <div class="button-group"><button type="button" id="save-engine" data-mutation>Save</button></div>
                 </div>
             </details>

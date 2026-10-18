@@ -185,6 +185,8 @@ button.primary{background:#bd5b19;border-color:#e07a32;color:#fff}
 button.primary:hover{background:#d06a23;border-color:#f6a464}
 button.quiet{background:transparent;color:#bcc6d3}
 button.quiet:hover{background:var(--raised)}
+button.danger{color:#ffb4b4;border-color:#7a3a3a}
+button.danger:hover{background:#3a1f22}
 .guide-leads #engine-toggle.primary:not(:disabled),.guide-leads #open-install{background:var(--raised);border-color:var(--line);color:inherit}
 .guide-leads #engine-toggle.primary:not(:disabled):hover,.guide-leads #open-install:hover{background:#2f3741;border-color:#8391a3}
 button.small{min-height:30px;padding:4px 10px}

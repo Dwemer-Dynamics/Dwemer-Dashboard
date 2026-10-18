@@ -1,7 +1,7 @@
 'use strict';
 const el = id => document.getElementById(id);
 const csrf = document.querySelector('meta[name="lmstudio-csrf"]').content;
-let unlocked = false, pending = false, queued = false, busy = false, submitting = false;
+let unlocked = false, pending = false, queued = false, busy = false, submitting = false, forcing = false;
 let current = null, shownModel = null, engineDirty = false, dismissedJob = null, epoch = 0;
 let testRun = null, testFailure = null, staleBefore = 0, preferLoaded = '';
 // Polling stops only when the session needs unlocking; transient status failures keep retrying.
@@ -140,13 +140,17 @@ function loadReason(running, model, full, slot) {
 
 // Mutations stay disabled while a request or job runs; navigation, disclosures and copy stay usable.
 function updateControls() {
-    const locked = busy || submitting, running = Boolean(current?.running), installed = Boolean(current?.installed);
+    const locked = busy || submitting || forcing, running = Boolean(current?.running), installed = Boolean(current?.installed);
     const toggle = el('engine-toggle');
     setText('engine-toggle', running ? 'Stop' : 'Start');
     toggle.setAttribute('aria-label', running ? 'Stop server' : 'Start server');
+    // Start here only starts the engine; the saved startup models load at Distro startup or from the launcher's Start engine.
+    toggle.title = running ? '' : 'Starts the engine without loading the startup models. Load models below, or use Start engine in the launcher.';
     toggle.classList.toggle('primary', !running);
     toggle.disabled = locked || !unlocked || !current || !installed;
     el('restart').hidden = !running;
+    // Force stop is recovery for a hung job, so a running job never disables it.
+    el('force-stop').hidden = !unlocked || !installed; el('force-stop').disabled = forcing;
     el('restart').disabled = locked || !installed || !running;
     // The helper refuses a loaded model and loads beyond its limit, so Load stays off for those.
     // An explicit slot that holds a model keeps Load off; the helper refuses it too and never replaces a model.
@@ -244,7 +248,7 @@ function renderGuide() {
     const label = next.label || guideLabels[next.action] || '';
     button.hidden = !label || (next.action === 'test' && !el('activity').hidden && !el('job-next').hidden);
     button.dataset.action = next.action || ''; setText('guide-action', label);
-    button.disabled = next.action === 'start' && (busy || submitting);
+    button.disabled = next.action === 'start' && (busy || submitting || forcing);
     // While the guide offers the next action, the header Start and Install models look secondary; both stay usable.
     document.body.classList.toggle('guide-leads', !button.hidden);
     // Connect details describe only a passed test of the selected instance; anything older closes them.
@@ -524,8 +528,8 @@ function renderSlotTarget() {
 }
 
 function renderStartupSummary() {
-    const startup = el('startup-model'), name = startup.value ? startup.selectedOptions[0]?.textContent || startup.value : '';
-    let text = el('autostart').checked ? `Starts with DwemerDistro${name ? ` · loads ${name}` : ''}` : 'Manual start';
+    const names = ['startup-model', 'startup-decision'].map(el).filter(s => s.value).map(s => s.selectedOptions[0]?.textContent || s.value);
+    let text = el('autostart').checked ? `Starts with DwemerDistro${names.length ? ` · loads ${names.join(' + ')}` : ''}` : 'Manual start';
     if (engineDirty) text += ' · unsaved';
     setText('startup-summary', text);
 }
@@ -671,15 +675,16 @@ function render(state) {
         if (!instances.some(i => i.model === state.lastLoad?.model)) staleLoad = loadRecord;
     }
     seenInstances = instanceIds;
-    const startupModels = [{key: '', display_name: 'None'}, ...llms];
     // Keep the saved choice and any unsaved choice listed, with their names, while the server lists no models.
-    const startup = el('startup-model'), keep = [state.settings.startupModel, engineDirty ? startup.value : ''];
-    for (const key of keep) {
-        const name = [...startup.options].find(o => o.value === key)?.textContent;
-        if (key && !startupModels.some(m => m.key === key)) startupModels.push({key, display_name: name});
+    for (const [id, setting] of [['startup-model', 'startupModel'], ['startup-decision', 'startupDecisionModel']]) {
+        const startup = el(id), startupModels = [{key: '', display_name: 'None'}, ...llms];
+        for (const key of [state.settings[setting], engineDirty ? startup.value : '']) {
+            const name = [...startup.options].find(o => o.value === key)?.textContent;
+            if (key && !startupModels.some(m => m.key === key)) startupModels.push({key, display_name: name});
+        }
+        options(id, startupModels, 'key', 'display_name');
+        if (!engineDirty) startup.value = state.settings[setting] || '';
     }
-    options('startup-model', startupModels, 'key', 'display_name');
-    if (!engineDirty) el('startup-model').value = state.settings.startupModel || '';
     if (shownModel !== el('model').value) selectModel(); else syncDefaults();
     el('defaults-conflict').hidden = savedSnapshot(el('model').value) === savedBase;
     el('sdk-note').hidden = Boolean(state.advancedAvailable);
@@ -740,7 +745,7 @@ async function submit(action, data) {
 }
 
 async function act(action, data = {}) {
-    if (busy || submitting) return false;
+    if (busy || submitting || forcing) return false;
     clearReport(); submitting = true; updateControls();
     try { await submit(action, data); return true; } catch (error) { report(error); return false; }
     finally { submitting = false; updateControls(); await refresh(); }
@@ -1098,11 +1103,20 @@ el('guide-action').addEventListener('click', () => {
 });
 el('unlock-form').addEventListener('submit', event => { event.preventDefault(); unlock(el('token').value); });
 el('autostart').addEventListener('change', () => { engineDirty = true; renderStartupSummary(); });
-el('startup-model').addEventListener('change', () => { engineDirty = true; renderStartupSummary(); });
-// Edits made while the save is pending stay dirty so polling does not overwrite them.
+['startup-model', 'startup-decision'].forEach(id => el(id).addEventListener('change', () => { engineDirty = true; renderStartupSummary(); }));
+// Edits made while the save is pending stay dirty so polling does not overwrite them. Saving never loads a model.
 el('save-engine').addEventListener('click', async () => {
-    const saved = {autostart: el('autostart').checked, startupModel: el('startup-model').value};
-    if (await act('settings', saved) && el('autostart').checked === saved.autostart && el('startup-model').value === saved.startupModel) engineDirty = false;
+    const saved = {autostart: el('autostart').checked, startupModel: el('startup-model').value, startupDecisionModel: el('startup-decision').value};
+    if (await act('settings', saved) && el('autostart').checked === saved.autostart && el('startup-model').value === saved.startupModel &&
+        el('startup-decision').value === saved.startupDecisionModel) engineDirty = false;
+});
+// Emergency recovery: it bypasses the job queue, so it stays available while a job runs or hangs.
+el('force-stop').addEventListener('click', async () => {
+    if (forcing || !confirm('Force stop LM Studio?\n\nThis immediately ends the engine and interrupts any model load, download, ' +
+        'test or generation in progress. Loaded models are unloaded. Settings, startup models and downloaded models are kept.')) return;
+    clearReport(); forcing = true; updateControls();
+    try { await api('force-stop'); epoch++; } catch (error) { report(error); }
+    finally { forcing = false; updateControls(); await refresh(); }
 });
 el('preset-form').addEventListener('submit', event => { event.preventDefault(); if (el('preset').value) install('download', {preset: el('preset').value}); });
 el('custom-form').addEventListener('submit', event => { event.preventDefault(); install('download', {source: el('source').value.trim()}); });
@@ -1131,7 +1145,7 @@ el('save-defaults').addEventListener('click', () => {
 el('loaded').addEventListener('change', () => { if (current) { renderActivity(current.job); renderTest(current); } });
 el('test-form').addEventListener('submit', async event => {
     event.preventDefault();
-    if (busy || submitting || testRun) return;
+    if (busy || submitting || forcing || testRun) return;
     const model = el('loaded').value, prompt = el('prompt').value.trim();
     if (!model) { report(new Error('Load a model before running the test.')); return; }
     if (!prompt) { report(new Error('Enter a test prompt.')); return; }
