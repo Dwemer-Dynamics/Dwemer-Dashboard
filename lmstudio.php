@@ -123,6 +123,10 @@ if ($chimRoot !== null && is_file($chimRoot . '/ui/quickstart.php')) {
                     </div>
                     <p id="load-reason" class="reason" hidden></p>
                     <p id="sdk-note" class="muted" hidden></p>
+                    <div id="slot-pick" class="settings-grid slot-pick" hidden>
+                        <label>Load into<select id="load-slot" aria-describedby="slot-pick-note"></select></label>
+                        <p id="slot-pick-note" class="muted">An occupied slot must be unloaded first. Connectors choose a model by its model ID, not its slot.</p>
+                    </div>
                     <div class="settings-grid load-basics">
                         <label>Context tokens<input id="context" type="number" min="512" max="131072" value="4096" required></label>
                         <label>GPU offload %<input id="gpu" type="number" min="0" max="100" value="100" required></label>
@@ -153,7 +157,7 @@ if ($chimRoot !== null && is_file($chimRoot . '/ui/quickstart.php')) {
                     <span id="slots-count" class="count"></span>
                 </div>
                 <ol id="slots" class="slot-list"></ol>
-                <p id="multi-note" class="muted" hidden>Two different models can stay loaded, for example to serve different purposes; connectors choose one by its model ID. Both share RAM and VRAM, so size context and GPU offload for both.</p>
+                <p id="multi-note" class="muted" hidden>Two different models can stay loaded, for example to serve different purposes. Slots only organise loading here; connectors choose a model by its model ID. Both share RAM and VRAM, so size context and GPU offload for both.</p>
             </section>
 
             <section id="test-section" class="panel test" aria-labelledby="test-title">

@@ -25,6 +25,10 @@ function lmstudio_helper(string $command, array|stdClass $input = []): array
     if ($exit !== 0 || !is_array($result)) {
         throw new RuntimeException($result['error'] ?? 'LM Studio helper unavailable. Update Distro and install LM Studio from the launcher.');
     }
+    // The slot map is keyed by slot number; keep it an object so an empty {} does not re-encode as [].
+    if (is_array($result['slots'] ?? null)) {
+        $result['slots'] = (object) $result['slots'];
+    }
     return $result;
 }
 

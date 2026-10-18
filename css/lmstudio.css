@@ -90,6 +90,8 @@ section,.panel{min-width:0;background:var(--surface);border:1px solid var(--bord
 .reason{margin:10px 0 0;padding:6px 10px;border-left:3px solid var(--accent-dim);border-radius:4px;background:#241d17;color:#f5cfa8;font-size:12px}
 #sdk-note{margin:8px 0 0}
 .load-basics{margin-top:12px}
+.slot-pick{margin-top:12px;align-items:end}
+.slot-pick p{margin:0 0 10px}
 .defaults-actions .muted{flex:1 1 180px}
 
 /* Install dialog: tabs, recommended cards, more options and Hugging Face search */
@@ -131,12 +133,12 @@ section,.panel{min-width:0;background:var(--surface);border:1px solid var(--bord
 .file-row[aria-disabled=true]:hover{background:transparent}
 
 /* Loaded positions */
-.slot-list{counter-reset:slot;list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
-.slot{counter-increment:slot;position:relative;display:flex;flex-direction:column;justify-content:space-between;gap:10px;min-width:0;min-height:96px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--inset)}
-.slot:before{content:counter(slot);position:absolute;top:8px;right:10px;font-size:11px;font-weight:600;color:var(--muted)}
+.slot-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.slot{position:relative;display:flex;flex-direction:column;justify-content:space-between;gap:10px;min-width:0;min-height:96px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--inset)}
+.slot-label{position:absolute;top:8px;right:10px;font-size:11px;font-weight:600;color:var(--muted)}
 .slot.target{border-color:var(--accent-dim)}
 .slot.empty{border-style:dashed;background:transparent;justify-content:center}
-.slot-body{display:grid;gap:2px;min-width:0;padding-right:18px}
+.slot-body{display:grid;gap:2px;min-width:0;padding-right:44px}
 .slot-body strong{font-size:13px;overflow-wrap:anywhere}
 .slot.empty strong{color:var(--muted);font-weight:600}
 .slot-body code{color:var(--muted);font-size:11px}

@@ -30,6 +30,8 @@ let installOpener = null;
 let handoff = null;
 // A model the user picked in Models that is not loaded yet; it leads the guide until it loads.
 let chosen = '';
+// The user's Load into slot choice; until they pick one, it follows the first free slot.
+let slotTouched = false;
 const loadFields = {
     flashAttention: ['Flash Attention', 'bool'], offloadKVCacheToGpu: ['Offload KV cache to GPU', 'bool'],
     gpuStrictVramCap: ['Strict GPU memory limit', 'bool'], keepModelInMemory: ['Keep model in memory', 'bool'],
@@ -127,11 +129,12 @@ function syncDefaults() {
 function setText(id, text) { if (el(id).textContent !== text) el(id).textContent = text; }
 
 // Why Load is off, shown beside it; a running job explains itself on the activity card instead.
-function loadReason(running, model, full) {
+function loadReason(running, model, full, slot) {
     if (!current?.installed || !model) return '';
     if (!running) return 'Start the server to load this model. You can still edit and save its defaults.';
-    if (loadedModel(model)) return 'This model is already loaded.';
-    if (full) return maxLoaded() > 1 ? 'Both positions are in use. Unload one first.' : 'A model is already loaded. Unload it first.';
+    if (loadedModel(model)) return slotOf(model) ? `This model is already loaded in Slot ${slotOf(model)}.` : 'This model is already loaded.';
+    if (full) return maxLoaded() > 1 ? 'Both slots are in use. Unload one in Loaded first.' : 'A model is already loaded. Unload it first.';
+    if (slot && slotHolder(slot)) return `Slot ${slot} holds ${modelName(slotHolder(slot))}. Unload it in Loaded first, or choose another slot. Loading never replaces a model.`;
     return '';
 }
 
@@ -146,13 +149,14 @@ function updateControls() {
     el('restart').hidden = !running;
     el('restart').disabled = locked || !installed || !running;
     // The helper refuses a loaded model and loads beyond its limit, so Load stays off for those.
-    const model = el('model').value, full = el('loaded').options.length >= maxLoaded();
-    el('load-button').disabled = locked || !running || !model || loadedModel(model) || full;
-    const reason = loadReason(running, model, full);
+    // An explicit slot that holds a model keeps Load off; the helper refuses it too and never replaces a model.
+    const model = el('model').value, full = el('loaded').options.length >= maxLoaded(), slot = chosenSlot();
+    el('load-button').disabled = locked || !running || !model || loadedModel(model) || full || Boolean(slot && slotHolder(slot));
+    const reason = loadReason(running, model, full, slot);
     setText('load-reason', reason); el('load-reason').hidden = !reason;
     // The SDK note and Load label describe the same form, so Reset and model changes update both at once.
     const basic = basicLoad();
-    setText('load-button', basic ? 'Load basic' : 'Load');
+    setText('load-button', `${basic ? 'Load basic' : 'Load'}${slot ? ` into Slot ${slot}` : ''}`);
     if (current && !current.advancedAvailable) setText('sdk-note', basic ?
         'Advanced loading is unavailable. Load basic skips these settings; your saved values are kept.' :
         'Reinstall the LLM Studio component to enable advanced loading.');
@@ -193,7 +197,7 @@ function nextStep(state) {
         const name = list.some(m => m.key === handoff.key) ? modelName(handoff.key) : handoff.name;
         if (!state.running) return {step: 'load', head: `${name} is installed.`, detail: 'Start the server to load it.', action: 'start'};
         if (instances.length >= maxLoaded()) return {step: 'load', head: `${name} is installed.`,
-            detail: maxLoaded() > 1 ? 'Both positions are in use. Unload one in Loaded, then load it.' : 'A model is already loaded. Unload it in Loaded, then load this one.'};
+            detail: maxLoaded() > 1 ? 'Both slots are in use. Unload one in Loaded, then load it.' : 'A model is already loaded. Unload it in Loaded, then load this one.'};
         if (handoff.selected && el('model').value === handoff.key) return {step: 'load', head: `Load ${name}.`, detail: 'Check its settings, then press Load.', action: 'configure'};
         return {step: 'load', head: `${name} is installed.`, detail: 'Select it in Models, then press Load.', action: 'select'};
     }
@@ -201,7 +205,7 @@ function nextStep(state) {
     if (state.running && chosen && el('model').value === chosen && list.some(m => m.key === chosen) && !loadedModel(chosen)) {
         const name = modelName(chosen);
         if (instances.length >= maxLoaded()) return {step: 'load', head: `${name} isn’t loaded.`,
-            detail: maxLoaded() > 1 ? 'Both positions are in use. Unload one in Loaded, then load it.' : 'A model is already loaded. Unload it in Loaded, then load this one.'};
+            detail: maxLoaded() > 1 ? 'Both slots are in use. Unload one in Loaded, then load it.' : 'A model is already loaded. Unload it in Loaded, then load this one.'};
         return {step: 'load', head: `Load ${name}.`, detail: 'Check its settings, then press Load.', action: 'configure'};
     }
     if (!instances.length) {
@@ -363,6 +367,26 @@ function checkedAgo(seconds) {
 // An older helper omits maxLoaded and refuses any second load, so the manager then assumes one model.
 function maxLoaded() { const max = current?.maxLoaded; return Number.isInteger(max) && max > 0 ? max : 1; }
 
+// The helper's persisted slot map ({"1": model key}); an older helper omits it and loads keep the old list order.
+function slotsSupported() { const slots = current?.slots; return maxLoaded() > 1 && Boolean(slots) && typeof slots === 'object' && !Array.isArray(slots); }
+function slotHolder(slot) { return current?.running && slotsSupported() ? current.slots[slot] || '' : ''; }
+function slotOf(key) { return current?.running && slotsSupported() ? Object.keys(current.slots).find(slot => current.slots[slot] === key) || '' : ''; }
+function chosenSlot() { return slotsSupported() ? el('load-slot').value : ''; }
+
+// Options update in place so polling never closes the list; an untouched choice moves to the first free slot.
+function renderSlotPick() {
+    const supported = slotsSupported(), select = el('load-slot');
+    el('slot-pick').hidden = !supported;
+    if (!supported) return;
+    const numbers = Array.from({length: maxLoaded()}, (_, index) => String(index + 1));
+    if (select.options.length !== numbers.length) select.replaceChildren(...numbers.map(slot => new Option(`Slot ${slot}`, slot)));
+    numbers.forEach((slot, index) => {
+        const holder = slotHolder(slot);
+        setNodeText(select.options[index], holder ? `Slot ${slot} · ${modelName(holder)} (unload first)` : `Slot ${slot} · Empty`);
+    });
+    if (!slotTouched || !numbers.includes(select.value)) select.value = numbers.find(slot => !slotHolder(slot)) || numbers[0];
+}
+
 // Friendly names in normal flow; the raw instance id stays available through Copy ID. Only the live list has instances.
 function instancesOf(state) {
     const instances = (state.models || []).flatMap(m => (m.loaded_instances || []).map(i => ({id: i.id, model: m.key, name: m.display_name || i.id, config: i.config})));
@@ -416,7 +440,7 @@ function renderLibrary(state, list) {
     library.querySelectorAll('.model-row').forEach(row => {
         const radio = row.querySelector('input'), badge = row.querySelector('.badge'), count = instanceCount(radio.value);
         radio.checked = radio.value === el('model').value;
-        badge.hidden = !count; setNodeText(badge, count > 1 ? `Loaded ×${count}` : 'Loaded');
+        badge.hidden = !count; setNodeText(badge, count > 1 ? `Loaded ×${count}` : slotOf(radio.value) ? `Loaded · Slot ${slotOf(radio.value)}` : 'Loaded');
     });
     library.hidden = !list.length;
     const text = libraryText(state, list);
@@ -442,13 +466,14 @@ function slotButton(action, label, instance, style = '') {
     return button;
 }
 
-function slotItem(instance, state) {
+function slotItem(instance, state, label) {
     const item = document.createElement('li'), body = document.createElement('div'), title = document.createElement('strong');
-    item.className = 'slot'; body.className = 'slot-body';
+    const tag = document.createElement('span'); tag.className = 'slot-label'; tag.textContent = label;
+    item.className = 'slot'; body.className = 'slot-body'; item.append(tag);
     if (!instance) {
         item.classList.add('empty'); title.textContent = 'Empty';
         const hint = document.createElement('span'); hint.className = 'muted';
-        hint.textContent = state.running ? 'Choose a model and Load.' : 'Server stopped.';
+        hint.textContent = !state.running ? 'Server stopped.' : slotsSupported() ? `Choose a model, pick ${label} and press Load.` : 'Choose a model and Load.';
         body.append(title, hint); item.append(body);
         return item;
     }
@@ -464,14 +489,24 @@ function slotItem(instance, state) {
     return item;
 }
 
-// Positions show live instances only; a stopped server has none, whatever the saved list says.
+// Slots show live instances only; a stopped server has none, whatever the saved list says. With the helper's slot map
+// each model stays in its own numbered slot across polls and reloads; an older helper keeps the list order.
 function renderSlots(state, instances) {
     const max = maxLoaded(), list = el('slots');
     setText('slots-count', `${instances.length}/${max}`);
-    const signature = JSON.stringify([max, state.running, instances.map(i => [i.id, i.name, i.model, i.config?.context_length ?? i.config?.contextLength ?? null])]);
+    let ordered = instances, labels = instances.map((_, index) => String(index + 1));
+    if (slotsSupported()) {
+        const placed = Array.from({length: max}, (_, index) => instances.find(i => i.model === slotHolder(String(index + 1))));
+        const extra = instances.filter(i => !placed.includes(i));
+        ordered = [...placed, ...extra];
+        labels = [...placed.map((_, index) => `Slot ${index + 1}`), ...extra.map(() => 'No slot')];
+    }
+    const length = Math.max(max, ordered.length);
+    while (labels.length < length) labels.push(String(labels.length + 1));
+    const signature = JSON.stringify([max, state.running, labels, ordered.map(i => i && [i.id, i.name, i.model, i.config?.context_length ?? i.config?.contextLength ?? null])]);
     if (list.dataset.signature !== signature) {
         const focused = list.contains(document.activeElement) ? document.activeElement.dataset : null;
-        list.replaceChildren(...Array.from({length: Math.max(max, instances.length)}, (_, index) => slotItem(instances[index], state)));
+        list.replaceChildren(...Array.from({length}, (_, index) => slotItem(ordered[index], state, labels[index])));
         list.dataset.signature = signature;
         if (focused) [...list.querySelectorAll('button')].find(b => b.dataset.instance === focused.instance && b.dataset.slotAction === focused.slotAction)?.focus();
     }
@@ -503,12 +538,13 @@ function phaseOf(job) { return typeof job.phase === 'string' ? job.phase.toLower
 function jobTitle(job, own) {
     const name = own?.model ? modelName(own.model) : own?.preset ? presetName(own.preset) : own?.file || '', phase = phaseOf(job);
     if (job.state === 'failed') return failNames[job.action] || 'Operation failed';
-    if (job.state === 'completed') return job.action === 'load' && name ? `${name} loaded` : doneNames[job.action] || 'Done';
+    const slot = job.action === 'load' ? own?.slot || job.slot : '', into = slot ? ` into Slot ${slot}` : '';
+    if (job.state === 'completed') return job.action === 'load' && name ? `${name} loaded${into}` : doneNames[job.action] || 'Done';
     if (phase) {
         const title = phaseNames[phase] || phase.charAt(0).toUpperCase() + phase.slice(1).replace(/[-_]/g, ' ');
         return name && transferPhases.has(phase) ? `${title} ${name}` : title;
     }
-    if (name && job.action === 'load') return `Loading ${name}`;
+    if (name && job.action === 'load') return `Loading ${name}${into}`;
     if (name && job.action === 'download') return `Downloading ${name}`;
     return jobNames[job.action] || 'Working';
 }
@@ -654,6 +690,7 @@ function render(state) {
     setText('model-details', JSON.stringify({model: llms.find(m => m.key === el('model').value),
         lastAdvancedLoad: applied ? state.lastLoad.appliedConfig : undefined, memoryLockWarning: applied ? state.lastLoad.memoryLockWarning : undefined}, null, 2));
     renderConfig(llms);
+    renderSlotPick();
     renderSlots(state, instances);
     renderStartupSummary();
     busy = state.job.state === 'running';
@@ -697,7 +734,7 @@ async function submit(action, data) {
     const before = action === 'load' && current?.running ? instancesOf(current).map(i => i.id) : [];
     const job = await api(action, data);
     epoch++;
-    if (job?.id) ownJobs.set(job.id, {model: data.model, preset: data.preset, repo: data.repo, file: data.file, before});
+    if (job?.id) ownJobs.set(job.id, {model: data.model, preset: data.preset, repo: data.repo, file: data.file, slot: data.slot, before});
     if (['download', 'import'].includes(action)) handoff = null;
     if (job?.id && current) { busy = job.state === 'running'; current = {...current, job}; renderActivity(job); }
 }
@@ -1072,8 +1109,14 @@ el('custom-form').addEventListener('submit', event => { event.preventDefault(); 
 el('import-form').addEventListener('submit', event => { event.preventDefault(); install('import', {source: el('local-path').value.trim()}); });
 el('load-form').addEventListener('submit', event => {
     event.preventDefault(); if (!validLoad()) return;
-    try { const values = loadValues(); if (basicLoad()) values.advanced = {}; act('load', values); } catch (error) { report(error); }
+    try {
+        const values = loadValues(); if (basicLoad()) values.advanced = {};
+        // Only a helper with a slot map accepts slot; the next load then starts again from the first free slot.
+        if (chosenSlot()) values.slot = Number(chosenSlot());
+        act('load', values).then(ok => { if (ok) slotTouched = false; });
+    } catch (error) { report(error); }
 });
+el('load-slot').addEventListener('change', () => { slotTouched = true; updateControls(); });
 el('reset-load').addEventListener('click', () => { selectModel(true); updateControls(); });
 el('use-latest').addEventListener('click', () => { selectModel(); el('defaults-conflict').hidden = true; updateControls(); el('save-defaults').focus(); });
 // Unavailable advanced fields keep their saved values, so saving other settings never erases them.
