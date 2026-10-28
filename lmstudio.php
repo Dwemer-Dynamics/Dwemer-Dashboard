@@ -1,11 +1,20 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/lib/storage_fragment.php';
 session_start();
 $_SESSION['lmstudio_csrf'] ??= bin2hex(random_bytes(32));
 $csrf = $_SESSION['lmstudio_csrf'];
 header('Cache-Control: no-store');
 header('Referrer-Policy: no-referrer');
 header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'");
+// Only CHIM's Quickstart has Local LLM fields so far; STOBE and DIALECTIC links follow when their Quickstarts do.
+// The link uses the shared product routing and appears only when that server is installed.
+$quickstart = null;
+$chim = dm_products()['chim'];
+$chimRoot = dm_server_root($chim['dir']);
+if ($chimRoot !== null && is_file($chimRoot . '/ui/quickstart.php')) {
+    $quickstart = ['label' => $chim['label'], 'url' => dm_url_prefix() . '/' . $chim['dir'] . '/ui/quickstart.php'];
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -28,6 +37,7 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
         <span id="status" role="status" data-state="connecting">Connecting…</span>
         <button type="button" id="restart" class="quiet" data-action="restart" data-mutation hidden>Restart</button>
         <button type="button" id="engine-toggle" class="primary" data-mutation disabled>Start</button>
+        <button type="button" id="force-stop" class="quiet danger" hidden title="Emergency stop: ends the engine and any running load, download or test.">Force stop</button>
     </div>
 </header>
 <p id="error" role="alert" hidden></p>
@@ -41,6 +51,31 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
 </section>
 <main id="manager" class="studio" hidden>
     <div id="workspace" class="workspace" tabindex="-1">
+        <section id="guide" class="guide" aria-label="Next step" hidden>
+            <ol id="guide-steps" class="guide-steps">
+                <li data-step="install">Install</li><li data-step="model">Model</li><li data-step="load">Load</li><li data-step="test">Test</li>
+            </ol>
+            <p class="guide-text" aria-live="polite"><strong id="guide-head"></strong> <span id="guide-detail"></span></p>
+            <button type="button" id="guide-action" class="primary small" hidden></button>
+        </section>
+        <section id="connect" class="panel connect" aria-labelledby="connect-title" hidden>
+            <h2 id="connect-title">Connect a mod</h2>
+            <p class="muted">Copy these into your mod’s Local LLM settings. Nothing here changes game or server settings.</p>
+            <div class="connect-fields">
+                <div class="copy-field"><label for="connect-model">Model name</label><input id="connect-model" readonly><button type="button" class="small" data-copy="connect-model" aria-label="Copy model name">Copy</button></div>
+                <div class="copy-field"><label for="connect-url">Server URL</label><input id="connect-url" readonly><button type="button" class="small" data-copy="connect-url" aria-label="Copy server URL">Copy</button></div>
+            </div>
+            <p class="muted">This address is correct for mods running in DwemerDistro.</p>
+            <details><summary>About the 127.0.0.1 warning and other servers</summary>
+                <p class="muted">CHIM may warn that 127.0.0.1 can’t reach Windows. For this engine, keep the address: it runs inside DwemerDistro beside the mod server.</p>
+                <p class="muted">Using the LM Studio app on Windows or another PC instead? That is a separate server: use its own address and model name.</p>
+            </details>
+            <?php if ($quickstart !== null): ?>
+            <p class="connect-link"><a href="<?= htmlspecialchars($quickstart['url'], ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer">Open <?= htmlspecialchars($quickstart['label'], ENT_QUOTES, 'UTF-8') ?> Quickstart</a> <span class="muted">Choose Local LLM, paste both values, then press Test connection.</span></p>
+            <?php else: ?>
+            <p class="muted">Paste both values into your mod’s LLM connector, then test the connection there.</p>
+            <?php endif; ?>
+        </section>
         <div id="activity" class="activity" data-state="running" hidden>
             <div class="activity-head">
                 <strong id="job-title" aria-live="polite"></strong>
@@ -69,16 +104,17 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
         <div class="layout">
             <section id="library-section" class="panel library" aria-labelledby="library-title">
                 <div class="panel-head">
-                    <h2 id="library-title">Installed models</h2>
+                    <h2 id="library-title">Models</h2>
                     <span id="library-count" class="count"></span>
+                    <button type="button" id="open-install" class="primary small" aria-haspopup="dialog">Install models</button>
                 </div>
+                <div id="installed-panel">
                 <div id="library-note" class="note">
                     <p id="library-text" role="status">Connecting…</p>
-                    <button type="button" id="open-add" class="small" hidden>Add models</button>
                 </div>
                 <fieldset id="library" class="library-list" hidden><legend class="sr-only">Choose a model to configure or load</legend></fieldset>
                 <input type="hidden" id="model">
-                <form id="load-form" class="model-config" novalidate hidden aria-labelledby="config-title">
+                <form id="load-form" class="model-config" novalidate hidden aria-labelledby="config-title" tabindex="-1">
                     <div class="config-head">
                         <div class="config-name">
                             <h3 id="config-title"></h3>
@@ -88,6 +124,10 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
                     </div>
                     <p id="load-reason" class="reason" hidden></p>
                     <p id="sdk-note" class="muted" hidden></p>
+                    <div id="slot-pick" class="settings-grid slot-pick" hidden>
+                        <label>Load into<select id="load-slot" aria-describedby="slot-pick-note"></select></label>
+                        <p id="slot-pick-note" class="muted">An occupied slot must be unloaded first. Connectors choose a model by its model ID, not its slot.</p>
+                    </div>
                     <div class="settings-grid load-basics">
                         <label>Context tokens<input id="context" type="number" min="512" max="131072" value="4096" required></label>
                         <label>GPU offload %<input id="gpu" type="number" min="0" max="100" value="100" required></label>
@@ -109,6 +149,7 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
                     </div>
                     <details><summary>Technical details</summary><pre id="model-details"></pre></details>
                 </form>
+                </div>
             </section>
 
             <section id="slots-section" class="panel slots" aria-labelledby="slots-title">
@@ -117,7 +158,7 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
                     <span id="slots-count" class="count"></span>
                 </div>
                 <ol id="slots" class="slot-list"></ol>
-                <p id="multi-note" class="muted" hidden>Two different models can stay loaded, for example to serve different purposes; connectors choose one by its model ID. Both share RAM and VRAM, so size context and GPU offload for both.</p>
+                <p id="multi-note" class="muted" hidden>Two different models can stay loaded, for example to serve different purposes. Slots only organise loading here; connectors choose a model by its model ID. Both share RAM and VRAM, so size context and GPU offload for both.</p>
             </section>
 
             <section id="test-section" class="panel test" aria-labelledby="test-title">
@@ -137,38 +178,105 @@ header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-sr
         </div>
 
         <div class="extras">
-            <details id="add-models" class="panel">
-                <summary>Add models <span class="muted">Download or import a GGUF</span></summary>
-                <div class="extras-body">
-                    <p id="preset-note" class="muted" role="status" hidden></p>
-                    <form id="preset-form" class="row">
-                        <label>Suggested model<select id="preset"></select></label>
-                        <button id="preset-download" class="primary" data-mutation>Download</button>
-                    </form>
-                    <form id="custom-form" class="row">
-                        <label>Custom Hugging Face URL or model reference<input id="source" placeholder="owner/model-GGUF@Q4_K_M" required maxlength="500"></label>
-                        <button id="custom-download" data-mutation>Download</button>
-                    </form>
-                    <form id="import-form" class="row">
-                        <label>Import local model: path on this PC<input id="local-path" placeholder="C:\Models\model.gguf" required maxlength="1024" autocomplete="off" spellcheck="false" aria-describedby="import-help"></label>
-                        <button id="local-import" data-mutation>Import</button>
-                    </form>
-                    <div id="import-help" class="muted">
-                        <p>Import copies a standalone <code>.gguf</code> file already on the PC running DwemerDistro; nothing is uploaded from this browser. Paste its full path; the original stays in place. DwemerDistro needs free space for one copy, or two if LM Studio’s model folder is on another drive.</p>
-                        <p>Ollama models are stored as managed blobs, not ordinary GGUF files, so they can’t be imported. Connect CHIM to Ollama instead. Split GGUF sets aren’t supported.</p>
-                    </div>
-                </div>
-            </details>
             <details id="server-settings" class="panel">
                 <summary>Startup <span id="startup-summary" class="muted"></span></summary>
                 <div class="extras-body">
                     <label class="inline"><input id="autostart" type="checkbox"> Start with DwemerDistro</label>
                     <label>Startup model<select id="startup-model"><option value="">None</option></select></label>
+                    <label>Decision model<select id="startup-decision"><option value="">None</option></select></label>
                     <div class="button-group"><button type="button" id="save-engine" data-mutation>Save</button></div>
                 </div>
             </details>
         </div>
     </div>
 </main>
+<dialog id="install-dialog" class="install-dialog" aria-labelledby="install-title">
+    <div class="dialog-head">
+        <h2 id="install-title">Install models</h2>
+        <button type="button" id="install-close" class="quiet small">Close</button>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Install models from">
+        <button type="button" role="tab" id="tab-recommended" aria-controls="recommended-panel" aria-selected="true">Recommended</button>
+        <button type="button" role="tab" id="tab-search" aria-controls="search-panel" aria-selected="false" tabindex="-1">Hugging Face</button>
+    </div>
+    <div id="recommended-panel" role="tabpanel" aria-labelledby="tab-recommended">
+        <p class="muted">Community candidates, not game-tested. VRAM is a rough estimate for the model alone at 4K context. Downloading never loads a model.</p>
+        <p id="install-error" class="inline-error" role="alert" hidden></p>
+        <p id="install-busy" class="muted" role="status" hidden>Another operation is running. Wait for it to finish.</p>
+        <p id="recommended-note" class="note" role="status" hidden></p>
+        <ul id="recommended" class="cards"></ul>
+        <details id="add-models">
+            <summary>More options <span class="muted">Other suggested models, custom reference or local import</span></summary>
+            <p id="preset-note" class="muted" role="status" hidden></p>
+            <form id="preset-form" class="row">
+                <label>Suggested model<select id="preset"></select></label>
+                <button id="preset-download" class="primary" data-mutation>Download</button>
+            </form>
+            <form id="custom-form" class="row">
+                <label>Custom Hugging Face URL or model reference<input id="source" placeholder="owner/model-GGUF@Q4_K_M" required maxlength="500"></label>
+                <button id="custom-download" data-mutation>Download</button>
+            </form>
+            <form id="import-form" class="row">
+                <label>Import local model: path on this PC<input id="local-path" placeholder="C:\Models\model.gguf" required maxlength="1024" autocomplete="off" spellcheck="false" aria-describedby="import-help"></label>
+                <button id="local-import" data-mutation>Import</button>
+            </form>
+            <div id="import-help" class="muted">
+                <p>Import copies a standalone <code>.gguf</code> file already on the PC running DwemerDistro; nothing is uploaded from this browser. Paste its full path; the original stays in place. DwemerDistro needs free space for one copy, or two if LM Studio’s model folder is on another drive.</p>
+                <p>Ollama models are stored as managed blobs, not ordinary GGUF files, so they can’t be imported. Connect CHIM to Ollama instead. Split GGUF sets aren’t supported.</p>
+            </div>
+        </details>
+    </div>
+    <div id="search-panel" role="tabpanel" aria-labelledby="tab-search" hidden>
+    <p id="hf-error" class="inline-error" role="alert" hidden></p>
+    <div id="hf-results-view">
+        <form id="hf-form" role="search" novalidate>
+            <div class="row">
+                <label>Model name or repository URL<input id="hf-query" maxlength="300" autocomplete="off" spellcheck="false" placeholder="Lumimaid or https://huggingface.co/owner/model-GGUF"></label>
+                <button id="hf-submit" class="primary">Search</button>
+            </div>
+            <div class="hf-filters">
+                <label>Creator<input id="hf-author" maxlength="96" autocomplete="off" spellcheck="false" placeholder="Any, e.g. bartowski"></label>
+                <label>Model size<select id="hf-size">
+                    <option value="">Any</option><option value="0-4">Up to 4B</option><option value="4-9">4–9B</option>
+                    <option value="9-15">9–15B</option><option value="15-35">15–35B</option><option value="35-">35B and up</option>
+                </select></label>
+                <label>Task<select id="hf-task">
+                    <option value="">Any GGUF</option><option value="text-generation">Text generation</option><option value="image-text-to-text">Image and text</option>
+                </select></label>
+                <label>Sort<select id="hf-sort">
+                    <option value="trending">Trending</option><option value="downloads">Downloads</option><option value="likes">Likes</option>
+                    <option value="updated">Recently updated</option><option value="newest">Newest</option>
+                </select></label>
+                <button type="button" id="hf-reset" class="quiet small">Reset filters</button>
+            </div>
+        </form>
+        <p class="muted">Public, non-gated GGUF repositories. Size and task come from Hugging Face metadata, which some repositories lack.</p>
+        <p id="hf-status" class="muted" role="status"></p>
+        <ul id="hf-results" class="hf-results" aria-label="GGUF repositories"></ul>
+        <button type="button" id="hf-more" class="small" hidden>Show more</button>
+    </div>
+    <div id="hf-files-view" hidden>
+        <div class="files-head">
+            <button type="button" id="hf-back" class="quiet small">← Results</button>
+            <h3 id="hf-repo"></h3>
+            <a id="hf-link" target="_blank" rel="noopener noreferrer">View on Hugging Face</a>
+        </div>
+        <p id="hf-files-status" class="muted" role="status"></p>
+        <div id="hf-file-filters" class="hf-filters" role="group" aria-label="Filter this repository’s files" hidden>
+            <label>Quantization<select id="hf-quant"><option value="">All</option></select></label>
+            <label>Max download (GB)<input id="hf-max" type="number" min="0.1" step="0.1" inputmode="decimal" placeholder="Any"></label>
+            <label>Sort files<select id="hf-file-sort">
+                <option value="size">Size, smallest first</option><option value="size-desc">Size, largest first</option><option value="name">Name</option>
+            </select></label>
+            <button type="button" id="hf-file-reset" class="quiet small">Reset file filters</button>
+        </div>
+        <fieldset id="hf-files" class="file-list"><legend class="sr-only">Choose a standalone GGUF file</legend></fieldset>
+        <div class="button-group">
+            <button type="button" id="hf-download" class="primary" data-mutation>Download selected file</button>
+            <span id="hf-download-note" class="muted">VRAM use is unknown for searched files. Downloading never loads the model.</span>
+        </div>
+    </div>
+    </div>
+</dialog>
 </body>
 </html>
