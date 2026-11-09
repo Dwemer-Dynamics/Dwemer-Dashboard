@@ -380,12 +380,19 @@ $reignUrl = sprintf('%s://%s:8089/', $requestScheme, $stobeHostForUrl);
 $requestPort = parse_url('http://' . $requestHostRaw, PHP_URL_PORT);
 $lorkhanPort = $requestPort === 7514 ? 7514 : 8090;
 $lorkhanUrl = sprintf('%s://%s:%d/LorkhanServer/ui/home.php', $requestScheme, $stobeHostForUrl, $lorkhanPort);
+require_once(__DIR__ . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'server_version.php');
+// versionFiles: each server's own installed release metadata, in that server's read order.
 $modCards = [
-    ['name' => 'CHIM', 'game' => 'Skyrim / Skyrim VR', 'image' => 'chim-rail.jpg', 'url' => $chimUrl, 'root' => $herikaRoot],
-    ['name' => 'LORKHAN', 'game' => 'Morrowind / OpenMW', 'image' => 'lorkhan-rail.jpg', 'url' => $lorkhanUrl, 'root' => $lorkhanRoot],
-    ['name' => 'DIALECTIC', 'game' => 'Fallout: New Vegas / TTW', 'image' => 'dialectic-rail.jpg', 'url' => $dialecticUrl, 'root' => $dialecticRoot],
-    ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot],
+    ['name' => 'CHIM', 'game' => 'Skyrim / Skyrim VR', 'image' => 'chim-rail.jpg', 'url' => $chimUrl, 'root' => $herikaRoot,
+        'versionFiles' => ['.version_number.txt']],
+    ['name' => 'LORKHAN', 'game' => 'Morrowind / OpenMW', 'image' => 'lorkhan-rail.jpg', 'url' => $lorkhanUrl, 'root' => $lorkhanRoot,
+        'versionFiles' => ['version.txt']],
+    ['name' => 'DIALECTIC', 'game' => 'Fallout: New Vegas / TTW', 'image' => 'dialectic-rail.jpg', 'url' => $dialecticUrl, 'root' => $dialecticRoot,
+        'versionFiles' => ['.version_number.txt']],
+    ['name' => 'STOBE', 'game' => 'Kenshi', 'image' => 'stobe-rail.jpg', 'url' => $stobeUrl, 'root' => $stobeRoot,
+        'versionFiles' => ['versionnumber.txt', 'version.txt', '.version_number.txt']],
     ['name' => 'REIGN', 'game' => 'Mount & Blade II: Bannerlord', 'image' => 'reign-logo.png', 'url' => $reignUrl,
+        'versionFiles' => ['.version_number.txt'],
         'root' => (is_file('/var/www/html/ReignServer/runtime/current/ReignServer') || is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer')) ? '/var/www/html/ReignServer/runtime/current' : ''],
 ];
 $distroDebuggerUrl = 'distro_debugger.php';
@@ -982,7 +989,9 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
     <title><?= htmlspecialchars($TITLE, ENT_QUOTES, 'UTF-8') ?></title>
     <link rel="icon" type="image/x-icon" href="images/favicon.ico">
     <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/mod_card_effects.css?v=<?= (int) filemtime(__DIR__ . '/css/mod_card_effects.css') ?>">
     <script src="js/home_storage.js?v=<?= (int) filemtime(__DIR__ . '/js/home_storage.js') ?>" defer></script>
+    <script src="js/mod_card_effects.js?v=<?= (int) filemtime(__DIR__ . '/js/mod_card_effects.js') ?>" defer></script>
     <style>
         @font-face {
             font-family: 'MagicCards';
@@ -1018,8 +1027,6 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         body {
             margin: 0;
             min-height: 100vh;
-            display: grid;
-            place-items: center;
             <?php if ($hasCustomBackground): ?>
             background:
                 linear-gradient(180deg, rgba(24, 28, 35, 0.55) 0%, rgba(15, 17, 22, 0.75) 100%),
@@ -1029,49 +1036,65 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             <?php endif; ?>
         }
 
+        /* Page frame: dashboard, then a Patreon band; from 1360px the band becomes a rail matching the dashboard height. */
         .dashboard-layout {
-            width: min(1200px, 95vw);
+            --dashboard-gutter: 24px;
+            width: min(1200px, calc(100% - 2 * var(--dashboard-gutter)));
             box-sizing: border-box;
+            margin: 28px auto 48px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 20px;
+            /* Card glows may bleed into the gutter but never widen the page. */
+            overflow-x: clip;
+            overflow-clip-margin: var(--dashboard-gutter);
         }
 
         .dashboard-shell {
-            width: 100%;
+            min-width: 0;
             box-sizing: border-box;
             background: rgba(24, 28, 35, 0.95);
             border: 1px solid rgba(138, 155, 182, 0.25);
             border-radius: 14px;
-            padding: 40px 32px;
+            padding: 32px;
             box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
-            text-align: center;
+            text-align: left;
+        }
+
+        .home-panel {
+            border: 1px solid rgba(138, 155, 182, 0.2);
+            border-radius: 12px;
+            background: linear-gradient(180deg, rgba(34, 40, 52, 0.72), rgba(24, 28, 37, 0.72));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
         }
 
         .patron-shell {
-            position: fixed;
-            top: 5vh;
-            right: max(16px, 2vw);
-            width: min(340px, 28vw);
-            max-height: 90vh;
-            background: transparent;
-            border: 0;
-            border-radius: 0;
-            padding: 0;
-            box-shadow: none;
+            min-width: 0;
+            box-sizing: border-box;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            min-height: 0;
+            padding: 16px 22px 18px;
+            background: rgba(20, 23, 30, 0.9);
+            color: #f2f5f9;
+        }
+
+        .patron-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 6px 16px;
         }
 
         .patron-title {
-            margin: 0 0 14px;
-            width: 90%;
+            margin: 0;
             font-size: 24px;
             color: #ffffff;
             line-height: 1.2;
             font-family: 'MagicCards', serif;
+            font-weight: normal;
             letter-spacing: 0.4px;
             word-spacing: 6px;
-            text-align: right;
             text-shadow:
                 -1px -1px 0 #000,
                  1px -1px 0 #000,
@@ -1080,7 +1103,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         }
 
         .patron-sync-note {
-            margin: 0 0 12px;
+            margin: 0;
             color: #ef6b6b;
             font-size: 12px;
             line-height: 1.4;
@@ -1092,16 +1115,17 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             padding: 0;
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 3px;
         }
 
         .patron-list-scroll {
-            height: 90vh;
-            max-height: 90vh;
-            width: 90%;
-            margin: 0 auto;
+            height: 260px;
+            margin-top: 10px;
             overflow: hidden;
             min-height: 0;
+            /* Soften where the looping list enters and leaves. */
+            -webkit-mask-image: linear-gradient(transparent, #000 14px, #000 calc(100% - 14px), transparent);
+            mask-image: linear-gradient(transparent, #000 14px, #000 calc(100% - 14px), transparent);
         }
 
         .patron-list-track {
@@ -1111,8 +1135,13 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             will-change: transform;
         }
 
+        /* Band: each loop cycle shows the three tiers side by side. */
         .patron-list-cycle {
             flex: 0 0 auto;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            column-gap: 28px;
+            align-items: start;
         }
 
         @keyframes patron-list-scroll-loop {
@@ -1126,33 +1155,31 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         .patron-tier-group {
             margin: 0;
-            padding: 10px 0 12px;
+            padding: 0 0 16px;
+            min-width: 0;
         }
 
         .patron-tier-title {
-            margin: 0 0 10px auto;
-            width: 50%;
-            padding-bottom: 7px;
+            margin: 0 0 7px;
+            padding-bottom: 5px;
             border-bottom: 1px solid rgba(138, 155, 182, 0.45);
             color: #d8e3f2;
-            font-size: 19.5px;
+            font-size: 18px;
             letter-spacing: 1px;
             text-transform: none;
             font-weight: normal;
             font-family: 'MagicCards', serif;
-            text-align: right;
             display: flex;
             align-items: center;
-            justify-content: flex-end;
             gap: 8px;
         }
 
         .patron-tier-icon {
-            width: 56px;
-            height: 56px;
+            width: 38px;
+            height: 38px;
             object-fit: contain;
             display: block;
-            flex: 0 0 56px;
+            flex: 0 0 38px;
         }
 
         .patron-tier-title-label {
@@ -1178,12 +1205,11 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         }
 
         .patron-list-item {
-            color: #f2f5f9;
-            font-size: 14px;
+            color: #e7ecf2;
+            font-size: 13.5px;
             padding: 0;
-            line-height: 1.3;
-            word-break: break-word;
-            text-align: right;
+            line-height: 1.4;
+            overflow-wrap: anywhere;
         }
 
         .patron-title-link {
@@ -1203,11 +1229,13 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .patron-title-link:focus-visible {
             color: #f0cf75;
             text-decoration: underline;
-            text-underline-offset: 2px;
+            text-underline-offset: 3px;
         }
 
+        .patron-title-link:focus-visible { outline: 2px solid #f0cf75; outline-offset: 3px; }
+
         .patron-empty {
-            margin: 0;
+            margin: 10px 0 0;
             color: #c7d0dd;
             font-size: 14px;
             line-height: 1.5;
@@ -1218,7 +1246,44 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             color: #9cadc3;
             font-size: 13px;
             line-height: 1.4;
-            text-align: right;
+        }
+
+        @media (min-width: 1360px) {
+            .dashboard-layout {
+                --dashboard-gutter: 32px;
+                width: min(1560px, calc(100% - 2 * var(--dashboard-gutter)));
+                grid-template-columns: minmax(0, 1fr) 280px;
+                justify-content: center;
+                align-items: stretch;
+                gap: 24px;
+            }
+
+            .dashboard-shell { padding: 28px; }
+
+            /* Rail: stretched to the dashboard's top and bottom; the member loop fills the remaining height. */
+            .patron-shell { padding: 18px 18px 20px; }
+
+            .patron-head { flex-direction: column; align-items: flex-start; gap: 4px; }
+            /* Size containment keeps the member list from driving the row height. */
+            .patron-list-scroll { flex: 1 1 0; height: auto; contain: size; }
+            .patron-list-cycle { grid-template-columns: minmax(0, 1fr); }
+        }
+
+        @media (max-width: 640px) {
+            .dashboard-layout { --dashboard-gutter: 10px; margin: 12px auto 32px; gap: 14px; }
+            .dashboard-shell { padding: 20px 14px; border-radius: 12px; }
+            .patron-shell { padding: 14px 14px 16px; }
+            .patron-list-scroll { height: 300px; }
+            .patron-list-cycle { grid-template-columns: minmax(0, 1fr); }
+            .patron-tier-icon { width: 32px; height: 32px; flex-basis: 32px; }
+        }
+
+        /* Without motion every member stays reachable by scrolling; the duplicate loop copy is dropped. */
+        @media (prefers-reduced-motion: reduce) {
+            .patron-list-scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4a5466 transparent; }
+            .patron-list-scroll { -webkit-mask-image: none; mask-image: none; }
+            .patron-list-track { animation: none; }
+            .patron-list-cycle[aria-hidden="true"] { display: none; }
         }
 
         .dashboard-title {
@@ -1236,16 +1301,83 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                  1px  1px 0 #000;
         }
 
+        .dashboard-header {
+            position: relative;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px 24px;
+            padding-bottom: 20px;
+            text-align: left;
+        }
+
+        /* Brass hairline that fades into Ploofy's cyan line toward its panel. */
+        .dashboard-header::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 1px;
+            background: linear-gradient(90deg, rgba(230, 183, 108, 0.6), rgba(138, 155, 182, 0.18) 55%, rgba(0, 229, 255, 0.22));
+        }
+
+        .dashboard-header .dashboard-title { margin: 0; min-width: 0; }
+
+        /* Ploofy.ai panel: tokens copied from ploofy.ai (.hero-logo frame, --cyan palette); the whole panel is the link. */
+        .dashboard-ploofy {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+            min-height: 44px;
+            padding: 6px;
+            border-radius: 14px;
+            background: #0f0e0e;
+            box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.25), 0 0 32px rgba(0, 229, 255, 0.12), 0 12px 28px rgba(0, 0, 0, 0.45);
+            color: #f0f3f5;
+            text-decoration: none;
+            transition: box-shadow 0.15s;
+        }
+
+        .dashboard-ploofy:hover,
+        .dashboard-ploofy:focus-visible {
+            box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.5), 0 0 40px rgba(0, 229, 255, 0.22), 0 12px 28px rgba(0, 0, 0, 0.45);
+        }
+
+        .dashboard-ploofy:focus-visible { outline: 2px solid #00e5ff; outline-offset: 3px; }
+
+        .dashboard-ploofy-logo {
+            display: block;
+            flex: none;
+            width: auto;
+            height: 50px;
+            /* The logo's near-black ground merges with the panel and its glow. */
+            mix-blend-mode: lighten;
+        }
+
+        @media (max-width: 640px) {
+            .dashboard-header { gap: 14px; padding-bottom: 16px; }
+            .dashboard-header .dashboard-title { font-size: 34px; word-spacing: 7px; }
+            .dashboard-ploofy { width: 100%; }
+            .dashboard-ploofy-logo { height: 44px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .dashboard-ploofy { transition: none; }
+        }
+
         .dashboard-subtitle {
             color: #aeb8c5;
             margin-bottom: 28px;
         }
 
+        /* Tools: three equal compact buttons; stacked 56px rows below 720px. */
         .dashboard-actions {
-            display: flex;
-            justify-content: center;
-            gap: 18px;
-            flex-wrap: wrap;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
         }
 
         .dashboard-actions-secondary {
@@ -1253,14 +1385,16 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         }
 
         .dashboard-button {
-            min-width: 280px;
-            min-height: 76px;
+            box-sizing: border-box;
+            min-width: 0;
+            min-height: 64px;
             border-radius: 10px;
-            display: inline-flex;
+            display: flex;
             align-items: center;
             justify-content: center;
             gap: 10px;
-            font-size: 22px;
+            font-size: 17px;
+            letter-spacing: 0.5px;
             text-transform: uppercase;
             font-weight: 700;
             text-decoration: none;
@@ -1268,8 +1402,10 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             color: #ffffff;
             background-color: rgba(30, 35, 45, 0.8);
             transition: all 0.2s ease-in-out;
-            padding-inline: 18px;
+            padding: 8px 16px;
         }
+
+        .dashboard-button:focus-visible { outline: 3px solid #ffad61; outline-offset: 3px; }
 
         .dashboard-button:hover {
             transform: translateY(-1px);
@@ -1285,8 +1421,17 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             margin-top: 22px;
         }
 
-        .dashboard-mods-title { margin-top: 22px; text-align: left; }
-        .dashboard-mods-title + .dashboard-mods { margin-top: 10px; }
+        .dashboard-mods-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 22px; }
+        .dashboard-mods-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+        .dashboard-mods-heading .dashboard-mods-title { margin: 0; text-align: left; }
+        .dashboard-mods-heading + .dashboard-mods { margin-top: 10px; }
+        .mod-card-effects-toggle {
+            padding: 6px 10px; border: 1px solid #68717d; border-radius: 999px;
+            color: #e2e8f0; background: #141a24; font: inherit; font-size: 12px; cursor: pointer;
+        }
+        .mod-card-effects-toggle[hidden] { display: none; }
+        .mod-card-effects-toggle:disabled { cursor: default; opacity: .7; }
+        .mod-card-effects-toggle:focus-visible { outline: 2px solid #ffad61; outline-offset: 3px; }
 
         .mod-card {
             grid-column: span 2;
@@ -1311,11 +1456,17 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             aspect-ratio: 16 / 9;
             object-fit: contain;
         }
+        .mod-card-open {
+            display: flex; flex-direction: column; flex: 1; width: 100%;
+            color: inherit; text-decoration: none;
+        }
+        .mod-card-open:hover { color: inherit; text-decoration: none; }
 
         .mod-card-label {
             margin-top: auto;
             position: relative;
             width: 100%;
+            min-height: 60px;
             box-sizing: border-box;
             padding: 10px 14px;
             background: rgba(0, 0, 0, 0.78);
@@ -1333,28 +1484,30 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         .mod-card-name,
         .mod-card-game,
+        .mod-card-version,
         .mod-card-status {
             display: block;
         }
 
         .mod-card-name { font-size: 23px; line-height: 1.2; }
-        .mod-card-game { margin-top: 3px; font-size: 13px; color: #e0e0e0; }
+        .mod-card-game { margin-top: 0; font-size: 13.5px; font-weight: 700; color: #ececec; }
+        .mod-card-version { margin-top: 1px; font-size: 12px; line-height: 1.3; color: #b4b4b4; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
         .mod-card-status { margin-top: 4px; font-size: 13px; color: #e0e0e0; }
 
-        .mod-card[href]:hover {
+        .mod-card:has(.mod-card-open[href]):hover {
             border-color: var(--mod-card-accent, #68717d);
             box-shadow: 0 0 0 1px var(--mod-card-accent, #68717d);
             color: #fff;
             text-decoration: none;
         }
 
-        .mod-card:focus-visible {
+        .mod-card:focus-within {
             outline: 3px solid var(--mod-card-accent, #68717d);
             outline-offset: 4px;
         }
 
-        .mod-card[aria-disabled="true"] { cursor: not-allowed; }
-        .mod-card[aria-disabled="true"] .mod-card-art { filter: grayscale(1) brightness(0.45); }
+        .mod-card-open[aria-disabled="true"] { cursor: not-allowed; }
+        .mod-card-open[aria-disabled="true"] .mod-card-art { filter: grayscale(1) brightness(0.45); }
 
         @media (min-width: 1001px) {
             .mod-card:nth-child(4):nth-last-child(2) { grid-column: 2 / span 2; }
@@ -1365,22 +1518,28 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             .mod-card { grid-column: auto; }
         }
 
+        @media (max-width: 1100px) {
+            .dashboard-button { font-size: 15.5px; padding-inline: 12px; }
+        }
+
+        @media (max-width: 720px) {
+            .dashboard-actions { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+            .dashboard-button { min-height: 56px; font-size: 15px; justify-content: flex-start; padding: 6px 14px; }
+            .dashboard-button .chim-brand-icon,
+            .dashboard-button .kagrenac-brand-icon { width: 32px; height: 32px; min-width: 32px; min-height: 32px; }
+        }
+
         @media (max-width: 640px) {
             .dashboard-mods { grid-template-columns: minmax(0, 1fr); }
-            .dashboard-shell { padding: 24px 18px; box-sizing: border-box; }
-            .dashboard-actions.dashboard-actions-secondary .dashboard-button {
-                min-width: 0;
-                width: 100%;
-                box-sizing: border-box;
-                font-size: 18px;
-            }
+            .dashboard-mods-heading { margin-top: 18px; }
+            /* Compact label strips keep the 16:9 artwork dominant on phones. */
+            .mod-card-label { min-height: 48px; padding: 7px 12px; display: flex; flex-direction: column; justify-content: center; }
         }
 
         .dashboard-button.distro-debugger {
             background-color: #5e0505;
             border-color: #842121;
             color: #ffffff;
-            min-width: 320px;
         }
 
         .dashboard-button.distro-debugger:hover {
@@ -1392,7 +1551,6 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             background-color: #5e0505;
             border-color: #842121;
             color: #ffffff;
-            min-width: 320px;
         }
 
         .dashboard-button.database-manager:hover {
@@ -1432,20 +1590,20 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         }
 
         .chim-brand-icon {
-            width: 42px;
-            height: 42px;
-            min-width: 42px;
-            min-height: 42px;
+            width: 36px;
+            height: 36px;
+            min-width: 36px;
+            min-height: 36px;
             object-fit: contain;
             display: block;
             border-radius: 4px;
         }
 
         .kagrenac-brand-icon {
-            width: 42px;
-            height: 42px;
-            min-width: 42px;
-            min-height: 42px;
+            width: 36px;
+            height: 36px;
+            min-width: 36px;
+            min-height: 36px;
             object-fit: cover;
             display: block;
             border-radius: 50%;
@@ -1469,12 +1627,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             grid-template-areas: "summary mods manage";
             align-items: center;
             gap: 12px 28px;
-            margin-top: 22px;
             padding: 14px 22px;
-            border: 1px solid rgba(138, 155, 182, 0.2);
-            border-radius: 12px;
-            background: linear-gradient(180deg, rgba(34, 40, 52, 0.72), rgba(24, 28, 37, 0.72));
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
             text-align: left;
             color: #c7d0dd;
             font-size: 14px;
@@ -1593,12 +1746,37 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .home-storage-manage:focus-visible { outline: 2px solid #ffad61; outline-offset: 3px; }
 
         .home-custom-mods {
-            margin-top: 12px;
-            padding: 12px 22px 14px;
-            border: 1px solid rgba(138, 155, 182, 0.2);
-            border-radius: 12px;
-            background: linear-gradient(180deg, rgba(34, 40, 52, 0.72), rgba(24, 28, 37, 0.72));
+            margin-top: 18px;
+            padding: 12px 18px 14px;
             text-align: left;
+        }
+
+        .home-status { margin-top: 16px; }
+
+        .home-custom-mods-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+
+        .home-kagrenac-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            box-sizing: border-box;
+            min-height: 44px;
+            padding: 4px 14px 4px 6px;
+            border: 1px solid rgba(255, 173, 97, 0.35);
+            border-radius: 999px;
+            color: #ffd2a6;
+            text-decoration: none;
+            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+
+        .home-kagrenac-link .kagrenac-brand-icon { width: 28px; height: 28px; min-width: 28px; min-height: 28px; }
+        .home-kagrenac-name { font-size: 13px; font-weight: 700; letter-spacing: 1px; }
+        .home-kagrenac-tagline { color: #9cadc3; font-size: 12px; }
+        .home-kagrenac-link:hover { color: #ffffff; border-color: #ffad61; background: rgba(255, 173, 97, 0.12); }
+        .home-kagrenac-link:focus-visible { outline: 2px solid #ffad61; outline-offset: 3px; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .home-kagrenac-link { transition: none; }
         }
 
         .home-custom-mods .home-storage-note { display: block; margin: 6px 0 0; }
@@ -1689,65 +1867,129 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             .home-storage-manage, .home-custom-mod { transition: none; }
         }
 
+        /* Database checks share the storage panel: problems stay visible, completed checks collapse. */
         .dashboard-status {
-            margin-top: 20px;
-            font-size: 14px;
-        }
-
-        .dashboard-status-line {
-            display: block;
-            line-height: 1.5;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 8px 20px;
+            padding: 11px 22px 12px;
+            border-top: 1px solid rgba(138, 155, 182, 0.14);
+            font-size: 13.5px;
+            line-height: 1.45;
             color: #c7d0dd;
         }
 
-        .dashboard-status-line.ok {
-            color: #8ed081;
+        .dashboard-status-attention {
+            flex: 1 1 360px;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
 
-        .dashboard-status-line.error {
-            color: #ef6b6b;
+        .dashboard-status-line {
+            display: flex;
+            gap: 9px;
+            margin: 0;
+            min-width: 0;
+            font-size: inherit;
+            line-height: inherit;
+            overflow-wrap: anywhere;
         }
 
-        @media (max-width: 2000px) {
-            .dashboard-layout {
-                width: min(1200px, 94vw);
-            }
+        .dashboard-status-attention .dashboard-status-line::before {
+            content: '!';
+            flex: none;
+            width: 18px;
+            height: 18px;
+            margin-top: 1px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            background: #9cadc3;
+            color: #12151b;
+            font-weight: 800;
+            font-size: 12px;
+            line-height: 1;
+        }
 
-            .patron-shell {
-                position: static;
-                width: 100%;
-                max-height: none;
-                padding-top: 18px;
-            }
+        .dashboard-status-line.unavailable { color: #f4c47a; }
+        .dashboard-status-line.unavailable::before { background: #f4c47a; }
+        .dashboard-status-line.error { color: #ef6b6b; }
+        .dashboard-status-attention .dashboard-status-line.error::before { background: #ef6b6b; }
+        .dashboard-status-line.ok { color: #a9dca0; }
 
-            .patron-list-scroll {
-                width: 90%;
-                margin: 5vh auto;
-            }
+        .dashboard-status-ok { flex: 0 1 auto; margin-left: auto; color: #8ed081; }
+
+        .dashboard-status-ok summary {
+            cursor: pointer;
+            list-style: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 2px 4px;
+            border-radius: 6px;
+        }
+
+        .dashboard-status-ok summary::-webkit-details-marker { display: none; }
+        .dashboard-status-ok summary::before { content: '\2713'; font-weight: 800; }
+        .dashboard-status-ok summary::after { content: '\25BE'; color: #9cadc3; transition: transform 0.15s; }
+        .dashboard-status-ok[open] summary::after { transform: rotate(180deg); }
+        .dashboard-status-ok summary:focus-visible { outline: 2px solid #8ed081; outline-offset: 2px; }
+        .dashboard-status-hint { color: #9cadc3; font-size: 12px; }
+
+        .dashboard-status-ok ul {
+            list-style: none;
+            margin: 6px 0 0;
+            padding: 0 0 0 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 13px;
+        }
+
+        @media (max-width: 640px) {
+            .dashboard-status { padding: 10px 14px 12px; }
+            .dashboard-status-attention { flex-basis: 100%; }
+            .dashboard-status-ok { margin-left: 0; }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .patron-list-track {
-                animation: none;
-            }
+            .dashboard-status-ok summary::after { transition: none; }
         }
     </style>
 </head>
 <body>
-    <main class="dashboard-layout">
-        <section class="dashboard-shell">
-            <h1 class="dashboard-title">Dwemer Dashboard</h1>
-            <h2 class="home-storage-title dashboard-mods-title">Official mods</h2>
+    <div class="dashboard-layout">
+        <main class="dashboard-shell">
+            <header class="dashboard-header">
+                <h1 class="dashboard-title">Dwemer Dashboard</h1>
+                <a class="dashboard-ploofy" href="https://ploofy.ai/" target="_blank" rel="noopener noreferrer" aria-label="Ploofy.ai (opens in a new tab)">
+                    <img class="dashboard-ploofy-logo" src="images/ploofy-logo.png" alt="" width="338" height="104" decoding="async">
+                </a>
+            </header>
+            <div class="dashboard-mods-heading">
+                <h2 class="home-storage-title dashboard-mods-title">Official mods</h2>
+                <span class="dashboard-mods-tools">
+                    <button type="button" class="mod-card-effects-toggle" aria-pressed="false" hidden>Pause effects</button>
+                </span>
+            </div>
             <div class="dashboard-mods" role="group" aria-label="Official mods">
                 <?php foreach ($modCards as $mod):
                     $displayName = $mod['name'] === 'REIGN' ? 'REIGN (Closed Alpha)' : $mod['name'];
                     // Installation is local file presence, independent of update or service health.
                     $installed = $mod['root'] !== '' && ($mod['name'] === 'REIGN' ? (is_file($mod['root'] . '/ReignServer') || is_file($mod['root'] . '/ReignBetaServer')) : is_file($mod['root'] . '/ui/home.php'));
+                    $versionLabel = $installed && isset($mod['versionFiles'])
+                        ? (dashboard_server_version($mod['root'], $mod['versionFiles']) ?? 'Version unavailable') : null;
+                    $openLabel = 'Open ' . $displayName . ($versionLabel === null ? '' : ', ' . (str_starts_with($versionLabel, 'Version') ? $versionLabel : 'version ' . $versionLabel));
                 ?>
-                <a class="mod-card mod-card-<?= htmlspecialchars(strtolower($mod['name']), ENT_QUOTES, 'UTF-8') ?>"
+                <div class="mod-card mod-card-<?= htmlspecialchars(strtolower($mod['name']), ENT_QUOTES, 'UTF-8') ?>">
+                <a class="mod-card-open"
                     <?php if ($installed): ?>
                         href="<?= htmlspecialchars($mod['url'], ENT_QUOTES, 'UTF-8') ?>"
-                        aria-label="Open <?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?>"
+                        aria-label="<?= htmlspecialchars($openLabel, ENT_QUOTES, 'UTF-8') ?>"
                     <?php else: ?>
                         role="link" aria-disabled="true" tabindex="-1"
                         aria-label="<?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?> — Not installed"
@@ -1755,13 +1997,22 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                     <img class="mod-card-art" src="images/<?= htmlspecialchars($mod['image'], ENT_QUOTES, 'UTF-8') ?>?v=<?= (int) filemtime(__DIR__ . '/images/' . $mod['image']) ?>" alt="" width="1920" height="1080">
                     <span class="mod-card-label">
                         <span class="mod-card-game"><?= htmlspecialchars($mod['game'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <?php if ($versionLabel !== null): ?><span class="mod-card-version"><?= htmlspecialchars($versionLabel, ENT_QUOTES, 'UTF-8') ?></span><?php endif; ?>
                         <?php if (!$installed): ?><span class="mod-card-status">Not installed</span><?php endif; ?>
                     </span>
                 </a>
+                </div>
                 <?php endforeach; ?>
             </div>
-            <section class="home-custom-mods" aria-labelledby="home-custom-mods-title">
-                <h2 class="home-storage-title" id="home-custom-mods-title">Custom mods</h2>
+            <section class="home-custom-mods home-panel" aria-labelledby="home-custom-mods-title">
+                <div class="home-custom-mods-heading">
+                    <h2 class="home-storage-title" id="home-custom-mods-title">Custom mods</h2>
+                    <a class="home-kagrenac-link" href="https://dwemerdynamics.com/custom-mods/index.html" target="_blank" rel="noopener noreferrer" aria-label="KAGRENAC AI Mod Maker (opens in a new tab)">
+                        <img class="kagrenac-brand-icon" src="images/kagrenac-icon.png" alt="" width="28" height="28">
+                        <span class="home-kagrenac-name">KAGRENAC</span>
+                        <span class="home-kagrenac-tagline">AI Mod Maker</span>
+                    </a>
+                </div>
                 <?php if ($customMods['mods'] === [] && $customMods['unavailable'] === 0): ?>
                     <p class="home-storage-note"><?= $customMods['readable'] ? 'No custom mods installed.' : 'No custom mods yet.' ?> Add one in the launcher under Mods &gt; Custom mods.</p>
                 <?php elseif ($customMods['mods'] !== []): ?>
@@ -1802,6 +2053,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                     </span>
                 </a>
             </div>
+            <div class="home-status home-panel">
             <section class="home-storage" id="home-storage" aria-labelledby="home-storage-title" aria-busy="true"
                 data-mods="<?= htmlspecialchars(json_encode($storageMods), ENT_QUOTES, 'UTF-8') ?>">
                 <div class="home-storage-summary">
@@ -1820,20 +2072,41 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 <a class="home-storage-manage" href="data_manager.php?mod=all&amp;view=overview">Manage storage<span aria-hidden="true">&rarr;</span></a>
                 <noscript><span class="home-storage-note">Enable JavaScript to measure storage.</span></noscript>
             </section>
-            <div class="dashboard-status">
-                <?php foreach ($dbUpdateLines as $line): ?>
-                    <span class="dashboard-status-line <?= htmlspecialchars((string)$line['status'], ENT_QUOTES, 'UTF-8') ?>">
-                        <?= htmlspecialchars((string)$line['detail'], ENT_QUOTES, 'UTF-8') ?>
-                    </span>
-                <?php endforeach; ?>
-            </div>
-        </section>
-
-        <aside class="patron-shell" aria-label="Current Patreon members">
-            <h2 class="patron-title"><a class="patron-title-link" href="<?= htmlspecialchars($patreonCampaignUrl, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer">Patreon Members</a></h2>
-            <?php if ($patronSyncNote !== ''): ?>
-                <p class="patron-sync-note"><?= htmlspecialchars($patronSyncNote, ENT_QUOTES, 'UTF-8') ?></p>
+            <?php
+            $dbStatusOkLines = array_values(array_filter($dbUpdateLines, static fn(array $line): bool => (string) $line['status'] === 'ok'));
+            $dbStatusAttentionLines = array_values(array_filter($dbUpdateLines, static fn(array $line): bool => (string) $line['status'] !== 'ok'));
+            ?>
+            <?php if ($dbUpdateLines !== []): ?>
+                <div class="dashboard-status" role="group" aria-label="Database version checks">
+                    <?php if ($dbStatusAttentionLines !== []): ?>
+                        <div class="dashboard-status-attention">
+                            <?php foreach ($dbStatusAttentionLines as $line): ?>
+                                <p class="dashboard-status-line <?= htmlspecialchars((string)$line['status'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string)$line['detail'], ENT_QUOTES, 'UTF-8') ?></p>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                    <?php if ($dbStatusOkLines !== []): ?>
+                        <details class="dashboard-status-ok">
+                            <summary><?= count($dbStatusOkLines) ?> database <?= count($dbStatusOkLines) === 1 ? 'check' : 'checks' ?> completed <span class="dashboard-status-hint">Details</span></summary>
+                            <ul>
+                                <?php foreach ($dbStatusOkLines as $line): ?>
+                                    <li class="dashboard-status-line ok"><?= htmlspecialchars((string)$line['detail'], ENT_QUOTES, 'UTF-8') ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </details>
+                    <?php endif; ?>
+                </div>
             <?php endif; ?>
+            </div>
+        </main>
+
+        <aside class="patron-shell home-panel" aria-label="Current Patreon members">
+            <div class="patron-head">
+                <h2 class="patron-title"><a class="patron-title-link" href="<?= htmlspecialchars($patreonCampaignUrl, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer">Patreon Members</a></h2>
+                <?php if ($patronSyncNote !== ''): ?>
+                    <p class="patron-sync-note"><?= htmlspecialchars($patronSyncNote, ENT_QUOTES, 'UTF-8') ?></p>
+                <?php endif; ?>
+            </div>
             <?php if ($patronActiveCount === 0): ?>
                 <p class="patron-empty">No Patreon members found yet. Run <code>csv/patreon_sync_local.php</code> to build <code>data/patron_members.generated.json</code>, or add fallback entries to <code>data/patron_members.json</code>.</p>
             <?php else: ?>
@@ -1869,6 +2142,6 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 </div>
             <?php endif; ?>
         </aside>
-    </main>
+    </div>
 </body>
 </html>
