@@ -998,6 +998,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
     <script src="js/home_storage.js?v=<?= (int) filemtime(__DIR__ . '/js/home_storage.js') ?>" defer></script>
     <script src="js/mod_card_effects.js?v=<?= (int) filemtime(__DIR__ . '/js/mod_card_effects.js') ?>" defer></script>
     <script src="js/home_api_keys.js?v=<?= (int) filemtime(__DIR__ . '/js/home_api_keys.js') ?>" defer></script>
+    <script src="js/custom_mod_cards.js?v=<?= (int) filemtime(__DIR__ . '/js/custom_mod_cards.js') ?>" defer></script>
     <style>
         @font-face {
             font-family: 'MagicCards';
@@ -1658,7 +1659,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             text-decoration: none;
         }
 
-        .mod-card:has(> .mod-card-open:focus-visible) {
+        .mod-card:focus-within {
             outline: 3px solid var(--mod-card-accent, #68717d);
             outline-offset: 4px;
         }
@@ -1972,34 +1973,135 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         .home-custom-mods .home-storage-note { display: block; margin: 6px 0 0; }
 
-        .home-custom-mods-list {
+        /* Custom mod cards: the official card frame and 16:9 art area in their own 3/2/1 grid. Every card shares
+           one dark orange accent; nothing here is derived from a mod's id, and official card effects never apply. */
+        .custom-mod-cards {
             list-style: none;
-            margin: 8px 0 0;
+            margin: 10px 0 0;
             padding: 0;
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
-            gap: 8px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
         }
 
-        .home-custom-mod {
+        .custom-mod-cards > li { display: flex; min-width: 0; }
+
+        .custom-mod-card {
+            --custom-mod-accent: #d2691e;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            min-width: 0;
+            overflow: hidden;
+            border: 1px solid #68717d;
+            border-radius: 10px;
+            background: #080807;
+            color: #fff;
+            text-align: left;
+            text-decoration: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .custom-mod-card:hover,
+        .custom-mod-card:focus-visible {
+            border-color: var(--custom-mod-accent);
+            box-shadow: 0 0 0 1px var(--custom-mod-accent);
+            color: #fff;
+            text-decoration: none;
+        }
+
+        .custom-mod-card:focus-visible { outline: 3px solid var(--custom-mod-accent); outline-offset: 4px; }
+
+        .custom-mod-card-art {
+            position: relative;
+            display: block;
+            aspect-ratio: 16 / 9;
+            overflow: hidden;
+            container-type: inline-size;
+            background: radial-gradient(ellipse at 50% 45%, #2b1e14 0%, #120e0b 55%, #080807 100%);
+        }
+
+        /* Banners are contained, never cropped, so text drawn into the artwork stays whole. */
+        .custom-mod-card-banner {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #080807;
+        }
+
+        .custom-mod-card-icon,
+        .custom-mod-card-monogram {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            box-sizing: border-box;
+            width: 30cqi;
+            height: 30cqi;
+            transform: translate(-50%, -50%);
+        }
+
+        .custom-mod-card-icon { object-fit: contain; filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.6)); }
+
+        .custom-mod-card-monogram {
             display: flex;
             align-items: center;
-            gap: 10px;
-            min-height: 44px;
-            padding: 7px 12px;
-            border: 1px solid rgba(138, 155, 182, 0.18);
-            border-radius: 8px;
-            color: #f2f5f9;
-            text-decoration: none;
-            transition: background-color 0.15s ease, border-color 0.15s ease;
+            justify-content: center;
+            border: 2px solid rgba(210, 105, 30, 0.7);
+            border-radius: 50%;
+            background: rgba(8, 8, 7, 0.55);
+            box-shadow: 0 0 24px rgba(210, 105, 30, 0.18);
+            color: #f4d9bf;
+            font: normal 15cqi/1 'MagicCards', serif;
         }
 
-        .home-custom-mod:hover { border-color: #ffad61; background: rgba(255, 173, 97, 0.08); }
-        .home-custom-mod:focus-visible { outline: 2px solid #ffad61; outline-offset: 2px; }
-        .home-custom-mod-icon { flex: none; width: 28px; height: 28px; object-fit: contain; }
-        .home-custom-mod-text { display: flex; flex-direction: column; min-width: 0; }
-        .home-custom-mod-name { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .home-custom-mod-description { font-size: 12px; color: #9cadc3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        /* Fallback order: banner, then icon emblem, then monogram. A failed image is removed by
+           custom_mod_cards.js, which lets the next layer show; a hidden icon is never fetched. */
+        .custom-mod-card-art:has(> .custom-mod-card-banner) .custom-mod-card-icon,
+        .custom-mod-card-art:has(> img) .custom-mod-card-monogram { display: none; }
+
+        .custom-mod-card-label {
+            display: flex;
+            flex: 1;
+            flex-direction: column;
+            gap: 6px;
+            min-height: 64px;
+            box-sizing: border-box;
+            padding: 12px 16px 14px;
+            background: rgba(0, 0, 0, 0.78);
+        }
+
+        .custom-mod-card-name {
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            overflow: hidden;
+            overflow-wrap: anywhere;
+            color: #fff;
+            font: normal 23px/1.35 'MagicCards', serif;
+            /* MagicCards' own space is very narrow, so words get a wider gap to stay readable. */
+            letter-spacing: 0.6px;
+            word-spacing: 0.32em;
+        }
+
+        .custom-mod-card-version {
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.3;
+            letter-spacing: 0.3px;
+            color: #c9d1dc;
+            font-variant-numeric: tabular-nums;
+        }
+
+        @media (max-width: 1000px) {
+            .custom-mod-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+
+        @media (max-width: 640px) {
+            .custom-mod-cards { grid-template-columns: minmax(0, 1fr); }
+            .custom-mod-card-label { min-height: 52px; padding: 10px 14px 12px; gap: 5px; }
+        }
 
         @media (max-width: 900px) {
             .home-storage { gap: 12px 20px; padding: 14px 18px; }
@@ -2055,7 +2157,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .home-storage-manage, .home-custom-mod { transition: none; }
+            .home-storage-manage, .custom-mod-card { transition: none; }
         }
 
         /* Database checks share the storage panel: problems stay visible, completed checks collapse. */
@@ -2206,20 +2308,26 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                         </span>
                     </a>
                 </div>
-                <?php if ($customMods['mods'] === [] && $customMods['unavailable'] === 0): ?>
+                <?php if ($customMods['mods'] === []): ?>
                     <p class="home-storage-note"><?= $customMods['readable'] ? 'No custom mods installed.' : 'No custom mods yet.' ?> Add one in the launcher under Mods &gt; Custom mods.</p>
                 <?php elseif ($customMods['mods'] !== []): ?>
-                    <ul class="home-custom-mods-list">
-                        <?php foreach ($customMods['mods'] as $customMod): ?>
+                    <ul class="custom-mod-cards" aria-label="Installed custom mods">
+                        <?php foreach ($customMods['mods'] as $customModIndex => $customMod): ?>
                             <li>
-                                <a class="home-custom-mod" href="<?= htmlspecialchars($customMod['url'], ENT_QUOTES, 'UTF-8') ?>" aria-label="Open <?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?>">
-                                    <?php if ($customMod['icon'] !== ''): ?>
-                                        <img class="home-custom-mod-icon" src="<?= htmlspecialchars($customMod['icon'], ENT_QUOTES, 'UTF-8') ?>" alt="" width="28" height="28">
-                                    <?php endif; ?>
-                                    <span class="home-custom-mod-text">
-                                        <span class="home-custom-mod-name"><?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?></span>
-                                        <?php if ($customMod['description'] !== ''): ?>
-                                            <span class="home-custom-mod-description" title="<?= htmlspecialchars($customMod['description'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($customMod['description'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <a class="custom-mod-card" href="<?= htmlspecialchars($customMod['url'], ENT_QUOTES, 'UTF-8') ?>" aria-label="Open <?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?>"<?php if ($customMod['version'] !== ''): ?> aria-describedby="custom-mod-card-<?= (int) $customModIndex ?>"<?php endif; ?>>
+                                    <span class="custom-mod-card-art" aria-hidden="true">
+                                        <span class="custom-mod-card-monogram"><?= htmlspecialchars($customMod['initial'], ENT_QUOTES, 'UTF-8') ?></span>
+                                        <?php if ($customMod['icon'] !== ''): ?>
+                                            <img class="custom-mod-card-icon" src="<?= htmlspecialchars($customMod['icon'], ENT_QUOTES, 'UTF-8') ?>" alt="" loading="lazy" decoding="async">
+                                        <?php endif; ?>
+                                        <?php if ($customMod['banner'] !== ''): ?>
+                                            <img class="custom-mod-card-banner" src="<?= htmlspecialchars($customMod['banner'], ENT_QUOTES, 'UTF-8') ?>" alt="" loading="lazy" decoding="async">
+                                        <?php endif; ?>
+                                    </span>
+                                    <span class="custom-mod-card-label">
+                                        <span class="custom-mod-card-name"><?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?></span>
+                                        <?php if ($customMod['version'] !== ''): ?>
+                                            <span class="custom-mod-card-version" id="custom-mod-card-<?= (int) $customModIndex ?>">v<?= htmlspecialchars($customMod['version'], ENT_QUOTES, 'UTF-8') ?></span>
                                         <?php endif; ?>
                                     </span>
                                 </a>
@@ -2227,15 +2335,12 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                         <?php endforeach; ?>
                     </ul>
                 <?php endif; ?>
-                <?php if ($customMods['unavailable'] > 0): ?>
-                    <p class="home-storage-note">Unavailable or needing attention: <?= (int) $customMods['unavailable'] ?>. Manage custom mods in the launcher under Mods &gt; Custom mods.</p>
-                <?php endif; ?>
             </section>
             <div class="dashboard-actions dashboard-actions-secondary">
                 <a class="dashboard-button lmstudio-manager" href="lmstudio.php"><span class="chim-brand"><img class="chim-brand-icon" src="images/centurion.webp" alt="" width="42" height="42"><span>LLM Studio</span></span></a>
                 <a class="dashboard-button distro-debugger" href="<?= htmlspecialchars($distroDebuggerUrl, ENT_QUOTES, 'UTF-8') ?>">
                     <span class="chim-brand">
-                        <img class="kagrenac-brand-icon" src="images/kagrenac-icon.png" alt="Kagrenac MCP icon">
+                        <img class="kagrenac-brand-icon" src="images/dwemerspider.png" alt="">
                         <span class="distro-debugger-label">Distro Debugger</span>
                     </span>
                 </a>

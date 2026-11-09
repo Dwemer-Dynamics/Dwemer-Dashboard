@@ -1810,7 +1810,7 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
 
     <div class="tab-nav" role="tablist" aria-label="Debugger Tabs">
         <button class="tab-button<?= $initialServerTab === 'distro' ? ' active' : '' ?>" type="button" data-tab="distro" role="tab" aria-selected="<?= $initialServerTab === 'distro' ? 'true' : 'false' ?>" aria-controls="tab-distro">
-            <img class="tab-button-icon" src="images/kagrenac-icon.png" alt="" aria-hidden="true">
+            <img class="tab-button-icon" src="images/dwemerspider.png" alt="" aria-hidden="true">
             <span class="tab-distro-label">Distro</span>
         </button>
         <button class="tab-button<?= $initialServerTab === 'chim' ? ' active' : '' ?>" type="button" data-tab="chim" role="tab" aria-selected="<?= $initialServerTab === 'chim' ? 'true' : 'false' ?>" aria-controls="tab-chim">
@@ -2084,7 +2084,7 @@ $initialServerTab = $forcedInitialTab !== '' ? $forcedInitialTab : 'distro';
         <div class="kagrenac-header">
             <div class="kagrenac-header-row">
                 <div class="kagrenac-title-wrap">
-                    <img class="kagrenac-icon" src="images/kagrenac-icon.png" alt="Kagrenac MCP icon">
+                    <img class="kagrenac-icon" src="images/dwemerspider.png" alt="">
                     <h2>Kagernac Debugger (MCP)</h2>
                 </div>
                 <button class="kagrenac-toggle-settings" type="button" id="mcpOpenSettingsBtnTop">
