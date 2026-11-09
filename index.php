@@ -1758,6 +1758,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .home-custom-mods-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 
         /* Section heading in the dashboard title face, overriding the small uppercase label style. */
+        .dashboard-mods-title,
         #home-custom-mods-title {
             font-family: 'MagicCards', serif;
             font-size: 28px;
@@ -1766,9 +1767,11 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             letter-spacing: 0.4px;
             word-spacing: 4px;
             text-transform: none;
+            color: #fff;
         }
 
         @media (max-width: 640px) {
+            .dashboard-mods-title,
             #home-custom-mods-title { font-size: 24px; }
         }
 
