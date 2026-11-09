@@ -1755,25 +1755,40 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         .home-custom-mods-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 
+        /* KAGRENAC panel: mirrors .dashboard-ploofy's dark rounded frame with an amber glow; the whole panel is the link. */
         .home-kagrenac-link {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 12px;
             box-sizing: border-box;
             min-height: 44px;
-            padding: 4px 14px 4px 6px;
-            border: 1px solid rgba(255, 173, 97, 0.35);
-            border-radius: 999px;
+            max-width: 100%;
+            padding: 8px 18px 8px 8px;
+            border-radius: 14px;
+            background: #0f0e0e;
+            box-shadow: 0 0 0 1px rgba(255, 173, 97, 0.28), 0 0 28px rgba(255, 173, 97, 0.1), 0 10px 24px rgba(0, 0, 0, 0.4);
             color: #ffd2a6;
             text-decoration: none;
-            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+            transition: box-shadow 0.15s;
         }
 
-        .home-kagrenac-link .kagrenac-brand-icon { width: 28px; height: 28px; min-width: 28px; min-height: 28px; }
-        .home-kagrenac-name { font-size: 13px; font-weight: 700; letter-spacing: 1px; }
-        .home-kagrenac-tagline { color: #9cadc3; font-size: 12px; }
-        .home-kagrenac-link:hover { color: #ffffff; border-color: #ffad61; background: rgba(255, 173, 97, 0.12); }
+        .home-kagrenac-link .kagrenac-brand-icon { width: 42px; height: 42px; min-width: 42px; min-height: 42px; }
+        .home-kagrenac-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; line-height: 1.2; }
+        .home-kagrenac-name { font-size: 15px; font-weight: 700; letter-spacing: 2px; }
+        .home-kagrenac-tagline { color: #b9c3d0; font-size: 12px; }
+
+        .home-kagrenac-link:hover,
+        .home-kagrenac-link:focus-visible {
+            box-shadow: 0 0 0 1px rgba(255, 173, 97, 0.55), 0 0 36px rgba(255, 173, 97, 0.2), 0 10px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        .home-kagrenac-link:hover .home-kagrenac-name,
+        .home-kagrenac-link:focus-visible .home-kagrenac-name { color: #ffffff; }
         .home-kagrenac-link:focus-visible { outline: 2px solid #ffad61; outline-offset: 3px; }
+
+        @media (max-width: 640px) {
+            .home-kagrenac-link { width: 100%; }
+        }
 
         @media (prefers-reduced-motion: reduce) {
             .home-kagrenac-link { transition: none; }
@@ -2007,10 +2022,12 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             <section class="home-custom-mods home-panel" aria-labelledby="home-custom-mods-title">
                 <div class="home-custom-mods-heading">
                     <h2 class="home-storage-title" id="home-custom-mods-title">Custom mods</h2>
-                    <a class="home-kagrenac-link" href="https://dwemerdynamics.com/custom-mods/index.html" target="_blank" rel="noopener noreferrer" aria-label="KAGRENAC AI Mod Maker (opens in a new tab)">
-                        <img class="kagrenac-brand-icon" src="images/kagrenac-icon.png" alt="" width="28" height="28">
-                        <span class="home-kagrenac-name">KAGRENAC</span>
-                        <span class="home-kagrenac-tagline">AI Mod Maker</span>
+                    <a class="home-kagrenac-link" href="https://dwemerdynamics.com/custom-mods/index.html" target="_blank" rel="noopener noreferrer" aria-label="KAGRENAC: Create your own AI mod (opens in a new tab)">
+                        <img class="kagrenac-brand-icon" src="images/kagrenac-icon.png" alt="" width="42" height="42" decoding="async">
+                        <span class="home-kagrenac-text">
+                            <span class="home-kagrenac-name">KAGRENAC</span>
+                            <span class="home-kagrenac-tagline">Create your own AI mod</span>
+                        </span>
                     </a>
                 </div>
                 <?php if ($customMods['mods'] === [] && $customMods['unavailable'] === 0): ?>
