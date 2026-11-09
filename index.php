@@ -1757,6 +1757,21 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         .home-custom-mods-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 
+        /* Section heading in the dashboard title face, overriding the small uppercase label style. */
+        #home-custom-mods-title {
+            font-family: 'MagicCards', serif;
+            font-size: 28px;
+            font-weight: normal;
+            line-height: 1.1;
+            letter-spacing: 0.4px;
+            word-spacing: 4px;
+            text-transform: none;
+        }
+
+        @media (max-width: 640px) {
+            #home-custom-mods-title { font-size: 24px; }
+        }
+
         /* KAGRENAC panel: mirrors .dashboard-ploofy's dark rounded frame with an amber glow; the whole panel is the link. */
         .home-kagrenac-link {
             display: inline-flex;
