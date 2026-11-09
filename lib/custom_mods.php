@@ -140,12 +140,37 @@ function dashboard_custom_mod_server_version(string $folder): string
     $text = $opened !== false && $opened['dev'] === $stat['dev'] && $opened['ino'] === $stat['ino']
         ? @fread($handle, DASHBOARD_CUSTOM_MOD_VERSION_BYTES + 1) : false;
     fclose($handle);
-    if (!is_string($text) || strlen($text) > DASHBOARD_CUSTOM_MOD_VERSION_BYTES) {
+    if (!is_string($text) || strlen($text) > DASHBOARD_CUSTOM_MOD_VERSION_BYTES || !function_exists('token_get_all')) {
         return '';
     }
-    $semver = '(?:0|[1-9][0-9]{0,8})\.(?:0|[1-9][0-9]{0,8})\.(?:0|[1-9][0-9]{0,8})(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+){0,4})?';
-    $count = preg_match_all('/^[ \t]*const[ \t]+SERVER_VERSION[ \t]*=[ \t]*([\'"])(' . $semver . ')\1[ \t]*;/m', $text, $matches);
-    return $count === 1 && strlen($matches[2][0]) <= 40 ? $matches[2][0] : '';
+    // Tokenizing only lexes the text, so comments, strings, heredocs and inline HTML cannot pass as a declaration.
+    // Only a top-level `const SERVER_VERSION = '<literal>';` statement counts, and any second one makes it ambiguous.
+    $tokens = array_values(array_filter(token_get_all($text), static function ($token): bool {
+        return !is_array($token) || !in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true);
+    }));
+    $depth = 0;
+    $found = [];
+    foreach ($tokens as $i => $token) {
+        $id = is_array($token) ? $token[0] : $token;
+        if ($id === '{' || $id === T_CURLY_OPEN || $id === T_DOLLAR_OPEN_CURLY_BRACES) {
+            $depth++;
+        } elseif ($id === '}') {
+            $depth--;
+        } elseif ($id === T_CONST && $depth === 0 && isset($tokens[$i + 1]) && is_array($tokens[$i + 1])
+            && $tokens[$i + 1][0] === T_STRING && $tokens[$i + 1][1] === 'SERVER_VERSION') {
+            $previous = $tokens[$i - 1] ?? null;
+            $literal = $tokens[$i + 3] ?? null;
+            $found[] = (is_array($previous) && $previous[0] === T_OPEN_TAG || $previous === ';' || $previous === '}')
+                && ($tokens[$i + 2] ?? null) === '=' && ($tokens[$i + 4] ?? null) === ';'
+                && is_array($literal) && $literal[0] === T_CONSTANT_ENCAPSED_STRING
+                ? substr($literal[1], 1, -1) : '';
+        }
+    }
+    // Semantic Versioning 2.0.0, kept short; quotes, backslashes and `$` never match, so the text is the literal value.
+    $number = '(?:0|[1-9][0-9]{0,8})';
+    $prerelease = '(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)';
+    $semver = "/\\A$number\\.$number\\.$number(?:-$prerelease(?:\\.$prerelease)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?\\z/";
+    return count($found) === 1 && strlen($found[0]) <= 40 && preg_match($semver, $found[0]) === 1 ? $found[0] : '';
 }
 
 /**
