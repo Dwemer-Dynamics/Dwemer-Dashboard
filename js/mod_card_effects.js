@@ -165,7 +165,7 @@
     function sync() {
         document.documentElement.classList.toggle('mod-fx-paused', paused());
         if (pauseButton && hosts) {
-            pauseButton.hidden = false;
+            pauseButton.hidden = !fine.matches; // Touch-only devices never play shows, so the control would do nothing.
             pauseButton.textContent = reduced.matches ? 'Reduced motion' : forced.matches ? 'Effects unavailable' : userPaused ? 'Resume effects' : 'Pause effects';
             pauseButton.setAttribute('aria-pressed', String(userPaused));
             pauseButton.disabled = reduced.matches || forced.matches;

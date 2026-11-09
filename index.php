@@ -1503,7 +1503,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             text-decoration: none;
         }
 
-        .mod-card:focus-within {
+        .mod-card:has(> .mod-card-open:focus-visible) {
             outline: 3px solid var(--mod-card-accent, #68717d);
             outline-offset: 4px;
         }
