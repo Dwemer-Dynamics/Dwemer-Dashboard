@@ -2065,10 +2065,10 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             display: flex;
             flex: 1;
             flex-direction: column;
-            gap: 3px;
-            min-height: 60px;
+            gap: 6px;
+            min-height: 64px;
             box-sizing: border-box;
-            padding: 10px 14px 12px;
+            padding: 12px 16px 14px;
             background: rgba(0, 0, 0, 0.78);
         }
 
@@ -2079,26 +2079,19 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             overflow: hidden;
             overflow-wrap: anywhere;
             color: #fff;
-            font: normal 23px/1.2 'MagicCards', serif;
-            /* MagicCards' own space is very narrow; same spacing as the section headings. */
-            letter-spacing: 0.4px;
-            word-spacing: 4px;
+            font: normal 23px/1.35 'MagicCards', serif;
+            /* MagicCards' own space is very narrow, so words get a wider gap to stay readable. */
+            letter-spacing: 0.6px;
+            word-spacing: 0.32em;
         }
 
-        .custom-mod-card-details { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-        .custom-mod-card-meta { font-size: 13.5px; font-weight: 700; line-height: 1.3; color: #ececec; overflow-wrap: anywhere; }
-        .custom-mod-card-author { font-weight: normal; color: #b4b4b4; }
-
-        .custom-mod-card-description {
-            display: -webkit-box;
-            -webkit-box-orient: vertical;
-            -webkit-line-clamp: 3;
-            overflow: hidden;
-            overflow-wrap: anywhere;
-            margin-top: 2px;
+        .custom-mod-card-version {
             font-size: 13px;
-            line-height: 1.4;
+            font-weight: 700;
+            line-height: 1.3;
+            letter-spacing: 0.3px;
             color: #c9d1dc;
+            font-variant-numeric: tabular-nums;
         }
 
         @media (max-width: 1000px) {
@@ -2107,8 +2100,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         @media (max-width: 640px) {
             .custom-mod-cards { grid-template-columns: minmax(0, 1fr); }
-            .custom-mod-card-label { min-height: 48px; padding: 7px 12px 9px; }
-            .custom-mod-card-description { -webkit-line-clamp: 4; }
+            .custom-mod-card-label { min-height: 52px; padding: 10px 14px 12px; gap: 5px; }
         }
 
         @media (max-width: 900px) {
@@ -2322,7 +2314,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                     <ul class="custom-mod-cards" aria-label="Installed custom mods">
                         <?php foreach ($customMods['mods'] as $customModIndex => $customMod): ?>
                             <li>
-                                <a class="custom-mod-card" href="<?= htmlspecialchars($customMod['url'], ENT_QUOTES, 'UTF-8') ?>" aria-label="Open <?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?>"<?php if ($customMod['description'] !== '' || $customMod['game'] !== '' || $customMod['author'] !== ''): ?> aria-describedby="custom-mod-card-<?= (int) $customModIndex ?>"<?php endif; ?>>
+                                <a class="custom-mod-card" href="<?= htmlspecialchars($customMod['url'], ENT_QUOTES, 'UTF-8') ?>" aria-label="Open <?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?>"<?php if ($customMod['version'] !== ''): ?> aria-describedby="custom-mod-card-<?= (int) $customModIndex ?>"<?php endif; ?>>
                                     <span class="custom-mod-card-art" aria-hidden="true">
                                         <span class="custom-mod-card-monogram"><?= htmlspecialchars($customMod['initial'], ENT_QUOTES, 'UTF-8') ?></span>
                                         <?php if ($customMod['icon'] !== ''): ?>
@@ -2334,14 +2326,9 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                                     </span>
                                     <span class="custom-mod-card-label">
                                         <span class="custom-mod-card-name"><?= htmlspecialchars($customMod['name'], ENT_QUOTES, 'UTF-8') ?></span>
-                                        <span class="custom-mod-card-details" id="custom-mod-card-<?= (int) $customModIndex ?>">
-                                            <?php if ($customMod['game'] !== '' || $customMod['author'] !== ''): ?>
-                                                <span class="custom-mod-card-meta"><?= htmlspecialchars($customMod['game'], ENT_QUOTES, 'UTF-8') ?><?= $customMod['game'] !== '' && $customMod['author'] !== '' ? ' · ' : '' ?><?php if ($customMod['author'] !== ''): ?><span class="custom-mod-card-author">by <?= htmlspecialchars($customMod['author'], ENT_QUOTES, 'UTF-8') ?></span><?php endif; ?></span>
-                                            <?php endif; ?>
-                                            <?php if ($customMod['description'] !== ''): ?>
-                                                <span class="custom-mod-card-description"><?= htmlspecialchars($customMod['description'], ENT_QUOTES, 'UTF-8') ?></span>
-                                            <?php endif; ?>
-                                        </span>
+                                        <?php if ($customMod['version'] !== ''): ?>
+                                            <span class="custom-mod-card-version" id="custom-mod-card-<?= (int) $customModIndex ?>">v<?= htmlspecialchars($customMod['version'], ENT_QUOTES, 'UTF-8') ?></span>
+                                        <?php endif; ?>
                                     </span>
                                 </a>
                             </li>
@@ -2353,7 +2340,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 <a class="dashboard-button lmstudio-manager" href="lmstudio.php"><span class="chim-brand"><img class="chim-brand-icon" src="images/centurion.webp" alt="" width="42" height="42"><span>LLM Studio</span></span></a>
                 <a class="dashboard-button distro-debugger" href="<?= htmlspecialchars($distroDebuggerUrl, ENT_QUOTES, 'UTF-8') ?>">
                     <span class="chim-brand">
-                        <img class="kagrenac-brand-icon" src="images/kagrenac-icon.png" alt="Kagrenac MCP icon">
+                        <img class="kagrenac-brand-icon" src="images/dwemerspider.png" alt="">
                         <span class="distro-debugger-label">Distro Debugger</span>
                     </span>
                 </a>

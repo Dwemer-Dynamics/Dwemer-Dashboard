@@ -9,6 +9,8 @@ const DASHBOARD_SERVICES_CONF = '/etc/dwemerdistro_services.conf';
 const DASHBOARD_CUSTOM_MOD_IMAGE_BYTES = 4 * 1024 * 1024;
 const DASHBOARD_CUSTOM_MOD_IMAGE_MIN_PIXELS = 16;
 const DASHBOARD_CUSTOM_MOD_IMAGE_MAX_PIXELS = 4096;
+// The installed server's lib/version.php is read as text (never included); a larger file shows no version.
+const DASHBOARD_CUSTOM_MOD_VERSION_BYTES = 8192;
 
 // The shared loopback custom mod port, read as data (never sourced) with the distro manager's rules:
 // 19000 when unset, null when the file or value is not trustworthy (19000-19999 only).
@@ -115,6 +117,38 @@ function dashboard_custom_mod_image(string $folder, $path, string $base, string 
 }
 
 /**
+ * The literal SERVER_VERSION semver from <folder>/lib/version.php, or '' when absent, linked, oversized,
+ * ambiguous or not a plain semver. The file is only read as bounded text; nothing in it is executed.
+ */
+function dashboard_custom_mod_server_version(string $folder): string
+{
+    $lib = $folder . '/lib';
+    $file = $lib . '/version.php';
+    if (is_link($lib) || !is_dir($lib) || is_link($file) || !is_file($file)) {
+        return '';
+    }
+    $stat = @lstat($file);
+    if ($stat === false || $stat['size'] <= 0 || $stat['size'] > DASHBOARD_CUSTOM_MOD_VERSION_BYTES) {
+        return '';
+    }
+    $handle = @fopen($file, 'rb');
+    if ($handle === false) {
+        return '';
+    }
+    // The opened file must be the one just checked, so a swap to a link or larger file in between is refused.
+    $opened = @fstat($handle);
+    $text = $opened !== false && $opened['dev'] === $stat['dev'] && $opened['ino'] === $stat['ino']
+        ? @fread($handle, DASHBOARD_CUSTOM_MOD_VERSION_BYTES + 1) : false;
+    fclose($handle);
+    if (!is_string($text) || strlen($text) > DASHBOARD_CUSTOM_MOD_VERSION_BYTES) {
+        return '';
+    }
+    $semver = '(?:0|[1-9][0-9]{0,8})\.(?:0|[1-9][0-9]{0,8})\.(?:0|[1-9][0-9]{0,8})(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+){0,4})?';
+    $count = preg_match_all('/^[ \t]*const[ \t]+SERVER_VERSION[ \t]*=[ \t]*([\'"])(' . $semver . ')\1[ \t]*;/m', $text, $matches);
+    return $count === 1 && strlen($matches[2][0]) <= 40 ? $matches[2][0] : '';
+}
+
+/**
  * Ready custom mods from $registryRoot, sorted by name.
  * Returns ['readable' => bool, 'mods' => [...], 'unavailable' => int], where unavailable counts registered
  * mods that are installing, updating, or failed. Unregistered, unreadable, oversized, or malformed entries are skipped.
@@ -129,7 +163,7 @@ function dashboard_custom_mods(string $registryRoot, string $webRoot = DASHBOARD
     }
     // Without a valid port no link can be built, so ready mods are reported as needing attention.
     $port = dashboard_custom_mods_port($servicesConf);
-    // Artwork is read only from a plain web root and mod folder; a link there leaves every card on its fallback.
+    // Artwork and version are read only from a plain web root and mod folder; a link there leaves both out.
     $webRootOk = !is_link($webRoot) && is_dir($webRoot) && !is_link($webRoot . '/custom-mods');
     $mods = [];
     $routes = [];
@@ -179,9 +213,10 @@ function dashboard_custom_mods(string $registryRoot, string $webRoot = DASHBOARD
             'id' => $id,
             'name' => $name,
             'description' => dashboard_custom_mod_text($entry['description'] ?? null, 300),
-            // Catalog credits recorded by install or update; empty when the manifest has none (never guessed).
             'game' => dashboard_custom_mod_text($entry['game_name'] ?? null, 60),
             'author' => dashboard_custom_mod_text($entry['author'] ?? null, 80),
+            // The installed server's own version; empty when it has none (the registry schema is never shown).
+            'version' => $artworkOk ? dashboard_custom_mod_server_version($folder) : '',
             'url' => $base . $entry['dashboard_path'],
             'icon' => $artworkOk ? dashboard_custom_mod_image($folder, $assets['icon'] ?? null, $base, $version) : '',
             'banner' => $artworkOk ? dashboard_custom_mod_image($folder, $assets['banner'] ?? null, $base, $version) : '',
