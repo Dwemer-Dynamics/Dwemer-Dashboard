@@ -5,6 +5,9 @@ error_reporting(E_ERROR);
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+require_once __DIR__ . '/lib/api_keys_access.php';
+// Only the browser on this PC receives an API Keys token; other clients see the rail as unavailable.
+$apiKeysCsrf = api_keys_local_request($_SERVER, false) ? api_keys_csrf() : '';
 
 $TITLE = 'DwemerDashboard';
 
@@ -994,6 +997,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
     <link rel="stylesheet" href="css/mod_card_effects.css?v=<?= (int) filemtime(__DIR__ . '/css/mod_card_effects.css') ?>">
     <script src="js/home_storage.js?v=<?= (int) filemtime(__DIR__ . '/js/home_storage.js') ?>" defer></script>
     <script src="js/mod_card_effects.js?v=<?= (int) filemtime(__DIR__ . '/js/mod_card_effects.js') ?>" defer></script>
+    <script src="js/home_api_keys.js?v=<?= (int) filemtime(__DIR__ . '/js/home_api_keys.js') ?>" defer></script>
     <style>
         @font-face {
             font-family: 'MagicCards';
@@ -1038,7 +1042,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             <?php endif; ?>
         }
 
-        /* Page frame: dashboard, then a Patreon band; from 1360px the band becomes a rail matching the dashboard height. */
+        /* Page frame: dashboard, then Global API Keys and Patreon bands; from 1680px they become rails matching the dashboard height. */
         .dashboard-layout {
             --dashboard-gutter: 24px;
             width: min(1200px, calc(100% - 2 * var(--dashboard-gutter)));
@@ -1046,6 +1050,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             margin: 28px auto 48px;
             display: grid;
             grid-template-columns: minmax(0, 1fr);
+            grid-template-areas: "main" "keys" "patron";
             gap: 20px;
             /* Card glows may bleed into the gutter but never widen the page. */
             overflow-x: clip;
@@ -1069,6 +1074,149 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             background: linear-gradient(180deg, rgba(34, 40, 52, 0.72), rgba(24, 28, 37, 0.72));
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
         }
+
+        .dashboard-shell { grid-area: main; }
+        .keys-shell { grid-area: keys; }
+        .patron-shell { grid-area: patron; }
+
+        .keys-shell {
+            min-width: 0;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            padding: 16px 22px 18px;
+            background: rgba(20, 23, 30, 0.9);
+            color: #f2f5f9;
+        }
+
+        .keys-note { margin: 4px 0 0; color: #c7d0dd; font-size: 13px; line-height: 1.4; }
+        .keys-note.error { color: #f4c47a; }
+        .keys-list-scroll {
+            max-height: 300px;
+            margin-top: 10px;
+            min-height: 0;
+            /* Keep buttons and focus outlines clear of classic and overlay scrollbars. */
+            box-sizing: border-box;
+            margin-left: -4px;
+            padding: 0 14px 0 4px;
+            overflow-y: auto;
+            scrollbar-gutter: stable;
+            scrollbar-width: thin;
+            scrollbar-color: #4a5466 transparent;
+        }
+        .keys-list-scroll[hidden] { display: none; }
+        .keys-group { margin: 0 0 14px; min-width: 0; }
+        .keys-group-title {
+            margin: 0 0 6px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid rgba(138, 155, 182, 0.45);
+            color: #d8e3f2;
+            font: normal 18px/1.1 'MagicCards', serif;
+            letter-spacing: 1px;
+            overflow-wrap: anywhere;
+        }
+        .keys-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+        .keys-row { min-width: 0; }
+        .keys-row-head { display: flex; align-items: center; gap: 10px; }
+        .keys-row-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+        .keys-name { color: #e7ecf2; font-size: 13.5px; line-height: 1.35; overflow-wrap: anywhere; }
+        .keys-preview { align-self: flex-start; max-width: 100%; margin: 0; padding: 0; border: 0; background: none; color: #9cadc3; font: 12px/1.3 ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+        .keys-button {
+            flex: none;
+            min-height: 28px;
+            padding: 3px 10px;
+            border: 1px solid rgba(138, 155, 182, 0.45);
+            border-radius: 6px;
+            background: rgba(44, 51, 64, 0.9);
+            color: #e7ecf2;
+            font-size: 12.5px;
+            cursor: pointer;
+        }
+        .keys-button:hover:not(:disabled) { border-color: #d9823d; }
+        .keys-button:focus-visible { outline: 2px solid #d9823d; outline-offset: 2px; }
+        .keys-input:focus-visible { outline: 2px solid #f0cf75; outline-offset: 2px; }
+        .keys-button:disabled { opacity: 0.55; cursor: default; }
+        .keys-button.primary { background: #3a4a63; }
+        .keys-button[hidden], .keys-field[hidden] { display: none; }
+        .keys-list-scroll:focus { outline: none; }
+        .keys-category-title {
+            margin: 4px 0 8px;
+            color: #f3c9a2;
+            font-size: 11px;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+        }
+        .keys-category-title[hidden] { display: none; }
+        .keys-category:has(.keys-group) + .keys-category .keys-category-title:not([hidden]) { padding-top: 4px; border-top: 1px solid rgba(217, 130, 61, 0.35); }
+        .keys-form { display: flex; flex-direction: column; gap: 10px; }
+        .keys-field { display: flex; flex-direction: column; gap: 4px; color: #c7d0dd; font-size: 12.5px; }
+        .keys-form .keys-input {
+            box-sizing: border-box;
+            width: 100%;
+            min-width: 0;
+            padding: 7px 9px;
+            border: 1px solid rgba(138, 155, 182, 0.4);
+            border-radius: 6px;
+            background: #12151b;
+            color: #f2f5f9;
+            font-size: 14px;
+        }
+        .keys-form .keys-input:focus-visible { outline-color: #d9823d; }
+        .keys-form .keys-input:read-only { opacity: 0.7; }
+        .keys-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .keys-state { margin: 3px 0 0; font-size: 12px; line-height: 1.35; color: #c7d0dd; }
+        .keys-state:empty { display: none; }
+        .keys-state.ok { color: #a9dca0; }
+        .keys-state.error { color: #f4c47a; }
+        .keys-unset { color: #8f9bad; font-size: 13px; font-style: italic; }
+        .keys-button.keys-add { border-color: rgba(217, 130, 61, 0.75); color: #f3c9a2; }
+        .keys-button.keys-add.primary { background: rgba(122, 66, 30, 0.85); color: #fbe7d4; }
+        .keys-button.keys-add:hover:not(:disabled) { border-color: #f0a35e; }
+        /* Shared Edit / Add key dialog: solid panel, internal scroll on short viewports. */
+        .keys-dialog {
+            box-sizing: border-box;
+            width: min(480px, calc(100vw - 24px));
+            max-width: none;
+            max-height: calc(100dvh - 24px);
+            margin: auto;
+            padding: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            border: 1px solid rgba(217, 130, 61, 0.6);
+            border-radius: 12px;
+            background: #161a22;
+            color: #f2f5f9;
+            box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            scrollbar-width: thin;
+            scrollbar-color: #4a5466 transparent;
+        }
+        .keys-dialog::backdrop { background: rgba(6, 8, 12, 0.72); }
+        .keys-dialog-body { padding: 20px 22px 22px; }
+        .keys-dialog-title {
+            margin: 0;
+            color: #ffffff;
+            font: normal 24px/1.2 'MagicCards', serif;
+            word-spacing: 6px;
+            letter-spacing: 0.4px;
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+        }
+        .keys-dialog-provider {
+            margin: -4px 0 4px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(217, 130, 61, 0.45);
+            color: #f3c9a2;
+            font-size: 13px;
+            overflow-wrap: anywhere;
+        }
+        .keys-dialog .keys-state { margin: 0; font-size: 13px; }
+        .keys-dialog .keys-actions { margin-top: 4px; }
+        .keys-dialog .keys-button { min-height: 34px; padding: 5px 16px; font-size: 13.5px; }
+        @media (max-width: 640px) {
+            .keys-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+            .keys-dialog-body { padding: 16px 14px 18px; }
+            .keys-dialog .keys-actions .keys-button { flex: 1 1 auto; }
+        }
+        .keys-help { color: #9cadc3; font-size: 11.5px; line-height: 1.35; }
 
         .patron-shell {
             min-width: 0;
@@ -1250,11 +1398,18 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             line-height: 1.4;
         }
 
-        @media (min-width: 1360px) {
+        /* Two bands side by side below the dashboard while each keeps a useful card width. */
+        @media (min-width: 960px) {
+            .dashboard-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "main main" "keys patron"; }
+            .patron-list-cycle { column-gap: 18px; }
+        }
+
+        @media (min-width: 1680px) {
             .dashboard-layout {
                 --dashboard-gutter: 32px;
-                width: min(1560px, calc(100% - 2 * var(--dashboard-gutter)));
-                grid-template-columns: minmax(0, 1fr) 280px;
+                width: min(1840px, calc(100% - 2 * var(--dashboard-gutter)));
+                grid-template-columns: 280px minmax(1008px, 1fr) 280px;
+                grid-template-areas: "keys main patron";
                 justify-content: center;
                 align-items: stretch;
                 gap: 24px;
@@ -1262,19 +1417,19 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
             .dashboard-shell { padding: 28px; }
 
-            /* Rail: stretched to the dashboard's top and bottom; the member loop fills the remaining height. */
-            .patron-shell { padding: 18px 18px 20px; }
+            /* Rails: stretched to the dashboard's top and bottom; their lists fill the remaining height. */
+            .patron-shell, .keys-shell { padding: 18px 18px 20px; }
 
             .patron-head { flex-direction: column; align-items: flex-start; gap: 4px; }
-            /* Size containment keeps the member list from driving the row height. */
-            .patron-list-scroll { flex: 1 1 0; height: auto; contain: size; }
+            /* Size containment keeps the lists from driving the row height. */
+            .patron-list-scroll, .keys-list-scroll { flex: 1 1 0; height: auto; max-height: none; contain: size; }
             .patron-list-cycle { grid-template-columns: minmax(0, 1fr); }
         }
 
         @media (max-width: 640px) {
             .dashboard-layout { --dashboard-gutter: 10px; margin: 12px auto 32px; gap: 14px; }
             .dashboard-shell { padding: 20px 14px; border-radius: 12px; }
-            .patron-shell { padding: 14px 14px 16px; }
+            .patron-shell, .keys-shell { padding: 14px 14px 16px; }
             .patron-list-scroll { height: 300px; }
             .patron-list-cycle { grid-template-columns: minmax(0, 1fr); }
             .patron-tier-icon { width: 32px; height: 32px; flex-basis: 32px; }
@@ -2137,6 +2292,12 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             <?php endif; ?>
             </div>
         </main>
+
+        <aside class="keys-shell home-panel" id="home-api-keys" aria-labelledby="home-api-keys-title" data-csrf="<?= htmlspecialchars($apiKeysCsrf, ENT_QUOTES, 'UTF-8') ?>">
+            <h2 class="patron-title" id="home-api-keys-title">Global API Keys</h2>
+            <p class="keys-note" data-keys-message role="status"><?= $apiKeysCsrf === '' ? 'API keys can only be viewed from the browser on this PC.' : 'Loading saved keys…' ?></p>
+            <div class="keys-list-scroll" data-keys-list hidden></div>
+        </aside>
 
         <aside class="patron-shell home-panel" aria-label="Current Patreon members">
             <div class="patron-head">
