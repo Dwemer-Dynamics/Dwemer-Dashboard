@@ -351,13 +351,15 @@ if ($lorkhanRoot !== '') {
     }
 }
 
-$dbUpdateLines = [
-    ['status' => $herikaUpdateStatus, 'detail' => $herikaUpdateDetail],
-    ['status' => $lorkhanUpdateStatus, 'detail' => $lorkhanUpdateDetail],
-    ['status' => $dialecticUpdateStatus, 'detail' => $dialecticUpdateDetail],
-    ['status' => $stobeUpdateStatus, 'detail' => $stobeUpdateDetail],
-    ['status' => $reignUpdateStatus, 'detail' => $reignUpdateDetail],
-];
+// Only report installed servers (same presence checks as the mod cards); unavailable checks stay silent.
+$dbUpdateLines = array_values(array_filter([
+    ['status' => $herikaUpdateStatus, 'detail' => $herikaUpdateDetail, 'installed' => $herikaRoot !== '' && is_file($herikaRoot . '/ui/home.php')],
+    ['status' => $lorkhanUpdateStatus, 'detail' => $lorkhanUpdateDetail, 'installed' => $lorkhanRoot !== '' && is_file($lorkhanRoot . '/ui/home.php')],
+    ['status' => $dialecticUpdateStatus, 'detail' => $dialecticUpdateDetail, 'installed' => $dialecticRoot !== '' && is_file($dialecticRoot . '/ui/home.php')],
+    ['status' => $stobeUpdateStatus, 'detail' => $stobeUpdateDetail, 'installed' => $stobeRoot !== '' && is_file($stobeRoot . '/ui/home.php')],
+    ['status' => $reignUpdateStatus, 'detail' => $reignUpdateDetail,
+        'installed' => is_file('/var/www/html/ReignServer/runtime/current/ReignServer') || is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer')],
+], static fn(array $line): bool => $line['installed'] && (string) $line['status'] !== 'unavailable'));
 
 $patreonCampaignUrl = 'https://www.patreon.com/DwemerDynamics';
 
@@ -1780,6 +1782,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .home-kagrenac-link:hover,
         .home-kagrenac-link:focus-visible {
             box-shadow: 0 0 0 1px rgba(255, 173, 97, 0.55), 0 0 36px rgba(255, 173, 97, 0.2), 0 10px 24px rgba(0, 0, 0, 0.4);
+            text-decoration: none;
         }
 
         .home-kagrenac-link:hover .home-kagrenac-name,
