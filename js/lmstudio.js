@@ -646,7 +646,8 @@ function render(state) {
     unlocked = true; el('unlock').hidden = true; el('manager').hidden = false;
     setText('status', state.running ? 'Running' : state.installed ? 'Stopped' : 'Not installed');
     el('status').dataset.state = state.running ? 'running' : state.installed ? 'stopped' : 'missing';
-    if (!engineDirty) el('autostart').checked = state.settings.autostart;
+    // Autostart is on unless explicitly saved off, matching the helper's default.
+    if (!engineDirty) el('autostart').checked = state.settings?.autostart !== false;
     el('endpoint').value = state.endpoint; el('chatUrl').value = state.chatUrl;
     renderResources(state.resources);
     // A restarting server or an older helper lists no models; the choice and unsaved form stay until a list returns.
