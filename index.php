@@ -2202,7 +2202,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                         <img class="kagrenac-brand-icon" src="images/kagrenac-icon.png" alt="" width="42" height="42" decoding="async">
                         <span class="home-kagrenac-text">
                             <span class="home-kagrenac-name">KAGRENAC</span>
-                            <span class="home-kagrenac-tagline">Create your own AI mod</span>
+                            <span class="home-kagrenac-tagline">Create your own AI mod!</span>
                         </span>
                     </a>
                 </div>
