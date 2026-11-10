@@ -41,10 +41,22 @@
         if (total === null) { size.parentElement.classList.add('is-error'); size.title = reason; }
         return total;
     }
+    // Each bar is that mod's share of the measured total; a zero or missing total leaves every bar empty.
+    function drawBars(installed, totals, sum) {
+        installed.forEach((mod, index) => {
+            const bar = root.querySelector('[data-mod="' + mod.key + '"] .home-storage-mod-bar');
+            const value = totals[index];
+            if (!bar) return;
+            const share = sum > 0 && value !== null ? value / sum * 100 : 0;
+            bar.style.width = (value > 0 ? Math.min(100, Math.max(1, share)) : 0).toFixed(1) + '%';
+        });
+    }
 
     async function load() {
         const installed = mods.filter(mod => mod.installed);
-        const measured = (await Promise.all(installed.map(measure))).filter(value => value !== null);
+        const totals = await Promise.all(installed.map(measure));
+        const measured = totals.filter(value => value !== null);
+        drawBars(installed, totals, measured.reduce((acc, value) => acc + value, 0));
         if (!installed.length) {
             totalValue.textContent = 'None';
             totalNote.textContent = 'No mod installed';

@@ -1531,47 +1531,6 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             margin-bottom: 28px;
         }
 
-        /* Tools: three equal compact buttons; stacked 56px rows below 720px. */
-        .dashboard-actions {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 12px;
-        }
-
-        .dashboard-actions-secondary {
-            margin-top: 16px;
-        }
-
-        .dashboard-button {
-            box-sizing: border-box;
-            min-width: 0;
-            min-height: 64px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            font-size: 17px;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-            font-weight: 700;
-            text-decoration: none;
-            border: 1px solid rgba(138, 155, 182, 0.3);
-            color: #ffffff;
-            background-color: rgba(30, 35, 45, 0.8);
-            transition: all 0.2s ease-in-out;
-            padding: 8px 16px;
-        }
-
-        .dashboard-button:focus-visible { outline: 3px solid #ffad61; outline-offset: 3px; }
-
-        .dashboard-button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            text-decoration: none;
-            color: #ffffff;
-        }
-
         .dashboard-mods {
             display: grid;
             grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1676,75 +1635,11 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             .mod-card { grid-column: auto; }
         }
 
-        @media (max-width: 1100px) {
-            .dashboard-button { font-size: 15.5px; padding-inline: 12px; }
-        }
-
-        @media (max-width: 720px) {
-            .dashboard-actions { grid-template-columns: minmax(0, 1fr); gap: 10px; }
-            .dashboard-button { min-height: 56px; font-size: 15px; justify-content: flex-start; padding: 6px 14px; }
-            .dashboard-button .chim-brand-icon,
-            .dashboard-button .kagrenac-brand-icon { width: 32px; height: 32px; min-width: 32px; min-height: 32px; }
-        }
-
         @media (max-width: 640px) {
             .dashboard-mods { grid-template-columns: minmax(0, 1fr); }
             .dashboard-mods-heading { margin-top: 18px; }
             /* Compact label strips keep the 16:9 artwork dominant on phones. */
             .mod-card-label { min-height: 48px; padding: 7px 12px; display: flex; flex-direction: column; justify-content: center; }
-        }
-
-        .dashboard-button.distro-debugger {
-            background-color: #5e0505;
-            border-color: #842121;
-            color: #ffffff;
-        }
-
-        .dashboard-button.distro-debugger:hover {
-            background-color: #710909;
-            border-color: #9f2e2e;
-        }
-
-        .dashboard-button.database-manager {
-            background-color: #5e0505;
-            border-color: #842121;
-            color: #ffffff;
-        }
-
-        .dashboard-button.database-manager:hover {
-            background-color: #710909;
-            border-color: #9f2e2e;
-        }
-
-        .dashboard-button.lmstudio-manager {
-            border-color: #c66b20;
-            background-color: #783908;
-        }
-
-        .dashboard-button.lmstudio-manager:hover { background-color: #984b0f; }
-        .dashboard-button.lmstudio-manager:focus-visible { outline: 3px solid #ffad61; outline-offset: 4px; }
-
-        .dashboard-button.placeholder {
-            opacity: 0.65;
-            pointer-events: auto;
-            background-color: rgba(45, 45, 45, 0.72);
-            border: 1px solid rgba(230, 183, 108, 0.25);
-            color: #9fa8b3;
-            cursor: not-allowed;
-        }
-
-        .chim-brand {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            line-height: 1;
-        }
-
-        .chim-brand-main {
-            width: 108px;
-            height: auto;
-            object-fit: contain;
-            display: block;
         }
 
         .chim-brand-icon {
@@ -1769,36 +1664,6 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
         }
 
-        .distro-debugger-label {
-            line-height: 1;
-            letter-spacing: 0.4px;
-        }
-
-        .database-manager-label {
-            line-height: 1;
-            letter-spacing: 0.4px;
-        }
-
-        .home-storage {
-            display: grid;
-            grid-template-columns: auto minmax(0, 1fr) auto;
-            grid-template-areas: "summary mods manage";
-            align-items: center;
-            gap: 12px 28px;
-            padding: 14px 22px;
-            text-align: left;
-            color: #c7d0dd;
-            font-size: 14px;
-        }
-
-        .home-storage-summary {
-            grid-area: summary;
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-            min-width: 0;
-        }
-
         .home-storage-title {
             margin: 0;
             font-size: 11px;
@@ -1807,6 +1672,62 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             letter-spacing: 1.2px;
             text-transform: uppercase;
         }
+
+        /* Tools and storage: two adjacent panels of matching weight; they stack below 860px. */
+        .home-split {
+            display: grid;
+            grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+            gap: 14px;
+            align-items: stretch;
+            margin-top: 16px;
+        }
+
+        .home-split > .home-panel {
+            box-sizing: border-box;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 14px 16px;
+            text-align: left;
+            color: #c7d0dd;
+            font-size: 14px;
+        }
+
+        .home-split-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px 16px;
+            min-height: 34px;
+            margin-bottom: 6px;
+        }
+
+        .home-tool-list { list-style: none; margin: 0; padding: 0; display: grid; }
+        .home-tool-list > li + li { border-top: 1px solid rgba(138, 155, 182, 0.12); }
+
+        .home-tool {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 12px;
+            box-sizing: border-box;
+            min-height: 56px;
+            padding: 8px;
+            border-radius: 8px;
+            color: #ffffff;
+            text-decoration: none;
+            transition: background-color 0.15s ease;
+        }
+
+        .home-tool-name { font-size: 15.5px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; line-height: 1.2; overflow-wrap: anywhere; }
+        .home-tool-chev { color: #9cadc3; font-size: 20px; line-height: 1; transition: color 0.15s ease; }
+        .home-tool:hover { background: rgba(255, 173, 97, 0.1); color: #ffffff; text-decoration: none; }
+        .home-tool:hover .home-tool-chev,
+        .home-tool:focus-visible .home-tool-chev { color: #ffad61; }
+        .home-tool:focus-visible { outline: 2px solid #ffad61; outline-offset: 2px; }
+
+        .home-storage { display: flex; flex-direction: column; min-width: 0; }
 
         .home-storage-total {
             font-size: 24px;
@@ -1817,6 +1738,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             white-space: nowrap;
         }
 
+        .home-storage-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 10px; }
         .home-storage[aria-busy="true"] .home-storage-total,
         .home-storage[aria-busy="true"] .home-storage-mod-size { color: #8391a6; }
 
@@ -1826,90 +1748,102 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         }
 
         .home-storage-note:empty { display: none; }
-        .home-storage > noscript { grid-column: 1 / -1; }
+        .home-storage > noscript { display: block; margin-top: 8px; }
 
-        .home-storage-mods {
-            grid-area: mods;
-            list-style: none;
-            margin: 0;
-            padding: 0 0 0 28px;
-            border-left: 1px solid rgba(138, 155, 182, 0.18);
-            display: flex;
-            gap: 0;
-        }
+        .home-storage-mods { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 10px; }
 
         .home-storage-mod {
             --storage-mod-accent: #8a9bb6;
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-            padding: 0 24px;
-            white-space: nowrap;
+            display: grid;
+            grid-template-columns: 104px minmax(0, 1fr) minmax(84px, auto);
+            align-items: center;
+            gap: 12px;
         }
 
-        .home-storage-mod:first-child { padding-left: 0; }
-        .home-storage-mod + .home-storage-mod { border-left: 1px solid rgba(138, 155, 182, 0.12); }
         .home-storage-mod-chim { --storage-mod-accent: #f27c11; }
         .home-storage-mod-dialectic { --storage-mod-accent: #ffb641; }
         .home-storage-mod-stobe { --storage-mod-accent: #e6b76c; }
-        .home-storage-mod.is-absent { opacity: 0.5; }
+        .home-storage-mod.is-absent { opacity: 0.55; }
 
         .home-storage-mod-name {
             display: inline-flex;
             align-items: center;
-            gap: 7px;
-            font-size: 11px;
+            gap: 8px;
+            min-width: 0;
+            font-size: 13px;
             font-weight: 700;
-            color: #9cadc3;
+            color: #ffffff;
             letter-spacing: 1px;
         }
 
         .home-storage-mod-dot {
-            width: 7px;
-            height: 7px;
+            flex: none;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             background: var(--storage-mod-accent);
-            box-shadow: 0 0 6px color-mix(in srgb, var(--storage-mod-accent) 45%, transparent);
         }
 
         .home-storage-mod.is-absent .home-storage-mod-dot { background: transparent; box-shadow: inset 0 0 0 1px #8a9bb6; }
 
+        /* Bar width is each mod's share of the measured total, set by home_storage.js; empty while loading. */
+        .home-storage-mod-meter { height: 6px; border-radius: 999px; background: rgba(138, 155, 182, 0.14); overflow: hidden; }
+        .home-storage-mod-bar { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--storage-mod-accent); transition: width 0.4s ease; }
+        .home-storage-mod.is-absent .home-storage-mod-meter { background: transparent; box-shadow: inset 0 0 0 1px rgba(138, 155, 182, 0.22); }
+
         .home-storage-mod-size {
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 600;
             color: #f2f5f9;
             font-variant-numeric: tabular-nums;
+            text-align: right;
+            white-space: nowrap;
         }
 
         .home-storage-mod.is-absent .home-storage-mod-size { font-size: 13px; font-weight: 400; color: #9cadc3; }
         .home-storage-mod.is-error .home-storage-mod-size { color: #ef6b6b; }
 
         .home-storage-manage {
-            grid-area: manage;
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 7px 14px;
+            padding: 6px 12px;
             border: 1px solid rgba(255, 173, 97, 0.35);
-            border-radius: 999px;
-            color: #ffd2a6;
+            border-radius: 8px;
+            color: #ffffff;
             font-size: 13px;
             font-weight: 700;
             text-decoration: none;
             white-space: nowrap;
-            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
         }
 
-        .home-storage-manage:hover { color: #ffffff; border-color: #ffad61; background: rgba(255, 173, 97, 0.12); }
-        .home-storage-manage:focus-visible { outline: 2px solid #ffad61; outline-offset: 3px; }
+        .home-storage-manage:hover { color: #ffffff; border-color: #ffad61; background: rgba(255, 173, 97, 0.1); text-decoration: none; }
+        .home-storage-manage:focus-visible { outline: 2px solid #ffad61; outline-offset: 2px; }
+
+        @media (max-width: 860px) {
+            .home-split { grid-template-columns: minmax(0, 1fr); }
+        }
+
+        @media (max-width: 720px) {
+            .home-split > .home-panel { padding: 12px; }
+        }
+
+        @media (max-width: 420px) {
+            .home-storage-mod { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+            .home-storage-mod-meter { grid-column: 1 / -1; grid-row: 2; }
+            .home-storage-total { font-size: 22px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .home-tool, .home-tool-chev, .home-storage-manage, .home-storage-mod-bar { transition: none; }
+        }
 
         .home-custom-mods {
             margin-top: 18px;
             padding: 12px 18px 14px;
             text-align: left;
         }
-
-        .home-status { margin-top: 16px; }
 
         .home-custom-mods-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 
@@ -2103,63 +2037,6 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             .custom-mod-card-label { min-height: 52px; padding: 10px 14px 12px; gap: 5px; }
         }
 
-        @media (max-width: 900px) {
-            .home-storage { gap: 12px 20px; padding: 14px 18px; }
-            .home-storage-mods { padding-left: 20px; }
-            .home-storage-mod { padding: 0 16px; }
-        }
-
-        @media (max-width: 720px) {
-            .home-storage {
-                grid-template-columns: minmax(0, 1fr) auto;
-                grid-template-areas: "summary manage" "mods mods";
-                gap: 14px 16px;
-                padding: 16px;
-            }
-
-            .home-storage-mods {
-                display: grid;
-                grid-template-columns: repeat(3, minmax(0, 1fr));
-                padding: 14px 0 0;
-                border-left: 0;
-                border-top: 1px solid rgba(138, 155, 182, 0.18);
-            }
-
-            .home-storage-mod { padding: 0 12px; white-space: normal; min-width: 0; }
-        }
-
-        @media (max-width: 420px) {
-            .home-storage {
-                grid-template-columns: minmax(0, 1fr);
-                grid-template-areas: "summary" "manage" "mods";
-                gap: 12px;
-            }
-
-            .home-storage-manage { justify-self: start; }
-
-            .home-storage-mods {
-                grid-template-columns: minmax(0, 1fr);
-                gap: 8px;
-                padding-top: 12px;
-            }
-
-            .home-storage-mod,
-            .home-storage-mod:first-child {
-                flex-direction: row;
-                align-items: baseline;
-                justify-content: space-between;
-                gap: 12px;
-                padding: 0;
-            }
-
-            .home-storage-mod + .home-storage-mod { border-left: 0; }
-            .home-storage-mod-size { white-space: nowrap; text-align: right; }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .home-storage-manage, .custom-mod-card { transition: none; }
-        }
-
         /* Database checks share the storage panel: problems stay visible, completed checks collapse. */
         .dashboard-status {
             display: flex;
@@ -2167,7 +2044,8 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             align-items: flex-start;
             justify-content: space-between;
             gap: 8px 20px;
-            padding: 11px 22px 12px;
+            margin-top: auto;
+            padding: 10px 0 0;
             border-top: 1px solid rgba(138, 155, 182, 0.14);
             font-size: 13.5px;
             line-height: 1.45;
@@ -2230,7 +2108,8 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .dashboard-status-ok summary::before { content: '\2713'; font-weight: 800; }
         .dashboard-status-ok summary::after { content: '\25BE'; color: #9cadc3; transition: transform 0.15s; }
         .dashboard-status-ok[open] summary::after { transform: rotate(180deg); }
-        .dashboard-status-ok summary:focus-visible { outline: 2px solid #8ed081; outline-offset: 2px; }
+        .dashboard-status-ok summary:hover { background: rgba(255, 173, 97, 0.08); }
+        .dashboard-status-ok summary:focus-visible { outline: 2px solid #ffad61; outline-offset: 2px; }
         .dashboard-status-hint { color: #9cadc3; font-size: 12px; }
 
         .dashboard-status-ok ul {
@@ -2244,7 +2123,6 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         }
 
         @media (max-width: 640px) {
-            .dashboard-status { padding: 10px 14px 12px; }
             .dashboard-status-attention { flex-basis: 100%; }
             .dashboard-status-ok { margin-left: 0; }
         }
@@ -2336,26 +2214,25 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                     </ul>
                 <?php endif; ?>
             </section>
-            <div class="dashboard-actions dashboard-actions-secondary">
-                <a class="dashboard-button lmstudio-manager" href="lmstudio.php"><span class="chim-brand"><img class="chim-brand-icon" src="images/centurion.webp" alt="" width="42" height="42"><span>LLM Studio</span></span></a>
-                <a class="dashboard-button distro-debugger" href="<?= htmlspecialchars($distroDebuggerUrl, ENT_QUOTES, 'UTF-8') ?>">
-                    <span class="chim-brand">
-                        <img class="kagrenac-brand-icon" src="images/dwemerspider.png" alt="">
-                        <span class="distro-debugger-label">Distro Debugger</span>
-                    </span>
-                </a>
-                <a class="dashboard-button database-manager" href="<?= htmlspecialchars($databaseManagerUrl, ENT_QUOTES, 'UTF-8') ?>">
-                    <span class="chim-brand">
-                        <img class="kagrenac-brand-icon" src="images/puzzlebox.png" alt="Playthrough Saves icon">
-                        <span class="database-manager-label"><?= htmlspecialchars($databaseManagerLabel, ENT_QUOTES, 'UTF-8') ?></span>
-                    </span>
-                </a>
-            </div>
+            <div class="home-split">
+            <section class="home-tools home-panel" aria-labelledby="home-tools-title">
+                <div class="home-split-head">
+                    <h2 class="home-storage-title" id="home-tools-title">Tools</h2>
+                </div>
+                <ul class="home-tool-list">
+                    <li><a class="home-tool lmstudio-manager" href="lmstudio.php"><img class="chim-brand-icon" src="images/centurion.webp" alt="" width="42" height="42"><span class="home-tool-name">LLM Studio</span><span class="home-tool-chev" aria-hidden="true">&rsaquo;</span></a></li>
+                    <li><a class="home-tool distro-debugger" href="<?= htmlspecialchars($distroDebuggerUrl, ENT_QUOTES, 'UTF-8') ?>"><img class="kagrenac-brand-icon" src="images/dwemerspider.png" alt=""><span class="home-tool-name">Distro Debugger</span><span class="home-tool-chev" aria-hidden="true">&rsaquo;</span></a></li>
+                    <li><a class="home-tool database-manager" href="<?= htmlspecialchars($databaseManagerUrl, ENT_QUOTES, 'UTF-8') ?>"><img class="kagrenac-brand-icon" src="images/puzzlebox.png" alt=""><span class="home-tool-name"><?= htmlspecialchars($databaseManagerLabel, ENT_QUOTES, 'UTF-8') ?></span><span class="home-tool-chev" aria-hidden="true">&rsaquo;</span></a></li>
+                </ul>
+            </section>
             <div class="home-status home-panel">
             <section class="home-storage" id="home-storage" aria-labelledby="home-storage-title" aria-busy="true"
                 data-mods="<?= htmlspecialchars(json_encode($storageMods), ENT_QUOTES, 'UTF-8') ?>">
-                <div class="home-storage-summary">
+                <div class="home-split-head">
                     <h2 class="home-storage-title" id="home-storage-title">Database storage</h2>
+                    <a class="home-storage-manage" href="data_manager.php?mod=all&amp;view=overview">Manage storage<span aria-hidden="true">&rarr;</span></a>
+                </div>
+                <div class="home-storage-summary">
                     <strong class="home-storage-total" data-storage-total>Measuring…</strong>
                     <span class="home-storage-note" data-storage-note></span>
                 </div>
@@ -2363,11 +2240,11 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                     <?php foreach ($storageMods as $storageMod): ?>
                         <li class="home-storage-mod home-storage-mod-<?= htmlspecialchars($storageMod['key'], ENT_QUOTES, 'UTF-8') ?><?= $storageMod['installed'] ? '' : ' is-absent' ?>" data-mod="<?= htmlspecialchars($storageMod['key'], ENT_QUOTES, 'UTF-8') ?>">
                             <span class="home-storage-mod-name"><span class="home-storage-mod-dot" aria-hidden="true"></span><?= htmlspecialchars($storageMod['label'], ENT_QUOTES, 'UTF-8') ?></span>
+                            <span class="home-storage-mod-meter" aria-hidden="true"><span class="home-storage-mod-bar"></span></span>
                             <span class="home-storage-mod-size"><?= $storageMod['installed'] ? 'Measuring…' : 'Not installed' ?></span>
                         </li>
                     <?php endforeach; ?>
                 </ul>
-                <a class="home-storage-manage" href="data_manager.php?mod=all&amp;view=overview">Manage storage<span aria-hidden="true">&rarr;</span></a>
                 <noscript><span class="home-storage-note">Enable JavaScript to measure storage.</span></noscript>
             </section>
             <?php
@@ -2395,6 +2272,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                     <?php endif; ?>
                 </div>
             <?php endif; ?>
+            </div>
             </div>
         </main>
 
