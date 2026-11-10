@@ -1483,6 +1483,22 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
 
         .dashboard-header .dashboard-title { margin: 0; min-width: 0; }
 
+        /* Stacks the "Free Alpha!" label centred above the Ploofy panel without changing the header row. */
+        .dashboard-ploofy-wrap {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .dashboard-ploofy-tag {
+            color: #fff;
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.2;
+            text-align: center;
+        }
+
         /* Ploofy.ai panel: tokens copied from ploofy.ai (.hero-logo frame, --cyan palette); the whole panel is the link. */
         .dashboard-ploofy {
             display: inline-flex;
@@ -1518,6 +1534,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         @media (max-width: 640px) {
             .dashboard-header { gap: 14px; padding-bottom: 16px; }
             .dashboard-header .dashboard-title { font-size: 34px; word-spacing: 7px; }
+            .dashboard-ploofy-wrap,
             .dashboard-ploofy { width: 100%; }
             .dashboard-ploofy-logo { height: 44px; }
         }
@@ -2137,9 +2154,12 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         <main class="dashboard-shell">
             <header class="dashboard-header">
                 <h1 class="dashboard-title">Dwemer Dashboard</h1>
-                <a class="dashboard-ploofy" href="https://ploofy.ai/" target="_blank" rel="noopener noreferrer" aria-label="Ploofy.ai (opens in a new tab)">
-                    <img class="dashboard-ploofy-logo" src="images/ploofy-logo.png" alt="" width="338" height="104" decoding="async">
-                </a>
+                <div class="dashboard-ploofy-wrap">
+                    <span class="dashboard-ploofy-tag">Free Alpha!</span>
+                    <a class="dashboard-ploofy" href="https://ploofy.ai/" target="_blank" rel="noopener noreferrer" aria-label="Ploofy.ai (opens in a new tab)">
+                        <img class="dashboard-ploofy-logo" src="images/ploofy-logo.png" alt="" width="338" height="104" decoding="async">
+                    </a>
+                </div>
             </header>
             <div class="dashboard-mods-heading">
                 <h2 class="home-storage-title dashboard-mods-title">Official mods</h2>
