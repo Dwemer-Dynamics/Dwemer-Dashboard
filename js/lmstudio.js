@@ -529,7 +529,8 @@ function renderSlotTarget() {
 
 function renderStartupSummary() {
     const names = ['startup-model', 'startup-decision'].map(el).filter(s => s.value).map(s => s.selectedOptions[0]?.textContent || s.value);
-    let text = el('autostart').checked ? `Starts with DwemerDistro${names.length ? ` · loads ${names.join(' + ')}` : ''}` : 'Manual start';
+    // Autostart only starts the engine when a startup model is chosen; empty slots leave it stopped.
+    let text = !el('autostart').checked ? 'Manual start' : names.length ? `Starts with DwemerDistro · loads ${names.join(' + ')}` : 'Autostart on · no startup model, engine stays stopped';
     if (engineDirty) text += ' · unsaved';
     setText('startup-summary', text);
 }
