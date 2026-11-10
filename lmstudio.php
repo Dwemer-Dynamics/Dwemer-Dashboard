@@ -181,7 +181,8 @@ if ($chimRoot !== null && is_file($chimRoot . '/ui/quickstart.php')) {
             <details id="server-settings" class="panel">
                 <summary>Startup <span id="startup-summary" class="muted"></span></summary>
                 <div class="extras-body">
-                    <label class="inline"><input id="autostart" type="checkbox"> Start with DwemerDistro</label>
+                    <label class="inline"><input id="autostart" type="checkbox" aria-describedby="autostart-help"> Start with DwemerDistro</label>
+                    <p id="autostart-help" class="muted">On by default. Turn off to start LLM Studio manually. The launcher shares this setting.</p>
                     <label>Startup model<select id="startup-model"><option value="">None</option></select></label>
                     <label>Decision model<select id="startup-decision"><option value="">None</option></select></label>
                     <div class="button-group"><button type="button" id="save-engine" data-mutation>Save</button></div>

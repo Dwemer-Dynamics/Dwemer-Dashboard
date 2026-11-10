@@ -529,7 +529,8 @@ function renderSlotTarget() {
 
 function renderStartupSummary() {
     const names = ['startup-model', 'startup-decision'].map(el).filter(s => s.value).map(s => s.selectedOptions[0]?.textContent || s.value);
-    let text = el('autostart').checked ? `Starts with DwemerDistro${names.length ? ` · loads ${names.join(' + ')}` : ''}` : 'Manual start';
+    // Autostart only starts the engine when a startup model is chosen; empty slots leave it stopped.
+    let text = !el('autostart').checked ? 'Manual start' : names.length ? `Starts with DwemerDistro · loads ${names.join(' + ')}` : 'Autostart on · no startup model, engine stays stopped';
     if (engineDirty) text += ' · unsaved';
     setText('startup-summary', text);
 }
@@ -646,7 +647,8 @@ function render(state) {
     unlocked = true; el('unlock').hidden = true; el('manager').hidden = false;
     setText('status', state.running ? 'Running' : state.installed ? 'Stopped' : 'Not installed');
     el('status').dataset.state = state.running ? 'running' : state.installed ? 'stopped' : 'missing';
-    if (!engineDirty) el('autostart').checked = state.settings.autostart;
+    // Autostart is on unless explicitly saved off, matching the helper's default.
+    if (!engineDirty) el('autostart').checked = state.settings?.autostart !== false;
     el('endpoint').value = state.endpoint; el('chatUrl').value = state.chatUrl;
     renderResources(state.resources);
     // A restarting server or an older helper lists no models; the choice and unsaved form stay until a list returns.
