@@ -1,7 +1,7 @@
-/* Themed hover and click-to-play shows for installed CHIM, LORKHAN, DIALECTIC and STOBE cards.
+/* Themed hover and click-to-play shows for installed CHIM, LORKHAN, DIALECTIC, STOBE and REIGN cards.
  * The first plain fine-pointer click on a card plays a ~4s show, then follows the card's
  * registered href; a second plain click on that link skips. Visuals are CSS keyframes over
- * local game art (images/card-effects) in
+ * local game art (images/card-effects, or REIGN's own card art) in
  * css/mod_card_effects.css. This script builds decorative overlays and card-edge borders, owns
  * the single timer and the Pause effects control; it uses no animation frames, canvas, sounds or
  * network requests. */
@@ -91,7 +91,20 @@
             span('stobe-veil'),
         ];
     }
-    const themes = {chim, lorkhan, dialectic, stobe};
+    function reign(link) {
+        // Sixteen warm dust motes drift in the art's light shaft; the title itself never moves.
+        const motes = Array.from({length: 16}, (_, i) => {
+            const mote = span('reign-mote');
+            mote.style.left = (12 + i * 29 % 76) + '%'; mote.style.top = (8 + i * 17 % 73) + '%';
+            mote.style.animationDelay = (-i * .71) + 's';
+            return mote;
+        });
+        // The sheen re-reads the card's already loaded artwork by its exact URL, so nothing downloads twice.
+        const shine = span('reign-shine'), art = link.querySelector('.mod-card-art');
+        if (art?.src) shine.style.setProperty('--reign-art', 'url(' + JSON.stringify(art.src) + ')');
+        return [span('reign-shaft', motes), shine];
+    }
+    const themes = {chim, lorkhan, dialectic, stobe, reign};
 
     // Card-edge borders sit just outside the card, over a rect that follows its rounded corners.
     const ring = (...classes) => classes.map(name => '<rect class="' + name + '" rx="10" pathLength="400"/>').join('');
@@ -102,13 +115,14 @@
             + ring('lork-b-heat', 'lork-b-bronze', 'lork-b-embers', 'lork-b-ash'), 'mod-fx-border mod-fx-border-lorkhan', null),
         dialectic: () => svg(ring('dia-b-enamel', 'dia-b-bulbs', 'dia-b-bulbs-lit'), 'mod-fx-border mod-fx-border-dialectic', null),
         stobe: () => span('mod-fx-border mod-fx-border-stobe', [span('stobe-b-haze'), span('stobe-b-rust'), span('stobe-b-grit')]),
+        reign: () => svg(ring('reign-b-glint'), 'mod-fx-border mod-fx-border-reign', null),
     };
 
     // Only installed cards (links with an href) are decorated; disabled cards stay inert.
     for (const [product, build] of Object.entries(themes)) {
         const link = document.querySelector('.mod-card-' + product + ' > .mod-card-open[href]');
         if (!link) continue;
-        const fx = span('mod-fx mod-fx-' + product, build());
+        const fx = span('mod-fx mod-fx-' + product, build(link));
         fx.setAttribute('aria-hidden', 'true');
         link.classList.add('mod-fx-host'); link.dataset.modFxState = 'idle';
         link.insertBefore(fx, link.querySelector('.mod-card-label'));
