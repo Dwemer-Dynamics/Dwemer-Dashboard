@@ -1,5 +1,5 @@
-/* Themed hover ambience, card-edge borders and ~4s click shows for the CHIM, LORKHAN, DIALECTIC
- * and STOBE cards. Markup comes from js/mod_card_effects.js. Loop animations stay paused until hover
+/* Themed hover ambience, card-edge borders and ~4s click shows for the CHIM, LORKHAN, DIALECTIC,
+ * STOBE and REIGN cards. Markup comes from js/mod_card_effects.js. Loop animations stay paused until hover
  * or a show, so idle cards cost nothing. Overlays cover only the 16:9 artwork, never the label;
  * borders sit just outside the card edge. Game art in images/card-effects is local and small. */
 .mod-fx-host { position: relative; }
@@ -16,19 +16,20 @@ html.mod-fx-paused :is(.mod-fx, .mod-fx-border) { display: none; }
 
 /* Shared: loop layers fade in on hover or during a show and keep their place when paused. */
 .chim-snow, .chim-wall, .lork-ash, .lork-heart-glow,
-.dia-bulbs, .dia-bulbs-lit, .stobe-sand, .stobe-pall {
+.dia-bulbs, .dia-bulbs-lit, .stobe-sand, .stobe-pall, .reign-shaft {
     opacity: 0; transition: opacity .5s ease-out; animation-play-state: paused;
 }
 @media (hover: hover) and (pointer: fine) {
     .mod-fx-host:is(:hover, :focus-visible) :is(.chim-snow, .lork-ash, .lork-heart-glow,
-        .dia-bulbs-lit, .stobe-sand-fine, .stobe-pall) { animation-play-state: running; }
+        .dia-bulbs-lit, .stobe-sand-fine, .stobe-pall, .reign-mote) { animation-play-state: running; }
     .mod-fx-host:is(:hover, :focus-visible) :is(.chim-snow, .lork-ash, .lork-heart-glow,
-        .dia-bulbs, .dia-bulbs-lit, .stobe-sand-fine) { opacity: 1; }
+        .dia-bulbs, .dia-bulbs-lit, .stobe-sand-fine, .reign-shaft) { opacity: 1; }
     .mod-fx-host:is(:hover, :focus-visible) .chim-wall { opacity: .55; }
     .mod-fx-host:is(:hover, :focus-visible) .stobe-pall { opacity: .22; }
 }
 .mod-fx-playing :is(.chim-snow, .lork-ash, .lork-heart-glow, .dia-bulbs-lit,
-    .stobe-sand, .stobe-pall) { opacity: 1; animation-play-state: running; }
+    .stobe-sand, .stobe-pall, .reign-shaft) { opacity: 1; animation-play-state: running; }
+.mod-fx-playing .reign-mote { animation-play-state: running; }
 .mod-fx-playing :is(.dia-bulbs, .chim-wall) { opacity: 1; }
 
 /* ---------- Card-edge borders: drawn outside the card edge without clipping ---------- */
@@ -39,6 +40,7 @@ html.mod-fx-paused :is(.mod-fx, .mod-fx-border) { display: none; }
 .mod-card-lorkhan { --mod-fx-edge: #a8834a; }
 .mod-card-dialectic { --mod-fx-edge: #c39a58; }
 .mod-card-stobe { --mod-fx-edge: #8c6a48; }
+.mod-card-reign { --mod-fx-edge: #c9a227; }
 /* While a themed border shows, it replaces the plain accent hover ring. */
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) and (forced-colors: none) {
     html:not(.mod-fx-paused) .mod-card.mod-fx-card:is(:hover, .mod-fx-card-playing) { border-color: var(--mod-fx-edge); box-shadow: none; }
@@ -128,6 +130,13 @@ html.mod-fx-paused :is(.mod-fx, .mod-fx-border) { display: none; }
 .stobe-b-haze { box-shadow: 1px 0 8px rgb(120 92 62 / .45); }
 @keyframes mod-fx-stobe-b-grit { to { background-position: 180px 0; } }
 .mod-fx-card-playing .stobe-b-grit { animation-duration: 1.6s; }
+
+/* REIGN: the card's own bronze-gold edge, with one slow gold glint travelling round it. */
+.reign-b-glint {
+    stroke: #f1d4a2; stroke-width: 2px; stroke-linecap: round; stroke-dasharray: 20 380; opacity: .75;
+    filter: drop-shadow(0 0 2px rgb(241 212 162 / .45)); animation: mod-fx-reign-b-orbit 7s linear infinite;
+}
+@keyframes mod-fx-reign-b-orbit { to { stroke-dashoffset: -400; } }
 
 /* ---------- CHIM / Skyrim: snowfall; a dragon passes, FUS RO DAH lights up the word walls ---------- */
 /* Tiles divide the layer height so a 50% fall loops without a seam. */
@@ -565,3 +574,61 @@ html.mod-fx-paused :is(.mod-fx, .mod-fx-border) { display: none; }
 @keyframes mod-fx-stobe-gust { 0%, 12% { opacity: 0; } 42%, 64% { opacity: 1; } 94%, 100% { opacity: 0; } }
 .mod-fx-playing .stobe-veil { animation: mod-fx-stobe-veil 3.9s ease-in-out both; }
 @keyframes mod-fx-stobe-veil { 0%, 22% { opacity: 0; } 46%, 62% { opacity: .55; } 92%, 100% { opacity: 0; } }
+
+/* ---------- REIGN / Bannerlord: dust in the light shaft; a forged sheen crosses the crown and title ---------- */
+/* The title art stays still. A warm shaft falls from above and sixteen tiny motes drift up through it. */
+.reign-shaft { inset: 0; background: radial-gradient(ellipse at 50% -20%, rgb(168 138 84 / .24), transparent 65%); }
+.reign-mote {
+    position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #eed8ac;
+    box-shadow: 0 0 3px 1px rgb(238 216 172 / .35);
+    animation: mod-fx-reign-drift 4s ease-in-out infinite paused;
+}
+/* Long fade plateaus and a soft halo keep the 2px motes from twinkling as they cross pixel edges. */
+@keyframes mod-fx-reign-drift { 0% { opacity: 0; transform: translate(0, 9px); } 30%, 60% { opacity: .5; } 100% { opacity: 0; transform: translate(8px, -14px); } }
+/* Show, 3.9s, one pass with no flashes: a broad warm band sweeps once left to right across the crown,
+   shield and REIGN letters (a brightened copy of the same artwork, clipped to them), leaving them gilded
+   behind it; a soft light rides with the band; a gilded rule then traces outward from the centre over the
+   art's own underline. Everything holds, then fades together. Percentages trace the 16:9 art. */
+.reign-shine {
+    inset: 0; opacity: 0; background: var(--reign-art, none) center / 100% 100% no-repeat; filter: brightness(1.75) saturate(1.2);
+    -webkit-mask: linear-gradient(105deg, rgb(0 0 0 / .5) 30%, #000 38%, #000 46%, transparent 54%) 100% 0 / 200% 100% no-repeat;
+    mask: linear-gradient(105deg, rgb(0 0 0 / .5) 30%, #000 38%, #000 46%, transparent 54%) 100% 0 / 200% 100% no-repeat;
+    clip-path: polygon(44% 11%, 56% 11%, 56% 48%, 75% 48%, 75% 69%, 25% 69%, 25% 48%, 44% 48%);
+}
+/* Pseudo layers on the Reign overlay itself: ::before is the broad light band, ::after the traced rule. */
+.mod-fx-reign::before, .mod-fx-reign::after { content: ""; position: absolute; display: block; opacity: 0; pointer-events: none; }
+.mod-fx-reign::before {
+    left: 0; top: 6%; width: 100%; height: 70%;
+    background: linear-gradient(105deg, transparent 30%, rgb(255 214 140 / .22) 42%, transparent 54%) 100% 0 / 200% 100% no-repeat;
+    -webkit-mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent); mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent);
+}
+.mod-fx-reign::after {
+    left: 35.5%; top: calc(72.3% - 1px); width: 29.5%; height: 2px; border-radius: 1px; transform: scaleX(0);
+    background: linear-gradient(90deg, transparent, #e9c574 12%, #fff0c2 34%, rgb(255 240 194 / .35) 40%, rgb(255 240 194 / .35) 60%, #fff0c2 66%, #e9c574 88%, transparent);
+    box-shadow: 0 0 6px 1px rgb(240 196 110 / .55);
+}
+.mod-fx-playing .reign-shine { animation: mod-fx-reign-shine 3.9s both; }
+.mod-fx-playing .mod-fx-reign::before { animation: mod-fx-reign-glow 3.9s both; }
+.mod-fx-playing .mod-fx-reign::after { animation: mod-fx-reign-rule 3.9s both; }
+/* Position 85% -> 0 carries both bands once from just left of the logo to its right edge; the shine's
+   half-strength trail stays on the letters through the hold. */
+@keyframes mod-fx-reign-shine {
+    0%, 4% { opacity: 1; -webkit-mask-position: 85% 0; mask-position: 85% 0; animation-timing-function: cubic-bezier(.35, 0, .65, 1); }
+    60%, 80% { opacity: 1; -webkit-mask-position: 0 0; mask-position: 0 0; animation-timing-function: ease-in-out; }
+    100% { opacity: 0; -webkit-mask-position: 0 0; mask-position: 0 0; }
+}
+@keyframes mod-fx-reign-glow {
+    0%, 4% { opacity: 0; background-position: 85% 0; animation-timing-function: cubic-bezier(.35, 0, .65, 1); }
+    16%, 46% { opacity: 1; }
+    60%, 100% { opacity: 0; background-position: 0 0; }
+}
+@keyframes mod-fx-reign-rule {
+    0%, 36% { opacity: 0; transform: scaleX(0); animation-timing-function: cubic-bezier(.3, 0, .2, 1); }
+    42% { opacity: 1; }
+    66%, 82% { opacity: 1; transform: scaleX(1); animation-timing-function: ease-in-out; }
+    100% { opacity: 0; transform: scaleX(1); }
+}
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+    .mod-fx-card .mod-fx-border.mod-fx-border-reign, .mod-fx-card .reign-shine,
+    .mod-fx-reign::before, .mod-fx-reign::after { display: none !important; animation: none !important; }
+}
