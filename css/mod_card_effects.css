@@ -133,8 +133,8 @@ html.mod-fx-paused :is(.mod-fx, .mod-fx-border) { display: none; }
 
 /* REIGN: the card's own bronze-gold edge, with one slow gold glint travelling round it. */
 .reign-b-glint {
-    stroke: #f1d4a2; stroke-width: 2px; stroke-linecap: round; stroke-dasharray: 20 380;
-    animation: mod-fx-reign-b-orbit 7s linear infinite;
+    stroke: #f1d4a2; stroke-width: 2px; stroke-linecap: round; stroke-dasharray: 20 380; opacity: .75;
+    filter: drop-shadow(0 0 2px rgb(241 212 162 / .45)); animation: mod-fx-reign-b-orbit 7s linear infinite;
 }
 @keyframes mod-fx-reign-b-orbit { to { stroke-dashoffset: -400; } }
 
@@ -580,21 +580,23 @@ html.mod-fx-paused :is(.mod-fx, .mod-fx-border) { display: none; }
 .reign-shaft { inset: 0; background: radial-gradient(ellipse at 50% -20%, rgb(168 138 84 / .24), transparent 65%); }
 .reign-mote {
     position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #eed8ac;
-    animation: mod-fx-reign-drift 4s linear infinite paused;
+    box-shadow: 0 0 3px 1px rgb(238 216 172 / .35);
+    animation: mod-fx-reign-drift 4s ease-in-out infinite paused;
 }
-@keyframes mod-fx-reign-drift { 0% { opacity: 0; transform: translate(0, 9px); } 35% { opacity: .85; } 100% { opacity: 0; transform: translate(8px, -14px); } }
+/* Long fade plateaus and a soft halo keep the 2px motes from twinkling as they cross pixel edges. */
+@keyframes mod-fx-reign-drift { 0% { opacity: 0; transform: translate(0, 9px); } 30%, 60% { opacity: .5; } 100% { opacity: 0; transform: translate(8px, -14px); } }
 /* Show: a brightened copy of the same artwork, clipped to the crown and REIGN letters, carries one
    diagonal metallic sheen across them over 3.9s. Percentages trace the 16:9 art. */
 .reign-shine {
-    inset: 0; opacity: 0; background: var(--reign-art, none) center / 100% 100% no-repeat; filter: brightness(1.95);
-    -webkit-mask-image: linear-gradient(112deg, transparent 41%, #000 49%, transparent 57%); mask-image: linear-gradient(112deg, transparent 41%, #000 49%, transparent 57%);
+    inset: 0; opacity: 0; background: var(--reign-art, none) center / 100% 100% no-repeat; filter: brightness(1.45);
+    -webkit-mask-image: linear-gradient(112deg, transparent 38%, #000 49%, transparent 60%); mask-image: linear-gradient(112deg, transparent 38%, #000 49%, transparent 60%);
     -webkit-mask-size: 350% 100%; mask-size: 350% 100%;
     clip-path: polygon(44% 14%, 56% 14%, 56% 48%, 75% 48%, 75% 69%, 25% 69%, 25% 48%, 44% 48%);
 }
 .mod-fx-playing .reign-shine { animation: mod-fx-reign-shine 3.9s ease-in-out both; }
 @keyframes mod-fx-reign-shine {
-    0% { -webkit-mask-position: 100% 0; mask-position: 100% 0; opacity: 0; }
-    20%, 75% { opacity: .92; }
+    0% { -webkit-mask-position: 100% 0; mask-position: 100% 0; opacity: 0; animation-timing-function: linear; }
+    25%, 70% { opacity: .6; }
     100% { -webkit-mask-position: 0 0; mask-position: 0 0; opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce), (forced-colors: active) {
