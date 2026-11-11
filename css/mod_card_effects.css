@@ -585,20 +585,50 @@ html.mod-fx-paused :is(.mod-fx, .mod-fx-border) { display: none; }
 }
 /* Long fade plateaus and a soft halo keep the 2px motes from twinkling as they cross pixel edges. */
 @keyframes mod-fx-reign-drift { 0% { opacity: 0; transform: translate(0, 9px); } 30%, 60% { opacity: .5; } 100% { opacity: 0; transform: translate(8px, -14px); } }
-/* Show: a brightened copy of the same artwork, clipped to the crown and REIGN letters, carries one
-   diagonal metallic sheen across them over 3.9s. Percentages trace the 16:9 art. */
+/* Show, 3.9s, one pass with no flashes: a broad warm band sweeps once left to right across the crown,
+   shield and REIGN letters (a brightened copy of the same artwork, clipped to them), leaving them gilded
+   behind it; a soft light rides with the band; a gilded rule then traces outward from the centre over the
+   art's own underline. Everything holds, then fades together. Percentages trace the 16:9 art. */
 .reign-shine {
-    inset: 0; opacity: 0; background: var(--reign-art, none) center / 100% 100% no-repeat; filter: brightness(1.45);
-    -webkit-mask-image: linear-gradient(112deg, transparent 38%, #000 49%, transparent 60%); mask-image: linear-gradient(112deg, transparent 38%, #000 49%, transparent 60%);
-    -webkit-mask-size: 350% 100%; mask-size: 350% 100%;
-    clip-path: polygon(44% 14%, 56% 14%, 56% 48%, 75% 48%, 75% 69%, 25% 69%, 25% 48%, 44% 48%);
+    inset: 0; opacity: 0; background: var(--reign-art, none) center / 100% 100% no-repeat; filter: brightness(1.75) saturate(1.2);
+    -webkit-mask: linear-gradient(105deg, rgb(0 0 0 / .5) 30%, #000 38%, #000 46%, transparent 54%) 100% 0 / 200% 100% no-repeat;
+    mask: linear-gradient(105deg, rgb(0 0 0 / .5) 30%, #000 38%, #000 46%, transparent 54%) 100% 0 / 200% 100% no-repeat;
+    clip-path: polygon(44% 11%, 56% 11%, 56% 48%, 75% 48%, 75% 69%, 25% 69%, 25% 48%, 44% 48%);
 }
-.mod-fx-playing .reign-shine { animation: mod-fx-reign-shine 3.9s ease-in-out both; }
+/* Pseudo layers on the Reign overlay itself: ::before is the broad light band, ::after the traced rule. */
+.mod-fx-reign::before, .mod-fx-reign::after { content: ""; position: absolute; display: block; opacity: 0; pointer-events: none; }
+.mod-fx-reign::before {
+    left: 0; top: 6%; width: 100%; height: 70%;
+    background: linear-gradient(105deg, transparent 30%, rgb(255 214 140 / .22) 42%, transparent 54%) 100% 0 / 200% 100% no-repeat;
+    -webkit-mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent); mask-image: linear-gradient(transparent, #000 20%, #000 80%, transparent);
+}
+.mod-fx-reign::after {
+    left: 35.5%; top: calc(72.3% - 1px); width: 29.5%; height: 2px; border-radius: 1px; transform: scaleX(0);
+    background: linear-gradient(90deg, transparent, #e9c574 12%, #fff0c2 34%, rgb(255 240 194 / .35) 40%, rgb(255 240 194 / .35) 60%, #fff0c2 66%, #e9c574 88%, transparent);
+    box-shadow: 0 0 6px 1px rgb(240 196 110 / .55);
+}
+.mod-fx-playing .reign-shine { animation: mod-fx-reign-shine 3.9s both; }
+.mod-fx-playing .mod-fx-reign::before { animation: mod-fx-reign-glow 3.9s both; }
+.mod-fx-playing .mod-fx-reign::after { animation: mod-fx-reign-rule 3.9s both; }
+/* Position 85% -> 0 carries both bands once from just left of the logo to its right edge; the shine's
+   half-strength trail stays on the letters through the hold. */
 @keyframes mod-fx-reign-shine {
-    0% { -webkit-mask-position: 100% 0; mask-position: 100% 0; opacity: 0; animation-timing-function: linear; }
-    25%, 70% { opacity: .6; }
-    100% { -webkit-mask-position: 0 0; mask-position: 0 0; opacity: 0; }
+    0%, 4% { opacity: 1; -webkit-mask-position: 85% 0; mask-position: 85% 0; animation-timing-function: cubic-bezier(.35, 0, .65, 1); }
+    60%, 80% { opacity: 1; -webkit-mask-position: 0 0; mask-position: 0 0; animation-timing-function: ease-in-out; }
+    100% { opacity: 0; -webkit-mask-position: 0 0; mask-position: 0 0; }
+}
+@keyframes mod-fx-reign-glow {
+    0%, 4% { opacity: 0; background-position: 85% 0; animation-timing-function: cubic-bezier(.35, 0, .65, 1); }
+    16%, 46% { opacity: 1; }
+    60%, 100% { opacity: 0; background-position: 0 0; }
+}
+@keyframes mod-fx-reign-rule {
+    0%, 36% { opacity: 0; transform: scaleX(0); animation-timing-function: cubic-bezier(.3, 0, .2, 1); }
+    42% { opacity: 1; }
+    66%, 82% { opacity: 1; transform: scaleX(1); animation-timing-function: ease-in-out; }
+    100% { opacity: 0; transform: scaleX(1); }
 }
 @media (prefers-reduced-motion: reduce), (forced-colors: active) {
-    .mod-fx-card .mod-fx-border.mod-fx-border-reign, .mod-fx-card .reign-shine { display: none !important; animation: none !important; }
+    .mod-fx-card .mod-fx-border.mod-fx-border-reign, .mod-fx-card .reign-shine,
+    .mod-fx-reign::before, .mod-fx-reign::after { display: none !important; animation: none !important; }
 }
