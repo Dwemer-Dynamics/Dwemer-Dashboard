@@ -380,7 +380,7 @@ if (str_contains($stobeHostForUrl, ':') && !str_starts_with($stobeHostForUrl, '[
 $chimUrl = sprintf('%s://%s:8081/HerikaServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $stobeUrl = sprintf('%s://%s:8083/StobeServer/ui/home.php', $requestScheme, $stobeHostForUrl);
 $dialecticUrl = sprintf('%s://%s:8088/DialecticServer/ui/home.php', $requestScheme, $stobeHostForUrl);
-$reignUrl = sprintf('%s://%s:8089/', $requestScheme, $stobeHostForUrl);
+$reignUrl = sprintf('%s://%s:8091/', $requestScheme, $stobeHostForUrl);
 // Keep an existing launcher route; otherwise use Lorkhan's native server port.
 $requestPort = parse_url('http://' . $requestHostRaw, PHP_URL_PORT);
 $lorkhanPort = $requestPort === 7514 ? 7514 : 8090;
