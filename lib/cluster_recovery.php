@@ -44,16 +44,34 @@ function cr_root_problem(): ?string
     return null;
 }
 
-// Prefer the newest installed server major; the operator CLI requires it to match production on activation.
+// Read registration metadata only; the disabled migration donor is never a recovery target.
+function cr_registered_cluster(): ?array
+{
+    if (cr_run(['/usr/bin/pg_lsclusters', '--json'], $output) !== 0) return null;
+    $clusters = json_decode($output, true);
+    if (!is_array($clusters)) return null;
+    $candidates = [];
+    foreach ($clusters as $cluster) {
+        if (!is_array($cluster) || (string)($cluster['port'] ?? '') !== '5432'
+            || !in_array($cluster['start'] ?? '', ['auto', 'manual'], true)) continue;
+        $major = (string)($cluster['version'] ?? '');
+        $name = $cluster['cluster'] ?? '';
+        $data = $cluster['pgdata'] ?? '';
+        if (!preg_match('/^[1-9][0-9]*$/D', $major) || !is_string($name)
+            || !preg_match('/^[a-zA-Z0-9_]+$/D', $name) || !is_string($data) || !str_starts_with($data, '/')) return null;
+        $candidates[] = ['major' => $major, 'name' => $name, 'data' => rtrim($data, '/'), 'port' => '5432'];
+    }
+    return count($candidates) === 1 ? $candidates[0] : null;
+}
+
+// Match the registered production major even when a newer server package is also installed.
 function cr_pg_bin(): ?array
 {
-    $found = null;
-    foreach (glob('/usr/lib/postgresql/*/bin', GLOB_ONLYDIR) ?: [] as $bin) {
-        $major = (int)basename(dirname($bin));
-        foreach (['initdb', 'pg_ctl', 'postgres', 'psql', 'pg_config'] as $tool) if (!is_executable("$bin/$tool")) continue 2;
-        if (!$found || $major > $found['major']) $found = ['bin' => $bin, 'major' => $major];
-    }
-    return $found;
+    $cluster = cr_registered_cluster();
+    if (!$cluster) return null;
+    $bin = '/usr/lib/postgresql/' . $cluster['major'] . '/bin';
+    foreach (['initdb', 'pg_ctl', 'postgres', 'psql', 'pg_config'] as $tool) if (!is_executable("$bin/$tool")) return null;
+    return ['bin' => $bin, 'major' => (int)$cluster['major']];
 }
 
 function cr_job_id_valid(mixed $id): bool { return is_string($id) && preg_match('/^\d{8}-\d{6}-[a-f0-9]{8}$/D', $id) === 1; }
@@ -180,7 +198,7 @@ function cr_start(string $path, string $filename, string $source): array
         if (cr_current_id()) throw new ClusterRecoveryException('A recovery attempt already exists. Cancel or discard it before starting another.');
         if (!dashboardIsClusterBackup($path)) throw new ClusterRecoveryException('This file is not a full PostgreSQL backup.');
         $pg = cr_pg_bin();
-        if (!$pg) throw new ClusterRecoveryException('PostgreSQL server programs (initdb, pg_ctl, postgres, psql) are not installed.');
+        if (!$pg) throw new ClusterRecoveryException('Recovery requires one enabled PostgreSQL cluster on port 5432 and matching server tools.');
         clearstatcache(true, $path);
         $source_stat = stat($path);
         if (!$source_stat || $source_stat['size'] === 0) throw new ClusterRecoveryException('The backup is empty or unreadable.');

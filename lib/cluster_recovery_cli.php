@@ -327,22 +327,20 @@ function cr_setup(string $owner): void
 
 function cr_production(): array
 {
-    $configs = glob('/etc/postgresql/*/main/postgresql.conf') ?: [];
-    if (count($configs) !== 1) throw new ClusterRecoveryException('Expected exactly one Debian PostgreSQL cluster named "main".');
-    $text = (string)file_get_contents($configs[0]);
-    $major = basename(dirname($configs[0], 2));
-    $data = preg_match("/^\s*data_directory\s*=\s*'([^']+)'/m", $text, $match) ? $match[1] : "/var/lib/postgresql/$major/main";
-    $port = preg_match('/^\s*port\s*=\s*(\d+)/m', $text, $match) ? $match[1] : '5432';
+    $cluster = cr_registered_cluster();
+    if (!$cluster) throw new ClusterRecoveryException('Expected exactly one enabled PostgreSQL cluster on port 5432.');
+    $data = $cluster['data'];
     $postgres = posix_getpwnam('postgres');
     if (!$postgres || !is_dir($data) || is_link($data)) throw new ClusterRecoveryException('The production PostgreSQL data folder was not found.');
-    return ['major' => $major, 'data' => rtrim($data, '/'), 'port' => $port, 'uid' => $postgres['uid']];
+    if (trim((string)@file_get_contents("$data/PG_VERSION")) !== $cluster['major']) throw new ClusterRecoveryException('Registered PostgreSQL version does not match its data folder.');
+    return $cluster + ['uid' => $postgres['uid']];
 }
 
 function cr_cluster(array $production, string $action): bool
 {
     $command = ['pg_ctlcluster'];
     if ($action === 'stop') array_push($command, '--mode', 'fast');
-    $code = cr_run(array_merge($command, [$production['major'], 'main', $action]), $output);
+    $code = cr_run(array_merge($command, [$production['major'], $production['name'], $action]), $output);
     if ($action === 'status') return $code === 0;
     if ($code !== 0) cr_out(trim($output));
     if ($action === 'stop') return !cr_cluster($production, 'status');

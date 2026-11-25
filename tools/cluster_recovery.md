@@ -4,6 +4,12 @@ Restores a full `pg_dumpall` backup into a private PostgreSQL instance so it can
 
 ## Setup and use
 
+Recovery selects the single enabled cluster registered on port 5432 and uses server tools
+of that same major. A disabled PostgreSQL 15 migration donor is ignored, and installing
+a newer server package does not change the selected recovery version. Missing matching
+tools or ambiguous cluster registration is refused. Registration is inspected without
+connecting to the production database.
+
 1. Once, as root: `sudo php lib/cluster_recovery_cli.php setup` (optionally `--owner ACCOUNT`; default `www-data`). This creates `DWEMER_CLUSTER_RECOVERY_ROOT` (default `/var/lib/dwemer-cluster-recovery`), owned by the web account with mode 0700, outside the web root.
 2. In the Dashboard, choose **Recover safely** on a listed full-cluster backup. A detached worker running as the web account protects a copy of the backup, scans it, creates a socket-only instance (`listen_addresses = ''`) under the recovery root, restores it with `psql`, counts the recovered events and stops the instance. It never connects to the live cluster.
 3. Cancel or Discard from the Dashboard. Only one attempt exists at a time.
@@ -22,7 +28,7 @@ The Dashboard estimates the need as 1.6 × the SQL size + 2 GB (+ the SQL size a
 
 Run in the Distro terminal as root; each prints what it will do and requires a typed confirmation. There is no browser Activate button and the web account has no sudo.
 
-- `sudo php lib/cluster_recovery_cli.php activate JOB_ID` stops PostgreSQL `main`, keeps the current data folder as `main.before-recovery-YYYYMMDD-HHMMSS`, moves the recovered copy into place and starts PostgreSQL. If the copy does not start, the original is put back. The PostgreSQL major version must match and the recovery root must be on the same filesystem as the production data folder.
+- `sudo php lib/cluster_recovery_cli.php activate JOB_ID` stops the selected PostgreSQL cluster (for example `17/dwemer`), keeps its data folder with a `.before-recovery-YYYYMMDD-HHMMSS` suffix, moves the recovered copy into place and starts that same cluster. If the copy does not start, the original is put back. The PostgreSQL major version must match and the recovery root must be on the same filesystem as the production data folder.
 - `sudo php lib/cluster_recovery_cli.php rollback main.before-recovery-YYYYMMDD-HHMMSS` restores the kept cluster and keeps the replaced one as `main.rejected-recovery-…`.
 
 Both take the recovery root's `control.lock`, so a Dashboard start or discard cannot run meanwhile. Close every game and stop the mod servers first; afterwards check Playthrough Saves before loading the matching game save. Activation has not been tested end to end; never try it against data you need.
