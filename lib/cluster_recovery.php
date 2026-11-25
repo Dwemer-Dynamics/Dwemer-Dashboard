@@ -49,7 +49,8 @@ function cr_root_problem(): ?string
 // Any malformed enabled entry, or more than one candidate, selects nothing.
 function cr_registered_cluster(): ?array
 {
-    if (cr_run(['/usr/bin/pg_lsclusters', '--json'], $output) !== 0) return null;
+    // Warnings on stderr (for example locale notices) must not be parsed as part of the JSON document.
+    if (cr_run(['/usr/bin/pg_lsclusters', '--json'], $output, null, [], false) !== 0) return null;
     $clusters = json_decode($output, true);
     return is_array($clusters) ? cr_select_cluster($clusters) : null;
 }
@@ -217,9 +218,11 @@ function cr_current_id(): ?string
 }
 
 // Runs a fixed argument vector without a shell. Output is truncated to keep logs and errors bounded.
-function cr_run(array $command, ?string &$output = null, ?string $cwd = null, array $env = []): int
+// Stderr is merged into the output for diagnostics unless a caller needs stdout alone to parse it.
+function cr_run(array $command, ?string &$output = null, ?string $cwd = null, array $env = [], bool $mergeStderr = true): int
 {
-    $process = @proc_open($command, [0 => ['file', '/dev/null', 'r'], 1 => ['pipe', 'w'], 2 => ['redirect', 1]], $pipes, $cwd,
+    $stderr = $mergeStderr ? ['redirect', 1] : ['file', '/dev/null', 'w'];
+    $process = @proc_open($command, [0 => ['file', '/dev/null', 'r'], 1 => ['pipe', 'w'], 2 => $stderr], $pipes, $cwd,
         ['PATH' => '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG' => 'C.UTF-8', 'LC_ALL' => 'C.UTF-8'] + $env);
     if (!is_resource($process)) { $output = 'Could not start ' . basename($command[0]) . '.'; return 127; }
     $output = '';
