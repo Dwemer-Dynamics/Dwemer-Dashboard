@@ -44,24 +44,107 @@ function cr_root_problem(): ?string
     return null;
 }
 
-// Read registration metadata only; the disabled migration donor is never a recovery target.
+// Read registration metadata only; the disabled migration donor is never a recovery target. The single
+// enabled cluster on 5432 wins; with none there, the single enabled cluster on another port is used.
+// Any malformed enabled entry, or more than one candidate, selects nothing.
 function cr_registered_cluster(): ?array
 {
     if (cr_run(['/usr/bin/pg_lsclusters', '--json'], $output) !== 0) return null;
     $clusters = json_decode($output, true);
-    if (!is_array($clusters)) return null;
-    $candidates = [];
+    return is_array($clusters) ? cr_select_cluster($clusters) : null;
+}
+
+function cr_select_cluster(array $clusters): ?array
+{
+    $enabled = [];
     foreach ($clusters as $cluster) {
-        if (!is_array($cluster) || (string)($cluster['port'] ?? '') !== '5432'
-            || !in_array($cluster['start'] ?? '', ['auto', 'manual'], true)) continue;
+        if (!is_array($cluster) || !in_array($cluster['start'] ?? '', ['auto', 'manual'], true)) continue;
         $major = (string)($cluster['version'] ?? '');
         $name = $cluster['cluster'] ?? '';
         $data = $cluster['pgdata'] ?? '';
+        $port = $cluster['port'] ?? '';
+        $port = is_int($port) || is_string($port) ? (string)$port : '';
         if (!preg_match('/^[1-9][0-9]*$/D', $major) || !is_string($name)
-            || !preg_match('/^[a-zA-Z0-9_]+$/D', $name) || !is_string($data) || !str_starts_with($data, '/')) return null;
-        $candidates[] = ['major' => $major, 'name' => $name, 'data' => rtrim($data, '/'), 'port' => '5432'];
+            || !preg_match('/^[a-zA-Z0-9_]+$/D', $name) || !is_string($data) || !str_starts_with($data, '/')
+            || !preg_match('/^[1-9][0-9]{0,4}$/D', $port) || (int)$port > 65535) return null;
+        $enabled[] = ['major' => $major, 'name' => $name, 'data' => rtrim($data, '/'), 'port' => $port];
     }
-    return count($candidates) === 1 ? $candidates[0] : null;
+    $default = array_values(array_filter($enabled, static fn(array $cluster): bool => $cluster['port'] === '5432'));
+    if ($default) return count($default) === 1 ? $default[0] : null;
+    return count($enabled) === 1 ? $enabled[0] : null;
+}
+
+// Core's PostgreSQL 17 maintenance journals the cluster identities it manages, and its Debian upgrade fences
+// PostgreSQL. Replacing either cluster's data folder while those exist would invalidate that state.
+const CR_DISTRO_LOCK = '/run/lock/dwemerdistro-maintenance.lock';
+const CR_PG17_JOURNAL_DIR = '/var/lib/dwemerdistro/pg17-maintenance';
+const CR_UPGRADE_FENCE = '/etc/dwemer/trixie-upgrade.fence';
+// Core's Debian 13 maintenance journal, which binds the cluster identity it manages (including fresh 17). It can
+// outlive the fence, for example a cancel that leaves a pending restore, so its presence alone refuses.
+const CR_TRIXIE_STATE = '/var/lib/dwemerdistro/trixie-maintenance/state.json';
+
+function cr_distro_lock_valid(array $stat): bool
+{
+    return ($stat['mode'] & 0170000) === 0100000 && $stat['uid'] === 0 && $stat['nlink'] === 1 && ($stat['mode'] & 07777) === 0644;
+}
+
+// Same contract as Core's lock_distro: root-owned regular file, mode 0644, one link, never a link or
+// FIFO, created if missing and otherwise used as it is. Contention and an invalid file both refuse.
+// Close-on-exec keeps PostgreSQL started meanwhile from inheriting and holding the lock.
+function cr_distro_lock(string $path = CR_DISTRO_LOCK)
+{
+    $mask = umask(0022);
+    $handle = @fopen($path, 'xe');
+    umask($mask);
+    clearstatcache(true, $path);
+    $named = @lstat($path);
+    // An existing lock is opened only once its name is root's regular file, which no other account can swap.
+    if (!$handle && $named && cr_distro_lock_valid($named)) $handle = @fopen($path, 're');
+    $stat = $handle ? fstat($handle) : false;
+    if (!$stat || !$named || !cr_distro_lock_valid($stat) || $stat['ino'] !== $named['ino'] || $stat['dev'] !== $named['dev']) {
+        if ($handle) fclose($handle);
+        throw new ClusterRecoveryException("The distro maintenance lock $path is missing or not a root-owned 0644 file. Nothing was changed.");
+    }
+    if (!flock($handle, LOCK_EX | LOCK_NB, $busy)) {
+        fclose($handle);
+        throw new ClusterRecoveryException($busy
+            ? 'An update, distro maintenance or ddistro changes operation holds the distro maintenance lock. Retry after it finishes. Nothing was changed.'
+            : 'The distro maintenance lock could not be taken. Nothing was changed.');
+    }
+    return $handle;
+}
+
+// True only when a listing of an existing ancestor proves the path is absent; unreadable means unknown.
+function cr_path_absent(string $path): bool
+{
+    $parent = dirname($path);
+    $entries = @scandir($parent);
+    if ($entries !== false) return !in_array(basename($path), $entries, true);
+    clearstatcache(true, $parent);
+    return $parent !== $path && @lstat($parent) === false && cr_path_absent($parent);
+}
+
+// Reason activation or rollback must not run, or null. Only names are inspected; no journal is read or changed.
+function cr_distro_maintenance_problem(string $journalDir = CR_PG17_JOURNAL_DIR, string $fence = CR_UPGRADE_FENCE, string $debianState = CR_TRIXIE_STATE): ?string
+{
+    clearstatcache();
+    if (@lstat($fence) !== false || !cr_path_absent($fence)) {
+        return 'A Debian 13 upgrade is in progress or its fence could not be checked. Retry after it finishes. Nothing was changed.';
+    }
+    // Any entry under that name (file, link or otherwise), or an unprovable absence, refuses; it is never read or changed.
+    if (@lstat($debianState) !== false || !cr_path_absent($debianState)) {
+        return 'This installation has a Debian 13 maintenance journal at ' . $debianState . ' (or it could not be checked), which records the identity of the cluster it manages. '
+            . 'Activation and rollback would invalidate it, so they are not available here. Nothing was changed.';
+    }
+    $refuse = 'This installation has a PostgreSQL 17 migration journal in ' . $journalDir . ', which records the identity of the cluster it manages. '
+        . 'Activation and rollback would invalidate it, so they are not available here. Nothing was changed.';
+    $stat = @lstat($journalDir);
+    if ($stat === false) return cr_path_absent($journalDir) ? null : $refuse;
+    if (($stat['mode'] & 0170000) !== 0040000) return $refuse;
+    $entries = @scandir($journalDir);
+    if ($entries === false) return $refuse;
+    foreach ($entries as $entry) if (preg_match('/\.json(\.|$)/D', $entry)) return $refuse;
+    return null;
 }
 
 // Match the registered production major even when a newer server package is also installed.
@@ -198,7 +281,7 @@ function cr_start(string $path, string $filename, string $source): array
         if (cr_current_id()) throw new ClusterRecoveryException('A recovery attempt already exists. Cancel or discard it before starting another.');
         if (!dashboardIsClusterBackup($path)) throw new ClusterRecoveryException('This file is not a full PostgreSQL backup.');
         $pg = cr_pg_bin();
-        if (!$pg) throw new ClusterRecoveryException('Recovery requires one enabled PostgreSQL cluster on port 5432 and matching server tools.');
+        if (!$pg) throw new ClusterRecoveryException('Recovery requires one enabled PostgreSQL cluster (the one on port 5432, or the only one registered) and matching server tools.');
         clearstatcache(true, $path);
         $source_stat = stat($path);
         if (!$source_stat || $source_stat['size'] === 0) throw new ClusterRecoveryException('The backup is empty or unreadable.');
