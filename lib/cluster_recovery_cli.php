@@ -327,22 +327,20 @@ function cr_setup(string $owner): void
 
 function cr_production(): array
 {
-    $configs = glob('/etc/postgresql/*/main/postgresql.conf') ?: [];
-    if (count($configs) !== 1) throw new ClusterRecoveryException('Expected exactly one Debian PostgreSQL cluster named "main".');
-    $text = (string)file_get_contents($configs[0]);
-    $major = basename(dirname($configs[0], 2));
-    $data = preg_match("/^\s*data_directory\s*=\s*'([^']+)'/m", $text, $match) ? $match[1] : "/var/lib/postgresql/$major/main";
-    $port = preg_match('/^\s*port\s*=\s*(\d+)/m', $text, $match) ? $match[1] : '5432';
+    $cluster = cr_registered_cluster();
+    if (!$cluster) throw new ClusterRecoveryException('Expected one enabled PostgreSQL cluster: the only one on port 5432, or else the only one registered.');
+    $data = $cluster['data'];
     $postgres = posix_getpwnam('postgres');
     if (!$postgres || !is_dir($data) || is_link($data)) throw new ClusterRecoveryException('The production PostgreSQL data folder was not found.');
-    return ['major' => $major, 'data' => rtrim($data, '/'), 'port' => $port, 'uid' => $postgres['uid']];
+    if (trim((string)@file_get_contents("$data/PG_VERSION")) !== $cluster['major']) throw new ClusterRecoveryException('Registered PostgreSQL version does not match its data folder.');
+    return $cluster + ['uid' => $postgres['uid']];
 }
 
 function cr_cluster(array $production, string $action): bool
 {
     $command = ['pg_ctlcluster'];
     if ($action === 'stop') array_push($command, '--mode', 'fast');
-    $code = cr_run(array_merge($command, [$production['major'], 'main', $action]), $output);
+    $code = cr_run(array_merge($command, [$production['major'], $production['name'], $action]), $output);
     if ($action === 'status') return $code === 0;
     if ($code !== 0) cr_out(trim($output));
     if ($action === 'stop') return !cr_cluster($production, 'status');
@@ -428,10 +426,28 @@ function cr_root_control_lock(array $owner)
     return $handle;
 }
 
-function cr_with_control_lock(?array $owner, callable $action): void
+function cr_require_no_distro_maintenance(): void
+{
+    if ($problem = cr_distro_maintenance_problem()) throw new ClusterRecoveryException($problem);
+}
+
+// Core's distro maintenance lock is held from before production is inspected until the operation ends, so
+// an update or PostgreSQL maintenance cannot start meanwhile and the journal and fence checks stay true.
+function cr_with_operator_locks(?array $owner, callable $action): void
 {
     $lock = $owner ? cr_root_control_lock($owner) : null;
-    try { $action(); } finally { if ($lock) { flock($lock, LOCK_UN); fclose($lock); } }
+    try {
+        $distro = cr_distro_lock();
+        try {
+            cr_require_no_distro_maintenance();
+            $action();
+        } finally {
+            flock($distro, LOCK_UN);
+            fclose($distro);
+        }
+    } finally {
+        if ($lock) { flock($lock, LOCK_UN); fclose($lock); }
+    }
 }
 
 function cr_activate(string $id): void
@@ -441,7 +457,7 @@ function cr_activate(string $id): void
     $dir = cr_job_dir($id);
     $owner = is_link($root) ? false : @stat($root);
     if (!$owner) throw new ClusterRecoveryException('Recovery job not found.');
-    cr_with_control_lock($owner, static fn() => cr_activate_locked($id, $dir, $owner));
+    cr_with_operator_locks($owner, static fn() => cr_activate_locked($id, $dir, $owner));
 }
 
 function cr_activate_locked(string $id, string $dir, array $owner): void
@@ -465,9 +481,11 @@ function cr_activate_locked(string $id, string $dir, array $owner): void
     foreach ($status['products'] ?? [] as $product) {
         cr_out(sprintf('  %s (%s): %s', $product['label'], $product['database'], empty($product['present']) ? 'not in backup' : number_format((int)($product['events'] ?? 0)) . ' events'));
     }
-    cr_out('This will stop PostgreSQL ' . $production['major'] . '/main, move ' . $production['data'] . ' to ' . $retained
-        . ', put the recovered copy in its place and start PostgreSQL again. Close every game and stop mod servers first.');
+    cr_out('This will stop PostgreSQL ' . $production['major'] . '/' . $production['name'] . ' (port ' . $production['port'] . '), move '
+        . $production['data'] . ' to ' . $retained . ', put the recovered copy in its place and start that cluster again. '
+        . 'Close every game and stop mod servers first.');
     cr_confirm("ACTIVATE $id");
+    cr_require_no_distro_maintenance();
     if (!cr_cluster($production, 'stop')) throw new ClusterRecoveryException('PostgreSQL did not stop. Nothing was changed.');
     if (!rename($production['data'], $retained)) { cr_cluster($production, 'start'); throw new ClusterRecoveryException('Could not set the current cluster aside. PostgreSQL was restarted unchanged.'); }
     if (!rename($data, $production['data'])) {
@@ -496,20 +514,25 @@ function cr_rollback(string $name): void
     cr_require_root();
     $root = cr_root();
     $owner = !is_link($root) && is_dir($root) ? stat($root) : null;
-    cr_with_control_lock($owner ?: null, static fn() => cr_rollback_locked($name));
+    cr_with_operator_locks($owner ?: null, static fn() => cr_rollback_locked($name));
 }
 
 function cr_rollback_locked(string $name): void
 {
     $production = cr_production();
-    if (!preg_match('/^' . preg_quote(basename($production['data']), '/') . '\.before-recovery-\d{8}-\d{6}$/D', $name)) throw new ClusterRecoveryException('Name a kept cluster folder such as main.before-recovery-20260101-120000.');
+    $folder = basename($production['data']);
+    if (!preg_match('/^' . preg_quote($folder, '/') . '\.before-recovery-\d{8}-\d{6}$/D', $name)) {
+        throw new ClusterRecoveryException("Name a kept folder of PostgreSQL {$production['major']}/{$production['name']}, such as $folder.before-recovery-20260101-120000.");
+    }
     $retained = dirname($production['data']) . '/' . $name;
     $stat = @lstat($retained);
     if (!$stat || ($stat['mode'] & 0170000) !== 0040000 || $stat['uid'] !== $production['uid']
         || trim((string)@file_get_contents("$retained/PG_VERSION")) !== $production['major']) throw new ClusterRecoveryException('The kept cluster folder was not found or is not a PostgreSQL ' . $production['major'] . ' cluster.');
     $rejected = $production['data'] . '.rejected-recovery-' . date('Ymd-His');
-    cr_out("This will stop PostgreSQL, move the current cluster to $rejected, restore $retained and start PostgreSQL again.");
+    cr_out("This will stop PostgreSQL {$production['major']}/{$production['name']} (port {$production['port']}), move {$production['data']} to $rejected, "
+        . "restore $retained in its place and start that cluster again.");
     cr_confirm("ROLLBACK $name");
+    cr_require_no_distro_maintenance();
     if (!cr_cluster($production, 'stop')) throw new ClusterRecoveryException('PostgreSQL did not stop. Nothing was changed.');
     if (!rename($production['data'], $rejected)) { cr_cluster($production, 'start'); throw new ClusterRecoveryException('Could not set the current cluster aside. PostgreSQL was restarted unchanged.'); }
     if (!rename($retained, $production['data'])) { rename($rejected, $production['data']); cr_cluster($production, 'start'); throw new ClusterRecoveryException('Could not restore the kept cluster. The current cluster was restarted.'); }
@@ -525,7 +548,7 @@ try {
     if ($command === 'setup') { cr_setup(($argv[2] ?? '') === '--owner' && isset($argv[3]) ? $argv[3] : 'www-data'); exit(0); }
     if ($command === 'activate' && cr_job_id_valid($argv[2] ?? null)) { cr_activate($argv[2]); exit(0); }
     if ($command === 'rollback' && isset($argv[2])) { cr_rollback($argv[2]); exit(0); }
-    fwrite(STDERR, "Usage: php cluster_recovery_cli.php setup [--owner www-data] | status | activate JOB_ID | rollback main.before-recovery-YYYYMMDD-HHMMSS\n"
+    fwrite(STDERR, "Usage: php cluster_recovery_cli.php setup [--owner www-data] | status | activate JOB_ID | rollback DATAFOLDER.before-recovery-YYYYMMDD-HHMMSS\n"
         . "Set DWEMER_CLUSTER_RECOVERY_ROOT to use a folder other than " . cr_root() . ".\n");
     exit(64);
 } catch (ClusterRecoveryException $e) {
