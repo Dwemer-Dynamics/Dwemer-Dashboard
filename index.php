@@ -2169,7 +2169,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
             </div>
             <div class="dashboard-mods" role="group" aria-label="Official mods">
                 <?php foreach ($modCards as $mod):
-                    $displayName = $mod['name'] === 'REIGN' ? 'REIGN (Closed Alpha)' : $mod['name'];
+                    $displayName = $mod['name'];
                     // Installation is local file presence, independent of update or service health.
                     $installed = $mod['root'] !== '' && ($mod['name'] === 'REIGN' ? (is_file($mod['root'] . '/ReignServer') || is_file($mod['root'] . '/ReignBetaServer')) : is_file($mod['root'] . '/ui/home.php'));
                     $versionLabel = $installed && isset($mod['versionFiles'])
