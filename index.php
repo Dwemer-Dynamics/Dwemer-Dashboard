@@ -386,6 +386,17 @@ $requestPort = parse_url('http://' . $requestHostRaw, PHP_URL_PORT);
 $lorkhanPort = $requestPort === 7514 ? 7514 : 8090;
 $lorkhanUrl = sprintf('%s://%s:%d/LorkhanServer/ui/home.php', $requestScheme, $stobeHostForUrl, $lorkhanPort);
 require_once(__DIR__ . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'server_version.php');
+// ECHOEs: its Windows companion owns the Web UI (127.0.0.1:17841) and backend; the dashboard only reports
+// installed files and never starts services, runs migrations or probes health. The Web UI accepts loopback
+// hosts only, so the link is offered only when this dashboard is itself opened on the DwemerDistro PC.
+$echoesRoot = '/opt/mirthwood-echoes/current';
+$echoesInstalled = is_file($echoesRoot . '/Mirthwood.Echoes.Server.dll');
+$echoesLocal = in_array(strtolower(trim($dashboardHost, '[]')), ['localhost', '127.0.0.1', '::1'], true);
+$echoesNote = 'Not installed';
+if ($echoesInstalled) {
+    $echoesNote = $echoesLocal ? 'Open the companion from the DwemerDistro launcher first'
+        : 'Local only: open it on the DwemerDistro PC';
+}
 // versionFiles: each server's own installed release metadata, in that server's read order.
 $modCards = [
     ['name' => 'CHIM', 'game' => 'Skyrim / Skyrim VR', 'image' => 'chim-rail.jpg', 'url' => $chimUrl, 'root' => $herikaRoot,
@@ -399,6 +410,9 @@ $modCards = [
     ['name' => 'REIGN', 'game' => 'Mount & Blade II: Bannerlord', 'image' => 'reign-logo.png', 'url' => $reignUrl,
         'versionFiles' => ['.version_number.txt'],
         'root' => (is_file('/var/www/html/ReignServer/runtime/current/ReignServer') || is_file('/var/www/html/ReignServer/runtime/current/ReignBetaServer')) ? '/var/www/html/ReignServer/runtime/current' : ''],
+    ['name' => 'ECHOEs', 'game' => 'Mirthwood', 'image' => 'echoes-rail.jpg', 'url' => $echoesLocal ? 'http://127.0.0.1:17841/' : '',
+        'root' => $echoesInstalled ? $echoesRoot : '', 'installed' => $echoesInstalled, 'note' => $echoesNote,
+        'version' => $echoesInstalled ? (dashboard_echoes_version($echoesRoot . '/bundle/manifest.json') ?? 'Version unavailable') : null],
 ];
 $distroDebuggerUrl = 'distro_debugger.php';
 $databaseManagerUrl = 'data_manager.php?mod=all&view=playthroughs';
@@ -1611,6 +1625,7 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
         .mod-card-dialectic { --mod-card-accent: #ffb641; }
         .mod-card-lorkhan { --mod-card-accent: #bc9d5a; }
         .mod-card-reign { --mod-card-accent: #c9a227; }
+        .mod-card-echoes { --mod-card-accent: #b58a45; }
         .mod-card-reign .mod-card-name { color: #f5f6f8; font-family: "Times New Roman", Times, serif; font-weight: normal; }
         .mod-card-chim .mod-card-name { font-family: 'Pelagiad', serif; font-weight: normal; }
         .mod-card-stobe .mod-card-name { font-family: 'Rye', serif; font-weight: normal; }
@@ -2171,25 +2186,35 @@ $patronScrollDurationSeconds = max(100, min(350, intval(round(($patronActiveCoun
                 <?php foreach ($modCards as $mod):
                     $displayName = $mod['name'];
                     // Installation is local file presence, independent of update or service health.
-                    $installed = $mod['root'] !== '' && ($mod['name'] === 'REIGN' ? (is_file($mod['root'] . '/ReignServer') || is_file($mod['root'] . '/ReignBetaServer')) : is_file($mod['root'] . '/ui/home.php'));
-                    $versionLabel = $installed && isset($mod['versionFiles'])
-                        ? (dashboard_server_version($mod['root'], $mod['versionFiles']) ?? 'Version unavailable') : null;
+                    if (array_key_exists('installed', $mod)) {
+                        // Cards with their own install contract (ECHOEs) arrive resolved, with a visible note.
+                        $installed = $mod['installed'];
+                        $versionLabel = $mod['version'];
+                    } else {
+                        $installed = $mod['root'] !== '' && ($mod['name'] === 'REIGN' ? (is_file($mod['root'] . '/ReignServer') || is_file($mod['root'] . '/ReignBetaServer')) : is_file($mod['root'] . '/ui/home.php'));
+                        $versionLabel = $installed && isset($mod['versionFiles'])
+                            ? (dashboard_server_version($mod['root'], $mod['versionFiles']) ?? 'Version unavailable') : null;
+                    }
+                    $cardNote = $installed ? ($mod['note'] ?? '') : 'Not installed';
+                    $linked = $installed && $mod['url'] !== '';
+                    $noteId = 'mod-card-note-' . strtolower($mod['name']);
                     $openLabel = 'Open ' . $displayName . ($versionLabel === null ? '' : ', ' . (str_starts_with($versionLabel, 'Version') ? $versionLabel : 'version ' . $versionLabel));
                 ?>
                 <div class="mod-card mod-card-<?= htmlspecialchars(strtolower($mod['name']), ENT_QUOTES, 'UTF-8') ?>">
                 <a class="mod-card-open"
-                    <?php if ($installed): ?>
+                    <?php if ($linked): ?>
                         href="<?= htmlspecialchars($mod['url'], ENT_QUOTES, 'UTF-8') ?>"
                         aria-label="<?= htmlspecialchars($openLabel, ENT_QUOTES, 'UTF-8') ?>"
+                        <?php if ($cardNote !== ''): ?>aria-describedby="<?= htmlspecialchars($noteId, ENT_QUOTES, 'UTF-8') ?>"<?php endif; ?>
                     <?php else: ?>
                         role="link" aria-disabled="true" tabindex="-1"
-                        aria-label="<?= htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8') ?> — Not installed"
+                        aria-label="<?= htmlspecialchars($displayName . ' — ' . $cardNote, ENT_QUOTES, 'UTF-8') ?>"
                     <?php endif; ?>>
                     <img class="mod-card-art" src="images/<?= htmlspecialchars($mod['image'], ENT_QUOTES, 'UTF-8') ?>?v=<?= (int) filemtime(__DIR__ . '/images/' . $mod['image']) ?>" alt="" width="1920" height="1080">
                     <span class="mod-card-label">
                         <span class="mod-card-game"><?= htmlspecialchars($mod['game'], ENT_QUOTES, 'UTF-8') ?></span>
                         <?php if ($versionLabel !== null): ?><span class="mod-card-version"><?= htmlspecialchars($versionLabel, ENT_QUOTES, 'UTF-8') ?></span><?php endif; ?>
-                        <?php if (!$installed): ?><span class="mod-card-status">Not installed</span><?php endif; ?>
+                        <?php if ($cardNote !== ''): ?><span class="mod-card-status" id="<?= htmlspecialchars($noteId, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($cardNote, ENT_QUOTES, 'UTF-8') ?></span><?php endif; ?>
                     </span>
                 </a>
                 </div>
