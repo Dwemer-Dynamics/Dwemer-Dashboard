@@ -50,8 +50,9 @@ function dashboard_echoes_version(string $manifest): ?string
     if (!is_string($version) || preg_match('/^[0-9]+\.[0-9]+\.[0-9]+$/D', $version) !== 1) {
         return null;
     }
-    $channel = array_key_exists('channel', $data) && $data['channel'] !== null ? $data['channel'] : 'main';
-    $release = array_key_exists('release', $data) && $data['release'] !== null ? $data['release'] : $version;
+    // A field that is present, including JSON null, must be a string.
+    $channel = array_key_exists('channel', $data) ? $data['channel'] : 'main';
+    $release = array_key_exists('release', $data) ? $data['release'] : $version;
     if (!is_string($channel) || !is_string($release)) {
         return null;
     }
