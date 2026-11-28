@@ -1,5 +1,5 @@
 /* Themed hover ambience, card-edge borders and ~4s click shows for the CHIM, LORKHAN, DIALECTIC,
- * STOBE and REIGN cards. Markup comes from js/mod_card_effects.js. Loop animations stay paused until hover
+ * STOBE, REIGN and ECHOEs cards. Markup comes from js/mod_card_effects.js. Loop animations stay paused until hover
  * or a show, so idle cards cost nothing. Overlays cover only the 16:9 artwork, never the label;
  * borders sit just outside the card edge. Game art in images/card-effects is local and small. */
 .mod-fx-host { position: relative; }
@@ -41,6 +41,7 @@ html.mod-fx-paused :is(.mod-fx, .mod-fx-border) { display: none; }
 .mod-card-dialectic { --mod-fx-edge: #c39a58; }
 .mod-card-stobe { --mod-fx-edge: #8c6a48; }
 .mod-card-reign { --mod-fx-edge: #c9a227; }
+.mod-card-echoes { --mod-fx-edge: #b58a45; }
 /* While a themed border shows, it replaces the plain accent hover ring. */
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) and (forced-colors: none) {
     html:not(.mod-fx-paused) .mod-card.mod-fx-card:is(:hover, .mod-fx-card-playing) { border-color: var(--mod-fx-edge); box-shadow: none; }
@@ -137,6 +138,23 @@ html.mod-fx-paused :is(.mod-fx, .mod-fx-border) { display: none; }
     filter: drop-shadow(0 0 2px rgb(241 212 162 / .45)); animation: mod-fx-reign-b-orbit 7s linear infinite;
 }
 @keyframes mod-fx-reign-b-orbit { to { stroke-dashoffset: -400; } }
+
+/* ECHOEs: a moss-green band edged in brass, with one parchment glint wandering round it like a voice. */
+.echo-b-moss { stroke: #2c4437; stroke-width: 6px; opacity: .9; }
+.echo-b-brass { stroke: #b58a45; stroke-width: 1.6px; filter: drop-shadow(0 1px 0 rgb(0 0 0 / .7)); }
+.echo-b-glint {
+    stroke: #eee9d9; stroke-width: 2px; stroke-linecap: round; stroke-dasharray: 10 390;
+    filter: drop-shadow(0 0 3px rgb(181 138 69 / .8)); animation: mod-fx-echo-b-orbit 8s linear infinite;
+}
+@keyframes mod-fx-echo-b-orbit { to { stroke-dashoffset: -400; } }
+.mod-fx-card-playing .echo-b-glint { animation-duration: 2.6s; }
+.mod-fx-card-playing .echo-b-brass { animation: mod-fx-echo-b-answer 3.9s ease-out both; }
+/* The brass edge brightens once for the call and once for the answer. */
+@keyframes mod-fx-echo-b-answer {
+    0%, 100% { filter: drop-shadow(0 1px 0 rgb(0 0 0 / .7)); }
+    16%, 48% { filter: drop-shadow(0 0 4px rgb(238 233 217 / .7)) brightness(1.3); }
+    32%, 64% { filter: drop-shadow(0 1px 0 rgb(0 0 0 / .7)); }
+}
 
 /* ---------- CHIM / Skyrim: snowfall; a dragon passes, FUS RO DAH lights up the word walls ---------- */
 /* Tiles divide the layer height so a 50% fall loops without a seam. */
@@ -632,3 +650,65 @@ html.mod-fx-paused :is(.mod-fx, .mod-fx-border) { display: none; }
     .mod-fx-card .mod-fx-border.mod-fx-border-reign, .mod-fx-card .reign-shine,
     .mod-fx-reign::before, .mod-fx-reign::after { display: none !important; animation: none !important; }
 }
+
+/* ---------- ECHOEs / Mirthwood: fireflies and oak leaves at dusk; a call across the valley is answered ---------- */
+/* Hover: a faint moss dusk settles over the meadow, fireflies wander and blink, and a few leaves fall from
+   the oak. Percentages trace the 16:9 art; the title and the couple are never covered by an opaque layer. */
+.echo-dusk, .echo-fireflies, .echo-leaf-lane, .echo-title { opacity: 0; transition: opacity .5s ease-out; }
+.echo-dusk { inset: 0; background: radial-gradient(ellipse at 50% 125%, rgb(44 68 55 / .42), transparent 62%); }
+.echo-fireflies, .echo-leaves { inset: 0; }
+.echo-fly {
+    position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #eee9d9;
+    box-shadow: 0 0 4px 2px rgb(181 138 69 / .55);
+    animation: mod-fx-echo-wander 7s ease-in-out infinite alternate paused, mod-fx-echo-blink 3.2s ease-in-out infinite paused;
+}
+@keyframes mod-fx-echo-wander { 0% { translate: 0 0; } 50% { translate: 7px -5px; } 100% { translate: -4px -11px; } }
+@keyframes mod-fx-echo-blink { 0%, 100% { opacity: 0; } 35%, 55% { opacity: .9; } }
+/* Each lane spans the whole layer, so a percentage fall carries its leaf from above the art to below it. */
+.echo-leaf-lane { position: absolute; inset: 0; animation: mod-fx-echo-fall 11s linear infinite paused; }
+.echo-leaf {
+    position: absolute; top: 0; width: 3.2%; aspect-ratio: 1;
+    animation: mod-fx-echo-sway 2.8s ease-in-out infinite alternate paused;
+}
+.echo-leaf-art { inset: 0; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 1px 1px rgb(0 0 0 / .5)); }
+.echo-leaf-art path { fill: #8a9455; }
+.echo-leaf-lane:nth-child(odd) .echo-leaf-art path { fill: #b58a45; }
+.echo-leaf-art .echo-leaf-vein { fill: none; stroke: #eee9d9; stroke-width: .6; opacity: .45; }
+@keyframes mod-fx-echo-fall { from { transform: translate3d(0, -8%, 0); } to { transform: translate3d(9%, 104%, 0); } }
+@keyframes mod-fx-echo-sway { from { transform: translateX(-60%) rotate(-28deg); } to { transform: translateX(60%) rotate(34deg); } }
+@media (hover: hover) and (pointer: fine) {
+    .mod-fx-host:is(:hover, :focus-visible) :is(.echo-dusk, .echo-fireflies) { opacity: 1; }
+    .mod-fx-host:is(:hover, :focus-visible) .echo-leaf-lane { opacity: .9; }
+    .mod-fx-host:is(:hover, :focus-visible) :is(.echo-fly, .echo-leaf-lane, .echo-leaf) { animation-play-state: running; }
+}
+.mod-fx-playing :is(.echo-dusk, .echo-fireflies) { opacity: 1; }
+.mod-fx-playing .echo-leaf-lane { opacity: .9; }
+.mod-fx-playing :is(.echo-fly, .echo-leaf-lane, .echo-leaf) { animation-play-state: running; }
+/* Show, 3.9s: broken rings of speech leave the couple (parchment), then the lit mill answers (brass);
+   as the last answer fades, a brightened copy of the card's own art lifts the title (an overlay cannot
+   blend through the layer's stacking context). Everything clears by the end. */
+.echo-ripples { inset: 0; width: 100%; height: 100%; }
+.echo-ripple {
+    fill: none; stroke-width: 2px; stroke-linecap: round; stroke-dasharray: 17 8; vector-effect: non-scaling-stroke;
+    opacity: 0; transform-box: fill-box; transform-origin: center;
+}
+.echo-ripple-call { stroke: #eee9d9; filter: drop-shadow(0 0 2px rgb(41 45 36 / .9)); }
+.echo-ripple-reply { stroke: #d2a65c; filter: drop-shadow(0 0 2px rgb(41 45 36 / .9)); }
+.mod-fx-playing .echo-ripple { animation: mod-fx-echo-ripple 1.6s cubic-bezier(.2, .55, .35, 1) both; }
+.mod-fx-playing .echo-ripple-call.echo-ripple-0 { animation-delay: .15s; }
+.mod-fx-playing .echo-ripple-call.echo-ripple-1 { animation-delay: .5s; }
+.mod-fx-playing .echo-ripple-call.echo-ripple-2 { animation-delay: .85s; }
+.mod-fx-playing .echo-ripple-reply.echo-ripple-0 { animation-delay: 1.4s; }
+.mod-fx-playing .echo-ripple-reply.echo-ripple-1 { animation-delay: 1.75s; }
+.mod-fx-playing .echo-ripple-reply.echo-ripple-2 { animation-delay: 2.1s; }
+@keyframes mod-fx-echo-ripple {
+    0% { opacity: 0; transform: scale(.3) rotate(0deg); }
+    18% { opacity: .85; }
+    100% { opacity: 0; transform: scale(3.4) rotate(24deg); }
+}
+.echo-title {
+    inset: 0; background: var(--echo-art, none) center / 100% 100% no-repeat; filter: brightness(1.5) sepia(.15);
+    -webkit-mask: radial-gradient(ellipse 30% 17% at 50% 50%, #000 45%, transparent); mask: radial-gradient(ellipse 30% 17% at 50% 50%, #000 45%, transparent);
+}
+.mod-fx-playing .echo-title { animation: mod-fx-echo-title 3.9s ease-in-out both; }
+@keyframes mod-fx-echo-title { 0%, 52% { opacity: 0; } 72%, 84% { opacity: 1; } 100% { opacity: 0; } }

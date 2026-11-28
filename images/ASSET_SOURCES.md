@@ -23,6 +23,15 @@ Used only as decorative layers or CSS masks on the official mod cards.
 Game screenshots, textures and script remain the property of their
 publishers; see the linked UESP file pages for UESP's hosting terms.
 
+## Official card art
+
+| File | Source |
+| --- | --- |
+| `echoes-rail.jpg` | Mirthwood: Echoes key art supplied by Dwemer Dynamics; byte-identical copy of the DwemerDistro launcher asset `Assets/GameCenter/echoes-hero.jpg` (1216x684 JPEG) |
+
+The ECHOEs card effect (fireflies, leaves, echo ripples, border) is drawn
+with CSS and inline SVG only and adds no image files.
+
 ## Header logo
 
 | File | Source |

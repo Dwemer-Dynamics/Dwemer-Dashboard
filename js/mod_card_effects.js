@@ -1,7 +1,7 @@
-/* Themed hover and click-to-play shows for installed CHIM, LORKHAN, DIALECTIC, STOBE and REIGN cards.
+/* Themed hover and click-to-play shows for installed CHIM, LORKHAN, DIALECTIC, STOBE, REIGN and ECHOEs cards.
  * The first plain fine-pointer click on a card plays a ~4s show, then follows the card's
  * registered href; a second plain click on that link skips. Visuals are CSS keyframes over
- * local game art (images/card-effects, or REIGN's own card art) in
+ * local game art (images/card-effects, or REIGN's own card art; ECHOEs is pure CSS/SVG) in
  * css/mod_card_effects.css. This script builds decorative overlays and card-edge borders, owns
  * the single timer and the Pause effects control; it uses no animation frames, canvas, sounds or
  * network requests. */
@@ -104,7 +104,39 @@
         if (art?.src) shine.style.setProperty('--reign-art', 'url(' + JSON.stringify(art.src) + ')');
         return [span('reign-shaft', motes), shine];
     }
-    const themes = {chim, lorkhan, dialectic, stobe, reign};
+    function echoes(link) {
+        // Mirthwood at dusk: fireflies over the meadow and oak leaves drifting from the old tree.
+        // Seeded spreads keep every load identical.
+        const fireflies = Array.from({length: 14}, (_, i) => {
+            const fly = span('echo-fly');
+            fly.style.left = (4 + i * 37 % 92) + '%'; fly.style.top = (58 + i * 23 % 36) + '%';
+            fly.style.animationDelay = (-i * .83) + 's, ' + (-i * 1.37) + 's';
+            return fly;
+        });
+        const leaf = '<path d="M5 0C8 2 9 6 5 10C1 6 2 2 5 0Z"/><path class="echo-leaf-vein" d="M5 1.5V9.5"/>';
+        const leaves = Array.from({length: 5}, (_, i) => {
+            const lane = span('echo-leaf-lane', [span('echo-leaf', [svg(leaf, 'echo-leaf-art', '0 0 10 10', 'xMidYMid meet')])]);
+            lane.firstChild.style.left = (3 + i * 7 % 30) + '%';
+            lane.style.animationDelay = (-i * 2.3) + 's';
+            lane.firstChild.style.animationDelay = (-i * 1.1) + 's';
+            return lane;
+        });
+        // The show: the couple speaks, the village answers, and the title catches the echo.
+        // Ripple centres trace the 16:9 art in a 160x90 viewBox: the couple, then the lit mill window.
+        const ripples = (className, x, y) => [0, 1, 2].map(i => '<circle class="echo-ripple ' + className + ' echo-ripple-' + i
+            + '" cx="' + x + '" cy="' + y + '" r="9"/>').join('');
+        // Like REIGN, the title light re-reads the already loaded card art by its exact URL.
+        const title = span('echo-title'), art = link.querySelector('.mod-card-art');
+        if (art?.src) title.style.setProperty('--echo-art', 'url(' + JSON.stringify(art.src) + ')');
+        return [
+            span('echo-dusk'),
+            span('echo-leaves', leaves),
+            svg(ripples('echo-ripple-call', 26, 50) + ripples('echo-ripple-reply', 103, 61), 'echo-ripples', '0 0 160 90', 'xMidYMid slice'),
+            title,
+            span('echo-fireflies', fireflies),
+        ];
+    }
+    const themes = {chim, lorkhan, dialectic, stobe, reign, echoes};
 
     // Card-edge borders sit just outside the card, over a rect that follows its rounded corners.
     const ring = (...classes) => classes.map(name => '<rect class="' + name + '" rx="10" pathLength="400"/>').join('');
@@ -116,6 +148,7 @@
         dialectic: () => svg(ring('dia-b-enamel', 'dia-b-bulbs', 'dia-b-bulbs-lit'), 'mod-fx-border mod-fx-border-dialectic', null),
         stobe: () => span('mod-fx-border mod-fx-border-stobe', [span('stobe-b-haze'), span('stobe-b-rust'), span('stobe-b-grit')]),
         reign: () => svg(ring('reign-b-glint'), 'mod-fx-border mod-fx-border-reign', null),
+        echoes: () => svg(ring('echo-b-moss', 'echo-b-brass', 'echo-b-glint'), 'mod-fx-border mod-fx-border-echoes', null),
     };
 
     // Only installed cards (links with an href) are decorated; disabled cards stay inert.
